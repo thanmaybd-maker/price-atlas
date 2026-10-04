@@ -27,7 +27,15 @@ else {
     while (ticking) await new Promise((resolve) => setTimeout(resolve, 100));
   };
 }
+import http from 'node:http';
+const port = process.env.PORT;
+if (port) {
+  http.createServer((_, res) => res.writeHead(200).end('Price Atlas Worker Running\n')).listen(port, () => {
+    console.log(`Worker health listener running on port ${port}`);
+  });
+}
 for (const signal of ['SIGINT', 'SIGTERM'] as const)
   process.on(signal, () => {
     void close().then(() => process.exit(0));
   });
+
