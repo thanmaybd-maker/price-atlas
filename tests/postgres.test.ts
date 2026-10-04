@@ -215,6 +215,15 @@ it('delivers a new Telegram episode once without backfilling pre-connection aler
   expect(calls).toBe(0);
   const rule = (await store.personal(alice)).rules.find((r) => r.id === ruleId)!;
   await store.saveRule(alice, { ...rule, target: 2700000 });
+  await db.query('UPDATE atlas.users SET suppressed=true WHERE id=$1', [alice]);
+  let emailCalls = 0;
+  await deliverNotifications({
+    send: async () => {
+      emailCalls++;
+      return { id: 'should-not-send' };
+    },
+  });
+  expect(emailCalls).toBe(0);
   await deliverTelegram(async (chat, text) => {
     calls++;
     expect(chat).toBe('123');
@@ -226,6 +235,7 @@ it('delivers a new Telegram episode once without backfilling pre-connection aler
     return 'duplicate';
   });
   expect(calls).toBe(1);
+  await db.query('UPDATE atlas.users SET suppressed=false WHERE id=$1', [alice]);
   expect(
     (await db.query<{ state: string }>('SELECT state FROM atlas.telegram_deliveries')).rows[0]
       .state,

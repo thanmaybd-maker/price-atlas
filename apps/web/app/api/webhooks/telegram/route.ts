@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ZodError } from 'zod';
 import {
   handleTelegramUpdate,
   telegramConfigured,
@@ -22,7 +23,10 @@ export async function POST(req: NextRequest) {
   }
   try {
     return NextResponse.json((await handleTelegramUpdate(input)) || { ok: true });
-  } catch {
-    return NextResponse.json({ error: 'Update processing failed.' }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof ZodError ? 'Invalid update.' : 'Update processing failed.' },
+      { status: error instanceof ZodError ? 400 : 503 },
+    );
   }
 }

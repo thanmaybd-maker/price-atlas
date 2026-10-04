@@ -1966,15 +1966,15 @@ export default function Atlas({
                   <div className="capabilities">
                     <span>
                       <Check size={13} />
-                      Demo prices
+                      {demo ? 'Demo prices' : 'Retailer observations'}
                     </span>
                     <span>
                       <Check size={13} />
-                      Demo history
+                      {demo ? 'Demo history' : 'Source-controlled history'}
                     </span>
                     <span>
                       <Check size={13} />
-                      In-app alerts
+                      {demo ? 'In-app alerts' : 'Configured alert channels'}
                     </span>
                   </div>
                   <p className="fine-print">
@@ -2070,11 +2070,19 @@ export default function Atlas({
           ],
           [
             'How do price alerts work?',
-            'Set an at-or-below target. A fresh qualifying observation creates an in-app event. Repeated low prices do not send a new event every check. Stale periods do not reset an episode. Two fresh above-target observations and a 24-hour cooldown are required to re-arm.',
+            'Set an at-or-below target. A fresh qualifying observation from a source that permits alerts creates a notification. Repeated low prices do not send a new event every check. Stale periods do not reset an episode. Two fresh above-target observations and a 24-hour cooldown are required to re-arm.',
+          ],
+          [
+            'Can I get alerts on Telegram?',
+            demo
+              ? 'Telegram connects to verified accounts in the live app. This demo only creates local in-app notifications.'
+              : 'Yes. Sign in, open Settings, choose Connect Telegram, open the private link and press Start in the bot. The link expires in ten minutes. Eligible alerts go to that chat without needing an email domain. Send /stop or disconnect in Settings to stop them. API limits, blocked bots and collection delays can affect delivery; it is not guaranteed.',
           ],
           [
             'What does the chart tell me?',
-            'The chart shows synthetic recorded checks in this demo. Live history must come from permitted retained observations. Gaps are not filled with invented prices, and a limited history never establishes an all-time low.',
+            demo
+              ? 'The chart shows synthetic recorded checks in this demo. Gaps are not filled with invented prices, and a limited history never establishes an all-time low.'
+              : 'The chart shows permitted retained retailer observations. If the source does not allow retention, no history is displayed. Gaps are not filled with invented prices, and a limited history never establishes an all-time low.',
           ],
           [
             'Can I paste a retailer link?',
@@ -2090,7 +2098,9 @@ export default function Atlas({
           ],
           [
             'What is needed for the live service?',
-            'Approved data providers with comparison, history and alert rights; production PostgreSQL, identity and job infrastructure; an email sending domain; and deployment accounts. These external connections are not represented as complete.',
+            demo
+              ? 'The live app needs real source connections, verified accounts, a database and an operating collection worker. This demo runs separately with synthetic observations.'
+              : 'The hosted app uses PostgreSQL and verified accounts. Source policies control comparison, history and alert capabilities. Reliable alerts need an operating collection worker. Telegram needs a configured bot; email to other users needs a verified sender domain. Account connection and delivery status are shown in Settings.',
           ],
         ].map(([q, a]) => (
           <details className="faq" key={q}>
