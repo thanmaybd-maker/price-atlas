@@ -45,6 +45,7 @@ import { PriceChart } from './chart';
 import { LiveLogin } from './live-login';
 import { Operations } from './operations';
 import { Mfa } from './mfa';
+import { TelegramSettings } from './telegram-settings';
 type User = {
   id: string;
   name: string;
@@ -79,6 +80,7 @@ type Admin = {
   }[];
   quarantine?: { id: string; listing_id: string; reason: string }[];
   jobs?: { id: string; last_error: string; attempts: number }[];
+  telegram?: { notification_id: string; state: string; last_error: string; attempts: number }[];
   capabilities?: {
     source: string;
     history: boolean;
@@ -1741,6 +1743,7 @@ export default function Atlas({
               <p className="muted">
                 {demo ? 'Local demo profile · browser session' : session.user.email}
               </p>
+              {!demo && <TelegramSettings />}
               {!demo && (
                 <div className="setting-row">
                   <div>
@@ -1771,14 +1774,16 @@ export default function Atlas({
               )}
               <div className="setting-row">
                 <div>
-                  <strong>In-app price notifications</strong>
-                  <p className="muted small">Turning these off suppresses pending deliveries.</p>
+                  <strong>{demo ? 'In-app price notifications' : 'Price notifications'}</strong>
+                  <p className="muted small">
+                    Turning these off suppresses pending in-app, email, and Telegram alerts.
+                  </p>
                 </div>
                 <button
                   className={`toggle ${session.user.notifications ? 'on' : ''}`}
                   role="switch"
                   aria-checked={!!session.user.notifications}
-                  aria-label="In-app price notifications"
+                  aria-label={demo ? 'In-app price notifications' : 'Price notifications'}
                   onClick={() =>
                     void perform(async () => {
                       await api('preferences', 'PATCH', { enabled: !session.user?.notifications });

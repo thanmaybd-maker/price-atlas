@@ -6,6 +6,7 @@ import { livePolicy } from '../providers/live';
 import { rank, type Rule } from '../domain/index';
 import { ResendNotifications, type NotificationProvider } from '../notifications/index';
 import type { Store } from '../domain/index';
+import { deliverTelegram } from '../notifications/telegram';
 export async function reserveSource(store: Store) {
   const policy = livePolicy(store);
   if (!policy.currentPrices)
@@ -110,7 +111,6 @@ export async function deliverNotifications(
       : null;
     const allowed =
       user?.verified &&
-      !user.suppressed &&
       user.notifications === 1 &&
       rule?.enabled &&
       rule.version === n.data.ruleVersion &&
@@ -124,6 +124,13 @@ export async function deliverNotifications(
       continue;
     }
     await postgres().query("UPDATE atlas.notifications SET state='delivered' WHERE id=$1", [n.id]);
+    if (user.suppressed) {
+      await postgres().query(
+        "UPDATE atlas.notifications SET email_state='suppressed' WHERE id=$1",
+        [n.id],
+      );
+      continue;
+    }
     if (!user.email_enabled) {
       await postgres().query("UPDATE atlas.notifications SET email_state='disabled' WHERE id=$1", [
         n.id,
@@ -214,7 +221,9 @@ export async function startLiveWorker() {
           { id: row.id },
           { jobId: row.id, removeOnComplete: true, removeOnFail: true },
         );
-      await deliverNotifications();
+      const deliveries = await Promise.allSettled([deliverTelegram(), deliverNotifications()]);
+      if (deliveries.some((result) => result.status === 'rejected'))
+        console.error(JSON.stringify({ event: 'notification_dispatch_failed' }));
     } catch {
       console.error(JSON.stringify({ event: 'worker_tick_failed' }));
     } finally {

@@ -332,6 +332,7 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
 }
 export async function evaluateProduct(productId: string) {
   const current = await offers(productId);
+  const product = await findProduct(productId);
   await tx(async (c) => {
     const rules = await c.query(
       'SELECT * FROM atlas.rules WHERE product_id=$1 ORDER BY id FOR UPDATE',
@@ -356,8 +357,8 @@ export async function evaluateProduct(productId: string) {
               store: result.trigger.store,
               observedAt: result.trigger.observedAt,
               ruleVersion: rule.version,
-              title: 'Your target price is here',
-              channel: 'in-app + email',
+              title: product?.name || 'Your target price is here',
+              channel: 'in-app',
               demo: false,
             },
             Date.now(),
@@ -398,7 +399,7 @@ export async function dispatch() {
   }
 }
 export async function admin() {
-  const [providers, runs, counts, listings, quarantine, jobs] = await Promise.all([
+  const [providers, runs, counts, listings, quarantine, jobs, telegram] = await Promise.all([
     postgres().query('SELECT store,paused,last_error FROM atlas.provider_state ORDER BY store'),
     postgres().query('SELECT * FROM atlas.runs ORDER BY started_at DESC LIMIT 20'),
     postgres().query(
@@ -413,6 +414,9 @@ export async function admin() {
     postgres().query(
       "SELECT id,kind,state,last_error,attempts FROM atlas.jobs WHERE state='failed' ORDER BY created_at DESC LIMIT 50",
     ),
+    postgres().query(
+      "SELECT notification_id,state,last_error,attempts FROM atlas.telegram_deliveries WHERE state IN ('failed','review') ORDER BY next_attempt LIMIT 50",
+    ),
   ]);
   return {
     providers: providers.rows,
@@ -422,6 +426,7 @@ export async function admin() {
     listings: listings.rows,
     quarantine: quarantine.rows,
     jobs: jobs.rows,
+    telegram: telegram.rows,
     capabilities: (['Amazon', 'Flipkart'] as const).map((store) => livePolicy(store)),
   };
 }
