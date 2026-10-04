@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -19,9 +23,15 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"],
-      "@domain/*": ["../../packages/domain/*"],
-      "@database/*": ["../../packages/database/*"]
+      "@/*": [
+        "./*"
+      ],
+      "@domain/*": [
+        "../../packages/domain/*"
+      ],
+      "@database/*": [
+        "../../packages/database/*"
+      ]
     }
   },
   "include": [
@@ -30,7 +40,11 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "../../packages/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "../../.next/types/**/*.ts",
+    "../../.next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }
