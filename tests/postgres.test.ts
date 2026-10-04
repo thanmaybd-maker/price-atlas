@@ -14,6 +14,7 @@ import {
   disconnectTelegram,
   deliverTelegram,
   TelegramError,
+  reviewTelegramDelivery,
 } from '../packages/notifications/telegram';
 const db = new PGlite();
 const alice = randomUUID(),
@@ -269,6 +270,34 @@ it('respects Telegram retry-after and stops sending to blocked chats', async () 
     throw new TelegramError('blocked');
   });
   expect(await telegramStatus(alice)).toMatchObject({ connected: false });
+});
+it('records operator closure of uncertain Telegram delivery without resending it', async () => {
+  const row = (
+    await db.query<{ notification_id: string }>(
+      "SELECT notification_id FROM atlas.telegram_deliveries WHERE state='review'",
+    )
+  ).rows[0];
+  await reviewTelegramDelivery(
+    row.notification_id,
+    'dismiss',
+    alice,
+    'Confirmed receipt in the test chat',
+  );
+  expect(
+    (
+      await db.query<{ state: string }>(
+        'SELECT state FROM atlas.telegram_deliveries WHERE notification_id=$1',
+        [row.notification_id],
+      )
+    ).rows[0].state,
+  ).toBe('dismissed');
+  expect(
+    (
+      await db.query('SELECT * FROM atlas.audit WHERE action=$1', [
+        `telegram:dismiss:${row.notification_id}`,
+      ])
+    ).rows,
+  ).toHaveLength(1);
 });
 it('disconnect and /stop remove only the linked account and invalidate pending link tokens', async () => {
   const link = await createTelegramLink(bob),
