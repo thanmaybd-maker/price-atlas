@@ -5,7 +5,7 @@ Users sign in to Price Atlas, open Settings → Connect Telegram, open the gener
 ## Activate the bot
 
 1. Create a bot through the verified [BotFather](https://t.me/BotFather). Keep its token private.
-2. Copy these values from the private local `.env` into **both Vercel and Render**, then redeploy both:
+2. Copy these values from the private local `.env` into **Vercel**, then redeploy:
 
    ```env
    TELEGRAM_BOT_TOKEN=<private BotFather token>
@@ -14,6 +14,7 @@ Users sign in to Price Atlas, open Settings → Connect Telegram, open the gener
    ```
 
    The webhook secret has been generated locally. Copy its actual value from `.env`; do not paste it into chat or commit it. Use letters, digits, `_` and `-` only.
+   Render's sending worker requires `TELEGRAM_BOT_TOKEN`; it does not need the username or webhook secret. Restart the worker with the updated token and latest code.
 
 3. Migration `002_telegram` is applied to this project's database. For another database, run `pnpm migrate` before deployment.
 4. Run `pnpm telegram:setup` locally. This verifies the bot username, hosted live health and protected route, then registers `/api/webhooks/telegram` with Telegram. It does not send a message to a personal inbox.
