@@ -1,0 +1,35 @@
+services:
+  web:
+    build: .
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      APP_MODE: demo
+      APP_ORIGIN: http://127.0.0.1:3000
+      ATLAS_DB_PATH: /app/data/atlas.sqlite
+    volumes:
+      - atlas-data:/app/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  worker:
+    build: .
+    command: ['pnpm', 'worker']
+    environment:
+      APP_MODE: demo
+      ATLAS_DB_PATH: /app/data/atlas.sqlite
+    volumes:
+      - atlas-data:/app/data
+    depends_on:
+      web:
+        condition: service_healthy
+volumes:
+  atlas-data:
