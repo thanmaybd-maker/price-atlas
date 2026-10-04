@@ -47,12 +47,5 @@
     "typescript": "7.0.2",
     "vitest": "5.0.3"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@electric-sql/pglite",
-      "esbuild",
-      "msgpackr-extract"
-    ]
-  },
   "type": "module"
 }
