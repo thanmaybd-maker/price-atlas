@@ -205,7 +205,8 @@ export const sendTelegram: TelegramSender = async (chatId, text) => {
   return String(result.result.message_id);
 };
 export async function deliverTelegram(sender: TelegramSender = sendTelegram) {
-  if (!telegramConfigured()) return;
+  // Sending needs only the bot token; username/secret belong to the web linking flow.
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
   // A timed-out send has no Telegram idempotency key. Hold it for review instead of silently duplicating a DM.
   await postgres().query(
     "UPDATE atlas.telegram_deliveries SET state='review',last_error='expired_send_lease' WHERE state='sending' AND next_attempt<$1",
