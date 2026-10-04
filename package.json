@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "next dev apps/web --hostname 127.0.0.1",
     "build": "next build apps/web",
-    "start": "next start apps/web --hostname 127.0.0.1",
+    "start": "next start apps/web",
     "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
     "test": "vitest run",
     "worker": "tsx apps/worker/index.ts",
