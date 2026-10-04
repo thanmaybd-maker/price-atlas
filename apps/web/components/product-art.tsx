@@ -1,6 +1,24 @@
 import type { Product } from '@domain/index';
 export function ProductArt({ product, hero = false }: { product: Product; hero?: boolean }) {
   const p = product;
+  if (p.sourceKind === 'live')
+    return p.imageUrl ? (
+      <img
+        className={`product-art ${hero ? 'hero-art' : ''}`}
+        src={p.imageUrl}
+        alt={p.name}
+        loading={hero ? 'eager' : 'lazy'}
+        referrerPolicy="no-referrer"
+      />
+    ) : (
+      <div
+        className="product-art missing-image"
+        role="img"
+        aria-label="No permitted product image available"
+      >
+        Image unavailable
+      </div>
+    );
   const key = `art-${p.id}-${hero ? 'hero' : 'card'}`;
   return (
     <svg

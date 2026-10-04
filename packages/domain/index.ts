@@ -12,6 +12,8 @@ export interface Product {
   attributes: Record<string, string>;
   basePrice: number;
   accent: string;
+  imageUrl?: string;
+  sourceKind?: 'demo' | 'live';
 }
 export interface Offer {
   id: string;
@@ -32,6 +34,7 @@ export interface Offer {
   displayAllowed: boolean;
   seller: string;
   context: string;
+  purchaseUrl?: string;
 }
 export interface Rule {
   id: string;
@@ -160,8 +163,10 @@ export function parseRetailUrl(value: string): { store: Store; externalId: strin
     const id = url.searchParams.get('pid');
     if (id && /^[A-Z0-9]{8,30}$/i.test(id))
       return { store: 'Flipkart', externalId: id.toUpperCase() };
+    const item = url.pathname.match(/\/p\/(itm[a-f0-9]{10,24})(?:\/|$)/i)?.[1];
+    if (!id && item) return { store: 'Flipkart', externalId: item.toUpperCase() };
   }
   throw new Error(
-    'Use a direct Amazon.in /dp/ link or Flipkart product link with a pid. Short links and other destinations are not fetched.',
+    'Use a direct Amazon.in /dp/ link or Flipkart /p/ product link. Short links and other destinations are not fetched.',
   );
 }

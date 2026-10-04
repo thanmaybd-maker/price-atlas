@@ -5,16 +5,20 @@ export function PriceChart({
   observations,
   target,
   compact = false,
+  basis = 'delivered',
+  demo = true,
 }: {
   observations: Offer[];
   target?: number;
   compact?: boolean;
+  basis?: 'delivered' | 'item';
+  demo?: boolean;
 }) {
   const [table, setTable] = useState(false);
   const [hover, setHover] = useState<Offer | null>(null);
-  const valid = observations.filter((o) => o.historyAllowed && o.stock && total(o) !== null);
+  const valid = observations.filter((o) => o.historyAllowed && o.stock && total(o, basis) !== null);
   if (!valid.length) return <div className="empty-chart">No recorded checks in this period.</div>;
-  const values = valid.map((o) => total(o)!);
+  const values = valid.map((o) => total(o, basis)!);
   const min = Math.min(...values, ...(target ? [target] : [])) * 0.97;
   const max = Math.max(...values) * 1.02;
   const start = Math.min(...valid.map((o) => o.observedAt));
@@ -27,7 +31,7 @@ export function PriceChart({
       <svg
         viewBox="0 0 720 230"
         role="img"
-        aria-label={`Synthetic recorded delivered prices, ranging from ${money(Math.min(...values))} to ${money(Math.max(...values))}. A table is available below.`}
+        aria-label={`${demo ? 'Synthetic recorded' : 'Recorded'} ${basis === 'item' ? 'item' : 'delivered'} prices, ranging from ${money(Math.min(...values))} to ${money(Math.max(...values))}. A table is available below.`}
       >
         {!compact &&
           [0, 1, 2, 3].map((i) => (
@@ -68,7 +72,7 @@ export function PriceChart({
                 d={points
                   .map(
                     (o, j) =>
-                      `${j && o.observedAt <= points[j - 1].validUntil ? 'L' : 'M'}${x(o.observedAt)},${y(total(o)!)}`,
+                      `${j && o.observedAt <= points[j - 1].validUntil ? 'L' : 'M'}${x(o.observedAt)},${y(total(o, basis)!)}`,
                   )
                   .join(' ')}
                 fill="none"
@@ -83,7 +87,7 @@ export function PriceChart({
                   <circle
                     key={o.id}
                     cx={x(o.observedAt)}
-                    cy={y(total(o)!)}
+                    cy={y(total(o, basis)!)}
                     r="5"
                     fill={i ? '#117855' : '#8e99b8'}
                     fillOpacity=".1"
@@ -91,7 +95,7 @@ export function PriceChart({
                     onMouseLeave={() => setHover(null)}
                   >
                     <title>
-                      {o.store}: {money(total(o))} ·{' '}
+                      {o.store}: {money(total(o, basis))} ·{' '}
                       {new Date(o.observedAt).toLocaleString('en-IN')}
                     </title>
                   </circle>
@@ -128,8 +132,8 @@ export function PriceChart({
             </span>
             <span className="chart-hover">
               {hover
-                ? `${hover.store} · ${money(total(hover))}`
-                : `${valid.length} synthetic checks · source default location`}
+                ? `${hover.store} · ${money(total(hover, basis))}`
+                : `${valid.length} ${demo ? 'synthetic checks' : 'recorded checks'} · source default location`}
             </span>
             <button className="text-button" onClick={() => setTable(!table)}>
               {table ? 'Hide' : 'View'} data table
@@ -142,7 +146,7 @@ export function PriceChart({
                   <tr>
                     <th>Observed</th>
                     <th>Source</th>
-                    <th>Delivered total</th>
+                    <th>{basis === 'item' ? 'Item price' : 'Delivered total'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -153,7 +157,7 @@ export function PriceChart({
                       <tr key={o.id}>
                         <td>{new Date(o.observedAt).toLocaleString('en-IN')}</td>
                         <td>{o.store}</td>
-                        <td>{money(total(o))}</td>
+                        <td>{money(total(o, basis))}</td>
                       </tr>
                     ))}
                 </tbody>

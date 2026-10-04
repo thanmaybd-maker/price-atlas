@@ -4,3 +4,8 @@ apps/web/.next
 data
 **/.env*
 *.log
+
+.next
+.vercel
+playwright-report
+test-results

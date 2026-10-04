@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import type { Offer, Store } from '../domain/index';
+import { parseRetailUrl, type Offer, type Store } from '../domain/index';
+export { RetailerScraperAdapter, livePolicy, getSourceAdapter } from './live';
+export { scrapeProduct, parseProductHtml, ScrapeError } from './scraper';
 
 export const capabilitySchema = z
   .object({
@@ -36,7 +38,7 @@ export const offerSchema = z
     currency: z.literal('INR'),
     stock: z.boolean(),
     accepted: z.boolean(),
-    condition: z.enum(['new', 'used', 'refurbished']),
+    condition: z.enum(['new', 'used', 'refurbished', 'unknown']),
     observedAt: z.number().int().positive(),
     validUntil: z.number().int().positive(),
     historyAllowed: z.boolean(),
@@ -44,6 +46,7 @@ export const offerSchema = z
     displayAllowed: z.boolean(),
     seller: z.string(),
     context: z.string().min(1),
+    purchaseUrl: z.string().url().optional(),
   })
   .refine((o) => o.discount <= o.itemPrice, { message: 'Discount cannot exceed the item price.' })
   .refine((o) => o.validUntil > o.observedAt, {
@@ -53,6 +56,8 @@ export function validateObservation(value: unknown, policy: SourcePolicy, now = 
   const o = offerSchema.parse(value);
   if (o.store !== policy.source)
     throw new Error('Observation source does not match the adapter policy.');
+  if (o.purchaseUrl && parseRetailUrl(o.purchaseUrl).store !== o.store)
+    throw new Error('Purchase destination does not match the source.');
   if (o.observedAt > now) throw new Error('Future observation rejected.');
   if (!policy.currentPrices || !o.displayAllowed)
     throw new Error('Source does not permit current price display.');

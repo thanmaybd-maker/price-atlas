@@ -1,3 +1,7 @@
+# Live scraper update
+
+Amazon.in and Flipkart imports now use a separate PostgreSQL catalog, verified Supabase accounts, Redis/BullMQ workers and a Resend email adapter. Start with [live setup](docs/SCRAPING.md) and [verified results](docs/LIVE-VERIFICATION.md). The existing Vercel deployment still requires live environment configuration and redeployment.
+
 # PRICE ATLAS
 
 A working local implementation of the Smart Shopping blueprint: a responsive storefront, exact-variant comparisons, persistent saved products, price targets, recorded synthetic history, in-app notifications, and a separate collection worker.

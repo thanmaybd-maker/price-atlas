@@ -42,7 +42,16 @@ import {
 } from '@domain/index';
 import { ProductArt } from './product-art';
 import { PriceChart } from './chart';
-type User = { id: string; name: string; notifications: number };
+import { LiveLogin } from './live-login';
+import { Operations } from './operations';
+import { Mfa } from './mfa';
+type User = {
+  id: string;
+  name: string;
+  notifications: number;
+  email?: string;
+  email_enabled?: boolean;
+};
 type Session = {
   user: User | null;
   watches: { id: string; product_id: string; collection: string }[];
@@ -61,6 +70,21 @@ type Admin = {
   providers: { store: string; paused: number }[];
   runs: { id: string; started_at: number; status: string; observations: number }[];
   counts: { products: number; observations: number; rules: number };
+  listings?: {
+    id: string;
+    product_id: string;
+    store: string;
+    match_state: string;
+    failures: number;
+  }[];
+  quarantine?: { id: string; listing_id: string; reason: string }[];
+  jobs?: { id: string; last_error: string; attempts: number }[];
+  capabilities?: {
+    source: string;
+    history: boolean;
+    alerts: boolean;
+    agreementReference: string | null;
+  }[];
 };
 const categories: { id: Category; name: string; icon: typeof Smartphone }[] = [
   { id: 'phones', name: 'Phones', icon: Smartphone },
@@ -90,19 +114,23 @@ function relative(at: number) {
 }
 export default function Atlas({
   route,
+  mode = 'demo',
   initialProducts,
   initialOffers,
   initialHistory,
 }: {
   route: string[];
+  mode?: 'demo' | 'live';
   initialProducts: Product[];
   initialOffers: Offer[];
   initialHistory: Offer[];
 }) {
+  const demo = mode === 'demo';
+  const compareStorageKey = demo ? 'atlas-compare' : 'atlas-compare-live';
   const router = useRouter();
   const params = useSearchParams();
   const page = route[0] || 'home';
-  const [products] = useState(initialProducts);
+  const [products, setProducts] = useState(initialProducts);
   const [offers, setOffers] = useState(initialOffers);
   const [session, setSession] = useState<Session>(empty);
   const [query, setQuery] = useState(params.get('q') || '');
@@ -112,10 +140,12 @@ export default function Atlas({
   const [editRule, setEditRule] = useState<Rule | null>(null);
   const [target, setTarget] = useState('');
   const [scope, setScope] = useState('all');
+  const [basis, setBasis] = useState<'delivered' | 'item'>('delivered');
   const [busy, setBusy] = useState(false);
   const [compare, setCompare] = useState<string[]>([]);
   const [history, setHistory] = useState(initialHistory);
   const [range, setRange] = useState(30);
+  const [adminError, setAdminError] = useState('');
   const [admin, setAdmin] = useState<Admin | null>(null);
   const [menu, setMenu] = useState(false);
   const [collection, setCollection] = useState('All collections');
@@ -131,13 +161,39 @@ export default function Atlas({
   async function refresh() {
     const result = await api('session');
     setSession(result);
+    if (result.user && !demo) {
+      const raw = sessionStorage.getItem('atlas-pending-intent');
+      if (raw) {
+        sessionStorage.removeItem('atlas-pending-intent');
+        try {
+          const intent = JSON.parse(raw);
+          if (intent.type === 'target') {
+            const product = initialProducts.find((p) => p.id === intent.productId);
+            if (product) {
+              setTargetProduct(product);
+              setTarget(intent.target);
+              setScope(intent.scope);
+              setBasis(intent.basis || 'delivered');
+            }
+          } else if (intent.type === 'import') {
+            setQuery(intent.url);
+            notify('You’re signed in. Submit the product link to import it.');
+          } else if (intent.type === 'watch') {
+            await api('watches', 'POST', { productId: intent.productId });
+            setSession(await api('session'));
+          }
+        } catch {}
+      }
+    }
   }
   useEffect(() => {
     void refresh().catch(() => setToast('Unable to load your session. Check your connection.'));
-    const stored = localStorage.getItem('atlas-compare');
+    const stored = localStorage.getItem(compareStorageKey);
     if (stored)
       try {
-        setCompare(JSON.parse(stored));
+        const selected = JSON.parse(stored);
+        if (Array.isArray(selected))
+          setCompare(selected.filter((id) => initialProducts.some((p) => p.id === id)).slice(0, 4));
       } catch {}
     document.documentElement.dataset.theme = localStorage.getItem('atlas-theme') || 'light';
   }, []);
@@ -149,13 +205,18 @@ export default function Atlas({
   useEffect(() => {
     setQuery(params.get('q') || '');
     setHistory(initialHistory);
+    setProducts(initialProducts);
+    setOffers(initialOffers);
     setMenu(false);
   }, [params, initialHistory]);
   useEffect(() => {
     if (page === 'admin')
       void api('admin')
         .then(setAdmin)
-        .catch((e) => setToast(e.message));
+        .catch((e) => {
+          setAdminError(e.message);
+          setToast(e.message);
+        });
   }, [page]);
   useEffect(() => {
     const timer = setInterval(() => {
@@ -234,6 +295,11 @@ export default function Atlas({
     return session.watches.some((w) => w.product_id === id);
   }
   function save(p: Product) {
+    if (!demo && !session.user)
+      sessionStorage.setItem(
+        'atlas-pending-intent',
+        JSON.stringify({ type: 'watch', productId: p.id }),
+      );
     requireUser(
       () =>
         void perform(async () => {
@@ -258,6 +324,7 @@ export default function Atlas({
           ),
     );
     setScope(rule?.store || 'all');
+    setBasis(rule?.basis || (demo ? 'delivered' : 'item'));
     setTargetProduct(p);
   }
   function toggleCompare(id: string) {
@@ -267,10 +334,11 @@ export default function Atlas({
       return;
     }
     setCompare(next);
-    localStorage.setItem('atlas-compare', JSON.stringify(next));
+    localStorage.setItem(compareStorageKey, JSON.stringify(next));
   }
   function navigateFilter(key: string, value: string) {
     const p = new URLSearchParams(params.toString());
+    p.delete('page');
     if (value) p.set(key, value);
     else p.delete(key);
     router.push(`/${page === 'category' ? `category/${category}` : 'search'}?${p}`);
@@ -278,8 +346,17 @@ export default function Atlas({
   async function search(e: FormEvent) {
     e.preventDefault();
     if (/^https?:\/\//i.test(query)) {
+      if (!demo && !session.user) {
+        sessionStorage.setItem(
+          'atlas-pending-intent',
+          JSON.stringify({ type: 'import', url: query }),
+        );
+        setAuth(true);
+        return;
+      }
       await perform(async () => {
-        await api('imports', 'POST', { url: query });
+        const result = await api('imports', 'POST', { url: query });
+        if (result.product) router.push(`/p/${result.product.slug}`);
       });
     } else router.push(`/search?q=${encodeURIComponent(query.trim())}`);
   }
@@ -305,6 +382,7 @@ export default function Atlas({
   function Card({ p, index = 0 }: { p: Product; index?: number }) {
     const po = offers.filter((o) => o.productId === p.id);
     const r = rank(po);
+    const itemRank = rank(po, Date.now(), 'item');
     return (
       <article key={p.id} className="product-card" style={{ animationDelay: `${index * 45}ms` }}>
         <div className="card-art">
@@ -333,9 +411,11 @@ export default function Atlas({
                   ? 'Lowest delivered price'
                   : r.offers.length
                     ? '1 available offer'
-                    : 'No fresh offers'}
+                    : itemRank.offers.length
+                      ? 'Item price · delivery extra/unknown'
+                      : 'No fresh offers'}
               </span>
-              <strong className="card-price">{money(r.lowest)}</strong>
+              <strong className="card-price">{money(r.lowest ?? itemRank.lowest)}</strong>
             </div>
             <span className="micro-trend">
               <TrendingDown size={22} />
@@ -343,7 +423,8 @@ export default function Atlas({
           </div>
           <div className="card-bottom">
             <span>
-              <i className="store-dot" /> {r.offers.length} available offers
+              <i className="store-dot" /> {Math.max(r.offers.length, itemRank.offers.length)}{' '}
+              available offers
             </span>
             <button
               className={compare.includes(p.id) ? 'compare-button active' : 'compare-button'}
@@ -361,8 +442,10 @@ export default function Atlas({
   return (
     <>
       <div className="demo-bar">
-        <span className="demo-dot" /> You’re exploring the demo. All prices and products are
-        synthetic fixtures.{' '}
+        <span className="demo-dot" />{' '}
+        {demo
+          ? 'You’re exploring the demo. All prices and products are synthetic fixtures.'
+          : 'Development preview · imported retailer pages. History and alerts depend on source capabilities.'}{' '}
         <Link href="/help">
           How it works <ArrowUpRight size={12} />
         </Link>
@@ -414,7 +497,7 @@ export default function Atlas({
               </Link>
             ) : (
               <button className="sign-in" onClick={() => setAuth(true)}>
-                Try demo <ArrowUpRight size={15} />
+                {demo ? 'Try demo' : 'Sign in'} <ArrowUpRight size={15} />
               </button>
             )}
             <button
@@ -479,52 +562,68 @@ export default function Atlas({
                   </span>
                 </div>
               </div>
-              <div className="hero-stage">
-                <div className="orbital orbit-one" />
-                <div className="orbital orbit-two" />
-                <span className="stage-index">01 / THE EVERYDAY FLAGSHIP</span>
-                <div className="hero-product">
-                  <ProductArt product={heroProduct} hero />
-                </div>
-                <div className="match-tag">
-                  <span className="check-round">
-                    <Check size={12} />
-                  </span>{' '}
-                  Same product. Better informed.
-                </div>
-                <div className="floating-price">
-                  <div className="floating-top">
-                    <span className="eyebrow">A PRICE WORTH WATCHING</span>
-                    <TrendingDown size={20} />
+              {heroProduct ? (
+                <div className="hero-stage">
+                  <div className="orbital orbit-one" />
+                  <div className="orbital orbit-two" />
+                  <span className="stage-index">01 / THE EVERYDAY FLAGSHIP</span>
+                  <div className="hero-product">
+                    <ProductArt product={heroProduct} hero />
                   </div>
-                  <div className="floating-title">
-                    Google Pixel 9 <span>128 GB · Obsidian</span>
+                  <div className="match-tag">
+                    <span className="check-round">
+                      <Check size={12} />
+                    </span>{' '}
+                    Same product. Better informed.
                   </div>
-                  <div className="floating-number">
-                    {money(rank(offers.filter((o) => o.productId === heroProduct.id)).lowest)}
-                    <span>lowest demo offer</span>
+                  <div className="floating-price">
+                    <div className="floating-top">
+                      <span className="eyebrow">A PRICE WORTH WATCHING</span>
+                      <TrendingDown size={20} />
+                    </div>
+                    <div className="floating-title">
+                      {heroProduct.name} <span>{heroProduct.subtitle}</span>
+                    </div>
+                    <div className="floating-number">
+                      {money(rank(offers.filter((o) => o.productId === heroProduct.id)).lowest)}
+                      <span>{demo ? 'lowest demo offer' : 'eligible delivered offer'}</span>
+                    </div>
+                    {demo && (
+                      <svg className="hero-spark" viewBox="0 0 290 43" aria-hidden="true">
+                        <path
+                          d="M0 7 L31 7 L31 15 L62 15 L62 10 L101 10 L101 22 L145 22 L145 18 L177 18 L177 29 L220 29 L220 35 L290 35"
+                          fill="none"
+                          stroke="#147a57"
+                          strokeWidth="2"
+                        />
+                        <path
+                          d="M0 7 L31 7 L31 15 L62 15 L62 10 L101 10 L101 22 L145 22 L145 18 L177 18 L177 29 L220 29 L220 35 L290 35 L290 43 L0 43Z"
+                          fill="#147a57"
+                          opacity=".05"
+                        />
+                      </svg>
+                    )}
+                    <Link href={`/p/${heroProduct.slug}`}>
+                      Take a closer look <ArrowRight size={15} />
+                    </Link>
                   </div>
-                  <svg className="hero-spark" viewBox="0 0 290 43" aria-hidden="true">
-                    <path
-                      d="M0 7 L31 7 L31 15 L62 15 L62 10 L101 10 L101 22 L145 22 L145 18 L177 18 L177 29 L220 29 L220 35 L290 35"
-                      fill="none"
-                      stroke="#147a57"
-                      strokeWidth="2"
-                    />
-                    <path
-                      d="M0 7 L31 7 L31 15 L62 15 L62 10 L101 10 L101 22 L145 22 L145 18 L177 18 L177 29 L220 29 L220 35 L290 35 L290 43 L0 43Z"
-                      fill="#147a57"
-                      opacity=".05"
-                    />
-                  </svg>
-                  <Link href={`/p/${heroProduct.slug}`}>
-                    Take a closer look <ArrowRight size={15} />
-                  </Link>
+                  <div className="stage-note">
+                    <span className="live-dot" />{' '}
+                    {demo
+                      ? 'Illustrative demo · never a live quote'
+                      : 'Recorded observation · check the retailer before buying'}
+                  </div>
                 </div>
-                <div className="stage-note">
-                  <span className="live-dot" /> Illustrative demo · never a live quote
+              ) : (
+                <div className="hero-stage empty-catalog panel">
+                  <Link2 size={52} />
+                  <h2>Your first good find starts with a link.</h2>
+                  <p>
+                    Paste an Amazon.in or Flipkart product URL above. Imported listings stay
+                    separate until their exact variants are verified.
+                  </p>
                 </div>
-              </div>
+              )}
             </section>
             <div className="source-strip">
               <div className="page-width">
@@ -576,6 +675,9 @@ export default function Atlas({
               </div>
               <div className="product-grid">
                 {products.slice(0, 4).map((p, i) => Card({ p, index: i }))}
+                {!products.length && (
+                  <p>No imported products yet. Add a supported retailer link to begin.</p>
+                )}
               </div>
               <div className="catalog-note">
                 <ShieldCheck size={14} /> Prices include known delivery charges. Conditional bank
@@ -718,12 +820,23 @@ export default function Atlas({
               </label>
             </div>
             {filtered.length ? (
-              <div className="product-grid">{filtered.map((p, i) => Card({ p, index: i }))}</div>
+              <div className="product-grid">
+                {filtered
+                  .slice(
+                    (Math.max(1, Number(params.get('page')) || 1) - 1) * 24,
+                    Math.max(1, Number(params.get('page')) || 1) * 24,
+                  )
+                  .map((p, i) => Card({ p, index: i }))}
+              </div>
             ) : (
               <Empty
                 icon={Search}
                 title="No exact match this time."
-                text="Try a model name, clear a filter, or explore another category. The demo has eight carefully defined variants."
+                text={
+                  demo
+                    ? 'Try a model name, clear a filter, or explore another category. The demo has eight carefully defined variants.'
+                    : 'No imported products match. Try another query or paste a direct retailer product URL.'
+                }
                 action={
                   <Link className="primary" href="/search">
                     Clear filters <ArrowRight size={16} />
@@ -851,7 +964,11 @@ export default function Atlas({
                           </Link>
                           <p className="muted small">
                             At or below {money(rule.target)} ·{' '}
-                            {rule.store === 'all' ? 'Both demo sources' : rule.store}
+                            {rule.store === 'all'
+                              ? demo
+                                ? 'Both demo sources'
+                                : 'All matching stores'
+                              : rule.store}
                           </p>
                           <span className={`status-pill ${!rule.enabled ? 'paused' : ''}`}>
                             {rule.enabled ? 'Watching' : 'Paused'}
@@ -905,7 +1022,7 @@ export default function Atlas({
                           <span className="muted small">
                             {n.store} · {new Date(n.created_at).toLocaleString('en-IN')}
                             <br />
-                            {n.state} · demo in-app alert
+                            {n.state} · {demo ? 'demo in-app alert' : 'price alert'}
                           </span>
                         </div>
                       </article>
@@ -968,8 +1085,10 @@ export default function Atlas({
         <div className="page-width footer-bottom">
           <span>© 2026 Price Atlas · Made for the considered buyer.</span>
           <span>
-            India · INR ₹ <span className="footer-separator">/</span> Synthetic demo · Illustrative
-            artwork
+            India · INR ₹ <span className="footer-separator">/</span>{' '}
+            {demo
+              ? 'Synthetic demo · Illustrative artwork'
+              : 'Imported observations · prices may change'}
           </span>
         </div>
       </footer>
@@ -1045,42 +1164,51 @@ export default function Atlas({
                 <p className="eyebrow">A SPACE FOR YOUR GOOD FINDS</p>
                 <h2 id="modal-title">Make yourself at home.</h2>
                 <p className="muted">
-                  Create a local demo profile to save products and try price alerts. No email or
-                  password needed.
+                  {demo
+                    ? 'Create a local demo profile to save products and try price alerts. No email or password needed.'
+                    : 'Sign in with a verified email to keep your shortlist and targets across devices.'}
                 </p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const form = new FormData(e.currentTarget);
-                    void perform(async () => {
-                      await api('session', 'POST', { name: form.get('name') });
-                      await refresh();
-                      setAuth(false);
-                      notify('Your demo profile is ready.');
-                      const action = pending.current;
-                      pending.current = null;
-                      action?.();
-                    });
-                  }}
-                >
-                  <label>
-                    Your name
-                    <input
-                      name="name"
-                      required
-                      maxLength={60}
-                      placeholder="What should we call you?"
-                      autoComplete="given-name"
-                    />
-                  </label>
-                  <button className="primary full-width" disabled={busy}>
-                    Create demo profile <ArrowRight size={17} />
-                  </button>
-                </form>
-                <p className="fine-print">
-                  This is a browser-bound demo session. Google and email sign-in will be available
-                  after identity services are connected.
-                </p>
+                {!demo ? (
+                  <LiveLogin
+                    returnTo={`/${route.join('/')}${params.toString() ? '?' + params.toString() : ''}`}
+                  />
+                ) : (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = new FormData(e.currentTarget);
+                      void perform(async () => {
+                        await api('session', 'POST', { name: form.get('name') });
+                        await refresh();
+                        setAuth(false);
+                        notify('Your demo profile is ready.');
+                        const action = pending.current;
+                        pending.current = null;
+                        action?.();
+                      });
+                    }}
+                  >
+                    <label>
+                      Your name
+                      <input
+                        name="name"
+                        required
+                        maxLength={60}
+                        placeholder="What should we call you?"
+                        autoComplete="given-name"
+                      />
+                    </label>
+                    <button className="primary full-width" disabled={busy}>
+                      Create demo profile <ArrowRight size={17} />
+                    </button>
+                  </form>
+                )}
+                {demo && (
+                  <p className="fine-print">
+                    This is a browser-bound demo session. Google and email sign-in will be available
+                    after identity services are connected.
+                  </p>
+                )}
               </>
             ) : targetProduct ? (
               <>
@@ -1096,6 +1224,17 @@ export default function Atlas({
                   onSubmit={(e) => {
                     e.preventDefault();
                     if (!session.user) {
+                      if (!demo)
+                        sessionStorage.setItem(
+                          'atlas-pending-intent',
+                          JSON.stringify({
+                            type: 'target',
+                            productId: targetProduct.id,
+                            target,
+                            scope,
+                            basis,
+                          }),
+                        );
                       pending.current = () =>
                         notify('Your target is preserved. Choose Save target to finish.');
                       setAuth(true);
@@ -1107,13 +1246,17 @@ export default function Atlas({
                         productId: targetProduct.id,
                         target: Math.round(Number(target) * 100),
                         store: scope,
-                        basis: 'delivered',
+                        basis,
                         operator: 'lte',
                         enabled: true,
                       });
                       await refresh();
                       setTargetProduct(null);
-                      notify('Target saved. We’ll watch fresh matching demo offers.');
+                      notify(
+                        demo
+                          ? 'Target saved. We’ll watch fresh matching demo offers.'
+                          : 'Target saved. Only eligible observations from alert-enabled sources can trigger it.',
+                      );
                     });
                   }}
                 >
@@ -1136,20 +1279,37 @@ export default function Atlas({
                   <label>
                     Source
                     <select value={scope} onChange={(e) => setScope(e.target.value)}>
-                      <option value="all">Both demo sources</option>
+                      <option value="all">
+                        {demo ? 'Both demo sources' : 'All matching stores'}
+                      </option>
                       <option>Amazon</option>
                       <option>Flipkart</option>
+                    </select>
+                  </label>
+                  <label>
+                    Price basis
+                    <select
+                      value={basis}
+                      onChange={(e) => setBasis(e.target.value as 'delivered' | 'item')}
+                    >
+                      <option value="delivered">Known delivered total</option>
+                      <option value="item">Listed item price · delivery extra/unknown</option>
                     </select>
                   </label>
                   <div className="notice">
                     <ShieldCheck size={18} />
                     <span>
-                      Uses known delivered totals. Conditional discounts are excluded. The local
-                      worker checks synthetic offers every minute.
+                      {demo
+                        ? 'Uses your selected price basis. Conditional discounts are excluded. The local worker checks synthetic offers every minute.'
+                        : 'Checks are scheduled by the worker. History and alerts require a configured source agreement. Unknown stock or delivery cannot qualify for delivered-price alerts.'}
                     </span>
                   </div>
                   <button className="primary full-width" disabled={busy}>
-                    {session.user ? 'Save target' : 'Continue with a demo profile'}{' '}
+                    {session.user
+                      ? 'Save target'
+                      : demo
+                        ? 'Continue with a demo profile'
+                        : 'Continue to sign in'}{' '}
                     <ArrowRight size={17} />
                   </button>
                 </form>
@@ -1196,6 +1356,7 @@ export default function Atlas({
     const p = current;
     const po = offers.filter((o) => o.productId === p.id);
     const r = rank(po);
+    const itemRank = rank(po, Date.now(), 'item');
     const rule = session.rules.find((r) => r.productId === p.id);
     const visibleHistory = history.filter((o) => o.observedAt >= Date.now() - range * 86400000);
     return (
@@ -1216,16 +1377,22 @@ export default function Atlas({
                 <ShieldCheck size={14} /> EXACT VARIANT
               </span>
               <ProductArt product={p} hero />
-              <span className="art-caption">Illustrative demo artwork</span>
+              <span className="art-caption">
+                {demo ? 'Illustrative demo artwork' : 'Retailer-supplied image'}
+              </span>
             </div>
             <div className="detail-thumbs">
               <span>
                 <ProductArt product={p} />
               </span>
               <p>
-                Every detail matched.
+                {demo ? 'Every detail matched.' : 'Identity from the imported listing.'}
                 <br />
-                <strong>No smaller storage. No different color.</strong>
+                <strong>
+                  {demo
+                    ? 'No smaller storage. No different color.'
+                    : 'Missing attributes require review.'}
+                </strong>
               </p>
             </div>
           </div>
@@ -1251,18 +1418,22 @@ export default function Atlas({
                   ? 'Lowest eligible delivered price'
                   : r.offers.length
                     ? 'Available delivered price'
-                    : 'No fresh eligible offers'}
+                    : itemRank.offers.length
+                      ? 'Listed item price · delivery extra/unknown'
+                      : 'No fresh eligible offers'}
               </span>
               <div>
-                <strong>{money(r.lowest)}</strong>
+                <strong>{money(r.lowest ?? itemRank.lowest)}</strong>
                 <span className="status-pill">
-                  {r.winners.length > 1 ? 'Price tie' : `${r.offers.length} matching offers`}
+                  {r.winners.length > 1
+                    ? 'Price tie'
+                    : `${Math.max(r.offers.length, itemRank.offers.length)} ${r.offers.length ? 'matching' : 'item-price'} offers`}
                 </span>
               </div>
               <p>
                 <span className="live-dot" />
-                {po[0] ? relative(po[0].observedAt) : 'Awaiting observation'} · Synthetic demo
-                prices
+                {po[0] ? relative(po[0].observedAt) : 'Awaiting observation'} ·{' '}
+                {demo ? 'Synthetic demo prices' : 'Retailer observation'}
               </p>
             </div>
             <div className="detail-actions">
@@ -1279,7 +1450,7 @@ export default function Atlas({
               </button>
               <button
                 className="icon-button boxed"
-                aria-label="Add to comparison"
+                aria-label={compare.includes(p.id) ? 'Remove from comparison' : 'Add to comparison'}
                 onClick={() => toggleCompare(p.id)}
               >
                 {compare.includes(p.id) ? <Check size={19} /> : <Plus size={19} />}
@@ -1290,8 +1461,9 @@ export default function Atlas({
                 <ShieldCheck size={16} /> Why these offers match <ChevronDown size={16} />
               </summary>
               <p>
-                Both synthetic listings are assigned to the exact {p.name} variant below. Unknown
-                identity fields would require review before comparison.
+                {demo
+                  ? `Both synthetic listings are assigned to the exact ${p.name} variant below. Unknown identity fields would require review before comparison.`
+                  : 'Each imported listing retains its identity. Cross-store offers join only after their decisive attributes pass matching review.'}
               </p>
               <dl>
                 {Object.entries(p.attributes)
@@ -1338,13 +1510,18 @@ export default function Atlas({
               <div>
                 <span className="mobile-label">Delivery</span>
                 {o.shipping === null ? 'Unknown' : o.shipping === 0 ? 'Free' : money(o.shipping)}
+                {o.charges > 0 && <span>{money(o.charges)} mandatory fees</span>}
               </div>
               <div>
                 <span className="mobile-label">Total</span>
                 <strong>{eligible(o) ? money(total(o)) : 'Unavailable'}</strong>
                 {r.winners.some((w) => w.id === o.id) && (
                   <span className="best-label">
-                    {r.winners.length > 1 ? 'Equal lowest' : 'Lowest eligible'}
+                    {r.winners.length > 1
+                      ? 'Equal lowest'
+                      : r.offers.length === 1
+                        ? 'Available offer'
+                        : 'Lowest eligible'}
                   </span>
                 )}
               </div>
@@ -1355,23 +1532,36 @@ export default function Atlas({
                 </span>
                 <span>{relative(o.observedAt)}</span>
               </div>
-              <button
-                className="store-button"
-                onClick={() =>
-                  notify(
-                    'Demo listing: no retailer destination is attached. Live purchase links require an authorized source.',
-                  )
-                }
-                aria-label={`About ${o.store} demo purchase link`}
-              >
-                Demo offer <ArrowUpRight size={16} />
-              </button>
+              {!demo && o.purchaseUrl ? (
+                <a
+                  className="store-button"
+                  href={o.purchaseUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Visit {o.store} <ArrowUpRight size={16} />
+                </a>
+              ) : (
+                <button
+                  className="store-button"
+                  onClick={() =>
+                    notify(
+                      'Demo listing: no retailer destination is attached. Live purchase links require an authorized source.',
+                    )
+                  }
+                  aria-label={`About ${o.store} demo purchase link`}
+                >
+                  Demo offer <ArrowUpRight size={16} />
+                </button>
+              )}
             </div>
           ))}
         </div>
         <p className="fine-print">
-          Illustrative prices, not retailer quotes. Bank, exchange, membership, and coupon discounts
-          are excluded.{' '}
+          {demo
+            ? 'Illustrative prices, not retailer quotes.'
+            : 'Observed prices may change at checkout. Delivery location has not been personalized.'}{' '}
+          Bank, exchange, membership, and coupon discounts are excluded.{' '}
           <button className="text-button" onClick={() => setReportProduct(p)}>
             Report a price or match issue
           </button>
@@ -1396,7 +1586,7 @@ export default function Atlas({
           </div>
           <div className="history-summary">
             <div>
-              <span className="tiny-label">Lowest in shown demo checks</span>
+              <span className="tiny-label">Lowest in shown checks</span>
               <strong>
                 {visibleHistory.length
                   ? money(Math.min(...visibleHistory.map((o) => total(o) ?? Infinity)))
@@ -1408,12 +1598,21 @@ export default function Atlas({
               <strong>{rule ? money(rule.target) : 'Make it yours'}</strong>
             </div>
             <div className="history-note">
-              Synthetic history for exploring the experience.
+              {demo
+                ? 'Synthetic history for exploring the experience.'
+                : 'Only permitted retained observations appear here.'}
               <br />
-              Real charts will start with permitted observations.
+              {demo
+                ? 'Real charts will start with permitted observations.'
+                : 'No history means no recorded retained checks yet.'}
             </div>
           </div>
-          <PriceChart observations={visibleHistory} target={rule?.target} />
+          <PriceChart
+            demo={demo}
+            observations={visibleHistory}
+            target={rule?.target}
+            basis={rule?.basis || 'delivered'}
+          />
         </div>
         <div className="spec-section">
           <div>
@@ -1461,7 +1660,7 @@ export default function Atlas({
                         onClick={() => {
                           const next = selected.filter((x) => x.id !== p.id).map((x) => x.id);
                           setCompare(next);
-                          localStorage.setItem('atlas-compare', JSON.stringify(next));
+                          localStorage.setItem(compareStorageKey, JSON.stringify(next));
                           router.replace(`/compare?items=${next.join(',')}`);
                         }}
                       >
@@ -1533,13 +1732,43 @@ export default function Atlas({
         <PageHeading
           eyebrow="MAKE IT YOURS"
           title="A few personal details."
-          description="Your demo profile, notification preferences, and data controls."
+          description="Your profile, notification preferences, and data controls."
         />
         {session.user ? (
           <>
             <div className="settings-panel">
               <h2>Hello, {session.user.name}.</h2>
-              <p className="muted">Local demo profile · browser session</p>
+              <p className="muted">
+                {demo ? 'Local demo profile · browser session' : session.user.email}
+              </p>
+              {!demo && (
+                <div className="setting-row">
+                  <div>
+                    <strong>Email price alerts</strong>
+                    <p className="muted small">
+                      Send eligible alerts to your verified email. Requires the configured email
+                      sender.
+                    </p>
+                  </div>
+                  <button
+                    className={`toggle ${session.user.email_enabled ? 'on' : ''}`}
+                    role="switch"
+                    aria-checked={!!session.user.email_enabled}
+                    aria-label="Email price alerts"
+                    onClick={() =>
+                      void perform(async () => {
+                        await api('preferences', 'PATCH', {
+                          enabled: !!session.user?.notifications,
+                          emailEnabled: !session.user?.email_enabled,
+                        });
+                        await refresh();
+                      })
+                    }
+                  >
+                    <span />
+                  </button>
+                </div>
+              )}
               <div className="setting-row">
                 <div>
                   <strong>In-app price notifications</strong>
@@ -1584,10 +1813,22 @@ export default function Atlas({
               <div className="setting-row">
                 <div>
                   <strong>Email & Google sign-in</strong>
-                  <p className="muted small">An identity provider has not been connected.</p>
+                  <p className="muted small">
+                    {demo
+                      ? 'An identity provider has not been connected in demo mode.'
+                      : 'Your identity is verified by Supabase. Google requires its provider configuration.'}
+                  </p>
                 </div>
-                <span className="status-pill paused">Not connected</span>
+                <span className="status-pill paused">
+                  {demo ? 'Demo mode' : 'Verified account'}
+                </span>
               </div>
+              {!demo && (
+                <>
+                  <p className="fine-print">Account ID: {session.user.id}</p>
+                  <Mfa />
+                </>
+              )}
               <div className="setting-row">
                 <div>
                   <strong>Time zone</strong>
@@ -1614,7 +1855,11 @@ export default function Atlas({
               <div className="setting-row">
                 <div>
                   <strong>Sign out</strong>
-                  <p className="muted small">A new demo session creates a separate profile.</p>
+                  <p className="muted small">
+                    {demo
+                      ? 'A new demo session creates a separate profile.'
+                      : 'You can sign back in with the same email.'}
+                  </p>
                 </div>
                 <button
                   className="text-button"
@@ -1630,7 +1875,7 @@ export default function Atlas({
                 </button>
               </div>
               <details className="delete-account">
-                <summary>Delete this demo account</summary>
+                <summary>Delete this account</summary>
                 <p>
                   This permanently removes this profile, its targets, notifications, and saved
                   products.
@@ -1641,7 +1886,7 @@ export default function Atlas({
                     void perform(async () => {
                       await api('account', 'DELETE');
                       await refresh();
-                      notify('Demo account deleted.');
+                      notify('Account data deleted.');
                     })
                   }
                 >
@@ -1654,10 +1899,14 @@ export default function Atlas({
           <Empty
             icon={Settings}
             title="A little space of your own."
-            text="Start a demo profile to manage saved products and preferences."
+            text={
+              demo
+                ? 'Start a demo profile to manage saved products and preferences.'
+                : 'Sign in to manage saved products and preferences.'
+            }
             action={
               <button className="primary" onClick={() => setAuth(true)}>
-                Create demo profile
+                {demo ? 'Create demo profile' : 'Sign in'}
               </button>
             }
           />
@@ -1671,10 +1920,17 @@ export default function Atlas({
         <PageHeading
           eyebrow="BEHIND THE COMPARISON"
           title="The health of the atlas."
-          description="Read-only local operations. Source capabilities remain synthetic until live integrations are authorized and configured."
+          description={
+            demo
+              ? 'Local demo operations.'
+              : 'Private source operations. An approved account with MFA is required.'
+          }
         />
         {admin ? (
           <>
+            {!demo && (
+              <Operations state={admin} reload={async () => setAdmin(await api('admin'))} />
+            )}
             <div className="admin-stats">
               {Object.entries(admin.counts).map(([k, v]) => (
                 <div className="panel" key={k}>
@@ -1684,7 +1940,7 @@ export default function Atlas({
               ))}
               <div className="panel">
                 <span className="eyebrow">ENVIRONMENT</span>
-                <strong className="mode-label">Demo</strong>
+                <strong className="mode-label">{demo ? 'Demo' : 'Live preview'}</strong>
               </div>
             </div>
             <h2>Source connections</h2>
@@ -1694,11 +1950,13 @@ export default function Atlas({
                   <div className="section-heading">
                     <h3>{p.store}</h3>
                     <span className={`status-pill ${p.paused ? 'paused' : ''}`}>
-                      {p.paused ? 'Paused' : 'Demo adapter'}
+                      {p.paused ? 'Paused' : demo ? 'Demo adapter' : 'Retailer collection'}
                     </span>
                   </div>
                   <p className="muted">
-                    Synthetic catalog and observations. No live retailer requests.
+                    {demo
+                      ? 'Synthetic catalog and observations. No live retailer requests.'
+                      : 'Live retailer HTML collection. Failed observations never replace valid prices.'}
                   </p>
                   <div className="capabilities">
                     <span>
@@ -1715,8 +1973,9 @@ export default function Atlas({
                     </span>
                   </div>
                   <p className="fine-print">
-                    Live search, product resolution, affiliate destinations, and email content
-                    permissions are not connected.
+                    {demo
+                      ? 'Live integrations remain separate from this demo.'
+                      : 'Check source capabilities before enabling retained history and alerts. Direct purchase links have no affiliate attribution.'}
                   </p>
                 </div>
               ))}
@@ -1758,14 +2017,14 @@ export default function Atlas({
             <div className="notice">
               <ShieldCheck size={21} />
               <span>
-                Operator mutations require a server-configured ADMIN_TOKEN. The browser never
-                receives that token. Production admin identity, MFA, matching review, and provider
-                credentials are pending live infrastructure.
+                {demo
+                  ? 'Demo operator mutations require a server-configured ADMIN_TOKEN.'
+                  : 'All operator mutations require an approved Supabase identity with MFA and leave an audit record.'}
               </span>
             </div>
           </>
         ) : (
-          <p>Loading source status…</p>
+          <p role="status">{adminError || 'Loading source status…'}</p>
         )}
       </section>
     );
@@ -1787,8 +2046,10 @@ export default function Atlas({
         </div>
         {[
           [
-            'What am I seeing in this demo?',
-            'Eight synthetic catalog fixtures, illustrative artwork, and simulated prices for two familiar store names. These are not live retailer prices or purchase recommendations. The local background worker creates new synthetic observations every minute.',
+            demo ? 'What am I seeing in this demo?' : 'Where do prices come from?',
+            demo
+              ? 'Eight synthetic catalog fixtures, illustrative artwork, and simulated prices for two familiar store names. These are not live retailer prices or purchase recommendations. The local background worker creates new synthetic observations every minute.'
+              : 'Direct imported retailer pages, with recorded timestamps and source details. Missing stock and delivery information remains unknown. This development preview does not establish source permissions for a commercial tracking service.',
           ],
           [
             'How do you decide the lowest price?',
@@ -1812,11 +2073,15 @@ export default function Atlas({
           ],
           [
             'Can I paste a retailer link?',
-            'Direct Amazon.in product links and Flipkart links with a product ID are validated without making network requests. Resolving them into live catalog records requires a connected authorized source. Short links remain unsupported until redirect validation is configured.',
+            demo
+              ? 'Direct product links are validated in demo mode. Live resolution runs in the separate live catalog.'
+              : 'Sign in and paste a direct Amazon.in /dp/ link or Flipkart /p/ link. Collection errors are shown explicitly. Short links and unsupported hosts are not fetched.',
           ],
           [
             'How are purchases and affiliate links handled?',
-            'Purchases will take place at the retailer. This demo has no purchase destinations or affiliate attribution. Future commission arrangements must never influence cheapest-offer ranking.',
+            demo
+              ? 'Purchases take place at the retailer. This demo has no purchase destinations.'
+              : 'Visit the retailer using the product offer link. Price Atlas does not process orders. Direct links have no affiliate attribution, and commission never influences ranking.',
           ],
           [
             'What is needed for the live service?',

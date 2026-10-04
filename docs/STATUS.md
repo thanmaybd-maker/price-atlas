@@ -1,3 +1,7 @@
+# Latest live integration update
+
+The live scraper, PostgreSQL repository, Supabase sign-in, durable worker and Resend adapter have now been implemented. See [live setup](SCRAPING.md) and [verification evidence](LIVE-VERIFICATION.md) for current behavior and remaining release checks. The older inventory below describes the original demo and is retained as historical context.
+
 # Implementation status
 
 Reviewed 4 October 2026. This is a truthful inventory, not a claim of full blueprint acceptance.
