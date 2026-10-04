@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 import path from 'node:path';
 const config: NextConfig = {
+  distDir: '../../.next',
   devIndicators: false,
   serverExternalPackages: ['node:sqlite'],
   poweredByHeader: false,
