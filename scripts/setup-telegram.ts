@@ -48,6 +48,19 @@ if (!telegramConfigured()) {
       throw new Error(
         'Deploy the Telegram route and configure its private environment first. Expected a protected webhook (401).',
       );
+    const authenticatedProbe = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Telegram-Bot-Api-Secret-Token': process.env.TELEGRAM_WEBHOOK_SECRET!,
+      },
+      body: JSON.stringify({ update_id: 0 }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!authenticatedProbe.ok)
+      throw new Error(
+        'The hosted webhook secret does not match the local environment. Synchronize TELEGRAM_WEBHOOK_SECRET before registration.',
+      );
     await call('setWebhook', {
       url: endpoint,
       secret_token: process.env.TELEGRAM_WEBHOOK_SECRET,
