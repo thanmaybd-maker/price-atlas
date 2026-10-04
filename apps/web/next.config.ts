@@ -1,9 +1,11 @@
 import type { NextConfig } from 'next';
 import path from 'node:path';
+import { config as loadEnv } from 'dotenv';
+loadEnv({ path: path.resolve(import.meta.dirname, '../../.env'), quiet: true });
 const config: NextConfig = {
   distDir: '../../.next',
   devIndicators: false,
-  serverExternalPackages: ['node:sqlite'],
+  serverExternalPackages: ['node:sqlite', 'pg'],
   poweredByHeader: false,
   turbopack: { root: path.resolve(import.meta.dirname, '../..') },
   async headers() {

@@ -5,5 +5,5 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: true
   sharp: true
-  "@electric-sql/pglite": true
+  '@electric-sql/pglite': true
 dangerouslyAllowAllBuilds: true
