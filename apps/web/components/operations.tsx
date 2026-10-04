@@ -11,6 +11,7 @@ type State = {
   }[];
   quarantine?: { id: string; listing_id: string; reason: string }[];
   jobs?: { id: string; last_error: string; attempts: number }[];
+  telegram?: { notification_id: string; state: string; last_error: string; attempts: number }[];
   capabilities?: {
     source: string;
     history: boolean;
@@ -22,6 +23,7 @@ export function Operations({ state, reload }: { state: State; reload: () => Prom
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [duplicateRiskAccepted, setDuplicateRiskAccepted] = useState(false);
   async function action(path: string, body: unknown) {
     if (reason.trim().length < 5) {
       setMessage('Add an audit reason of at least five characters.');
@@ -144,6 +146,52 @@ export function Operations({ state, reload }: { state: State; reload: () => Prom
         ))
       ) : (
         <p>No anomalies awaiting review.</p>
+      )}
+      <h3>Telegram delivery review</h3>
+      <p>
+        Telegram may have delivered an uncertain message. Check the recipient’s chat before
+        retrying.
+      </p>
+      <label>
+        <input
+          type="checkbox"
+          checked={duplicateRiskAccepted}
+          onChange={(e) => setDuplicateRiskAccepted(e.target.checked)}
+        />{' '}
+        I checked the chat and accept the risk of a duplicate message.
+      </label>
+      {state.telegram?.length ? (
+        state.telegram.map((t) => (
+          <div className="setting-row" key={t.notification_id}>
+            <p>
+              {t.state} · {t.last_error} · {t.attempts} attempts
+            </p>
+            <button
+              className="outline-button"
+              disabled={busy || !duplicateRiskAccepted}
+              onClick={() =>
+                void action('telegram', {
+                  id: t.notification_id,
+                  decision: 'retry',
+                  duplicateRiskAccepted,
+                })
+              }
+            >
+              Retry Telegram message
+            </button>
+            <button
+              className="outline-button"
+              disabled={busy}
+              onClick={() =>
+                void action('telegram', { id: t.notification_id, decision: 'dismiss' })
+              }
+            >
+              Close without resending
+            </button>
+          </div>
+        ))
+      ) : (
+        <p>No Telegram deliveries awaiting review.</p>
       )}
       <h3>Failed collection jobs</h3>
       {state.jobs?.length ? (

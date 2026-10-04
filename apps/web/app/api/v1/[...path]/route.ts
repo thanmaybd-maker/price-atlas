@@ -8,6 +8,12 @@ import { getSourceAdapter } from '../../../../../../packages/providers/index';
 import { reserveSource } from '../../../../../../packages/jobs/index';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import { verifyUnsubscribe } from '../../../../../../packages/notifications/index';
+import {
+  telegramStatus,
+  createTelegramLink,
+  disconnectTelegram,
+  reviewTelegramDelivery,
+} from '../../../../../../packages/notifications/telegram';
 import { parseRetailUrl, rank } from '@domain/index';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 export const runtime = 'nodejs';
@@ -197,6 +203,26 @@ async function handler(req: NextRequest) {
         await retryJob(b.id, user!.id, b.reason);
         return json({ ok: true });
       }
+      if (path[1] === 'telegram' && data.isLive()) {
+        const b = z
+          .object({
+            id: z.string().uuid(),
+            decision: z.enum(['retry', 'dismiss']),
+            reason: z.string().trim().min(5).max(300),
+            duplicateRiskAccepted: z.boolean().optional(),
+          })
+          .parse(await req.json());
+        if (b.decision === 'retry' && !b.duplicateRiskAccepted)
+          return json(
+            {
+              error:
+                'Confirm that you checked the chat and accept the risk of a duplicate message.',
+            },
+            400,
+          );
+        await reviewTelegramDelivery(b.id, b.decision, user!.id, b.reason);
+        return json({ ok: true });
+      }
       if (path[1] === 'match' && data.isLive()) {
         const b = z
           .object({
@@ -261,7 +287,33 @@ async function handler(req: NextRequest) {
       return json({ ok: true });
     }
     if (!user)
-      return json({ error: 'Start a demo session to save products and targets.', requestId }, 401);
+      return json(
+        {
+          error: data.isLive()
+            ? 'Sign in to save products, connect alerts, and manage targets.'
+            : 'Start a demo session to save products and targets.',
+          requestId,
+        },
+        401,
+      );
+    if (path[0] === 'telegram' && data.isLive()) {
+      if (req.method === 'GET') return json(await telegramStatus(user.id));
+      if (req.method === 'POST') {
+        if (!(await telegramStatus(user.id)).configured)
+          return json(
+            {
+              error:
+                'Telegram is awaiting bot setup. Try again once the operator has configured it.',
+            },
+            503,
+          );
+        return json(await createTelegramLink(user.id));
+      }
+      if (req.method === 'DELETE') {
+        await disconnectTelegram(user.id);
+        return json({ ok: true });
+      }
+    }
     if (path[0] === 'mfa' && req.method === 'POST' && data.isLive()) {
       const b = z
         .object({

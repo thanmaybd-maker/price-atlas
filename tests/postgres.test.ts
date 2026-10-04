@@ -7,6 +7,14 @@ import * as store from '../packages/database/postgres';
 import { demoPolicy } from '../packages/providers/index';
 import { parseProductHtml } from '../packages/providers/scraper';
 import { deliverNotifications, reserveSource } from '../packages/jobs/index';
+import {
+  createTelegramLink,
+  handleTelegramUpdate,
+  telegramStatus,
+  disconnectTelegram,
+  deliverTelegram,
+  TelegramError,
+} from '../packages/notifications/telegram';
 const db = new PGlite();
 const alice = randomUUID(),
   bob = randomUUID();
@@ -17,6 +25,12 @@ beforeAll(async () => {
   await db.exec(
     await readFile(
       new URL('../packages/database/migrations/001_live.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/002_telegram.sql', import.meta.url),
       'utf8',
     ),
   );
@@ -130,6 +144,157 @@ it('sends to an opted-in verified destination once and records the provider rece
   });
   expect(sends).toBe(1);
   expect((await store.personal(alice)).notifications[0].email_state).toBe('sent');
+});
+it('links Telegram with a single-use hashed token and keeps connection status private', async () => {
+  process.env.TELEGRAM_BOT_TOKEN = 'isolated-test-token';
+  process.env.TELEGRAM_BOT_USERNAME = 'atlas_test_bot';
+  process.env.TELEGRAM_WEBHOOK_SECRET = 'isolated-test-webhook-secret-at-least-32-chars';
+  const link = await createTelegramLink(alice),
+    token = new URL(link.url).searchParams.get('start')!;
+  expect(
+    (await db.query<{ token_hash: string }>('SELECT token_hash FROM atlas.telegram_links')).rows[0]
+      .token_hash,
+  ).not.toBe(token);
+  const update = {
+    update_id: 1,
+    message: {
+      text: `/start ${token}`,
+      from: { id: 123, is_bot: false },
+      chat: { id: 123, type: 'private' },
+    },
+  };
+  expect((await handleTelegramUpdate(update))?.text).toContain('Connected');
+  expect(await telegramStatus(alice)).toMatchObject({ connected: true });
+  expect(await telegramStatus(bob)).toMatchObject({ connected: false });
+  expect(await handleTelegramUpdate(update)).toBeNull();
+  expect((await handleTelegramUpdate({ ...update, update_id: 2 }))?.text).toContain('already used');
+});
+it('refuses group linking, expired links and silent transfer of another account’s chat', async () => {
+  let link = await createTelegramLink(bob),
+    token = new URL(link.url).searchParams.get('start');
+  const update = {
+    update_id: 3,
+    message: {
+      text: `/start ${token}`,
+      from: { id: 123, is_bot: false },
+      chat: { id: 123, type: 'group' },
+    },
+  };
+  expect(await handleTelegramUpdate(update)).toBeNull();
+  expect(
+    (
+      await handleTelegramUpdate({
+        ...update,
+        message: { ...update.message, chat: { id: 123, type: 'private' } },
+      })
+    )?.text,
+  ).toContain('another');
+  await db.query('UPDATE atlas.telegram_links SET expires_at=1 WHERE user_id=$1', [bob]);
+  expect(
+    (
+      await handleTelegramUpdate({
+        ...update,
+        update_id: 4,
+        message: {
+          ...update.message,
+          chat: { id: 456, type: 'private' },
+          from: { id: 456, is_bot: false },
+        },
+      })
+    )?.text,
+  ).toContain('expired');
+  expect(await telegramStatus(bob)).toMatchObject({ connected: false });
+});
+it('delivers a new Telegram episode once without backfilling pre-connection alerts', async () => {
+  let calls = 0;
+  await deliverTelegram(async () => {
+    calls++;
+    return 'old-should-not-send';
+  });
+  expect(calls).toBe(0);
+  const rule = (await store.personal(alice)).rules.find((r) => r.id === ruleId)!;
+  await store.saveRule(alice, { ...rule, target: 2700000 });
+  await deliverTelegram(async (chat, text) => {
+    calls++;
+    expect(chat).toBe('123');
+    expect(text).toContain('Test Phone');
+    return 'telegram-1';
+  });
+  await deliverTelegram(async () => {
+    calls++;
+    return 'duplicate';
+  });
+  expect(calls).toBe(1);
+  expect(
+    (await db.query<{ state: string }>('SELECT state FROM atlas.telegram_deliveries')).rows[0]
+      .state,
+  ).toBe('sent');
+});
+it('holds ambiguous Telegram sends for review instead of retrying duplicate DMs', async () => {
+  const rule = (await store.personal(alice)).rules.find((r) => r.id === ruleId)!;
+  await store.saveRule(alice, { ...rule, target: 2800000 });
+  let calls = 0;
+  await deliverTelegram(async () => {
+    calls++;
+    throw new TelegramError('ambiguous');
+  });
+  await deliverTelegram(async () => {
+    calls++;
+    return 'duplicate';
+  });
+  expect(calls).toBe(1);
+  expect(
+    (
+      await db.query<{ state: string }>(
+        "SELECT state FROM atlas.telegram_deliveries WHERE last_error='ambiguous'",
+      )
+    ).rows[0].state,
+  ).toBe('review');
+});
+it('respects Telegram retry-after and stops sending to blocked chats', async () => {
+  const rule = (await store.personal(alice)).rules.find((r) => r.id === ruleId)!;
+  await store.saveRule(alice, { ...rule, target: 2900000 });
+  await deliverTelegram(async () => {
+    throw new TelegramError('rate_limited', 120);
+  });
+  const row = (
+    await db.query<{ next_attempt: number; state: string }>(
+      "SELECT next_attempt,state FROM atlas.telegram_deliveries WHERE last_error='rate_limited'",
+    )
+  ).rows[0];
+  expect(row.state).toBe('pending');
+  expect(Number(row.next_attempt)).toBeGreaterThan(Date.now() + 110000);
+  await db.query("UPDATE atlas.telegram_deliveries SET next_attempt=0 WHERE state='pending'");
+  await deliverTelegram(async () => {
+    throw new TelegramError('blocked');
+  });
+  expect(await telegramStatus(alice)).toMatchObject({ connected: false });
+});
+it('disconnect and /stop remove only the linked account and invalidate pending link tokens', async () => {
+  const link = await createTelegramLink(bob),
+    token = new URL(link.url).searchParams.get('start');
+  await handleTelegramUpdate({
+    update_id: 5,
+    message: {
+      text: `/start ${token}`,
+      from: { id: 456, is_bot: false },
+      chat: { id: 456, type: 'private' },
+    },
+  });
+  await disconnectTelegram(alice);
+  expect(await telegramStatus(bob)).toMatchObject({ connected: true });
+  await handleTelegramUpdate({
+    update_id: 6,
+    message: {
+      text: '/stop',
+      from: { id: 456, is_bot: false },
+      chat: { id: 456, type: 'private' },
+    },
+  });
+  expect(await telegramStatus(bob)).toMatchObject({ connected: false });
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_BOT_USERNAME;
+  delete process.env.TELEGRAM_WEBHOOK_SECRET;
 });
 it('quarantines a major price anomaly without projecting or triggering it', async () => {
   const before = (await store.offers(productId))[0];

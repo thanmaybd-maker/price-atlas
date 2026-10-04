@@ -26,7 +26,8 @@
     "scrape:import": "tsx scripts/import-product.ts",
     "check:email": "tsx scripts/check-email.ts",
     "test:live-api": "node scripts/smoke-live-api.mjs",
-    "check:cloud-isolation": "tsx scripts/check-cloud-isolation.ts"
+    "check:cloud-isolation": "tsx scripts/check-cloud-isolation.ts",
+    "telegram:setup": "tsx scripts/setup-telegram.ts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
