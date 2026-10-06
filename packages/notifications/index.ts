@@ -13,6 +13,7 @@ export type AlertMessage = {
   store: string;
   observedAt: number;
   createdAt: number;
+  test?: boolean;
 };
 export function unsubscribeToken(userId: string, expires: number) {
   const secret = process.env.UNSUBSCRIBE_SECRET;
@@ -59,8 +60,13 @@ export class ResendNotifications implements NotificationProvider {
       {
         from: process.env.EMAIL_FROM,
         to: message.email,
-        subject: 'Your Price Atlas target is here',
-        text: alertText(message),
+        subject: message.test
+          ? 'TEST ALERT — simulated Price Atlas drop'
+          : 'Your Price Atlas target is here',
+        text:
+          (message.test
+            ? 'TEST ALERT — simulated price drop. No real price, target or history has been changed.\n\n'
+            : '') + alertText(message),
       },
       { idempotencyKey: `atlas/${message.eventKey}` },
     );

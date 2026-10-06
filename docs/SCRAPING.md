@@ -1,69 +1,39 @@
-# Live collection and setup
+# Live collection
 
-The local app now runs in live mode. Its PostgreSQL catalog contains real imports, separate from the SQLite demonstration catalog. The existing Vercel deployment was checked and still reports **demo** mode; local `.env` changes do not update Vercel's environment settings.
+Public signup is supported. Supabase provides verified accounts and PostgreSQL persistence; the public site uses live mode. ScrapingBee premium India requests retrieve retailer HTML. Bright Data and direct HTTP remain configurable alternatives. See [ScrapingBee documentation](https://www.scrapingbee.com/documentation/) for credit costs. Paid tiers are not automatically selected.
 
-## Collection choice
-
-Pricewise's [scraper implementation](https://github.com/adrianhajdin/pricewise/tree/main/lib/scraper) separates HTML retrieval, Cheerio extraction, persistence and scheduled refreshes. This app follows that separation with stronger identity, eligibility and retry checks. It does not copy Pricewise's implementation.
-
-| Transport                                                                                             | Use here                                                                           | Validation                                                                                                                                     |
-| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Direct HTTP with ordinary browser headers                                                             | Development checks; no paid account required                                       | Both retailer examples below returned usable pages during this session. This is not a reliability guarantee.                                   |
-| [ScrapingBee HTML API](https://www.scrapingbee.com/documentation/)                                    | Fixed API origin, bearer authentication, explicit JavaScript/premium/India options | Request construction tested with fixtures. No provider key is currently available. Rendering and premium requests have different credit costs. |
-| [Bright Data Web Unlocker](https://docs.brightdata.com/products/web-unlocker/send-your-first-request) | Fixed `/request` endpoint, zone, bearer key and raw HTML                           | Request construction tested with fixtures. No provider key/zone is currently available.                                                        |
-
-Start with direct mode for development. Choose a proxy only after testing its India coverage and cost on your catalog. The app never automatically switches into a more expensive tier or provider.
-
-Amazon uses primary price containers and `.a-offscreen`/`.priceToPay` fallbacks, `#productTitle`, explicit availability/purchase controls, selected image metadata and specification rows. Recommendations and struck-out MRP are excluded. Flipkart supports `Nx9bqj`, `_30jeq3`, `VU-ZEz`/older headings and a validated primary Product JSON-LD fallback. The currently observed Flipkart layout needed that structured fallback. Mandatory Protect Promise fees are added separately; conditional bank discounts are not subtracted.
-
-Missing shipping, stock, condition or price is never replaced with an optimistic value. Wrong IDs, conflicting structured/rendered prices, verification pages, unsupported redirects, non-HTML responses and oversized pages fail without saving a guessed price. A confirmed unavailable page clears an older in-stock projection.
-
-## Local commands
-
-```powershell
-pnpm migrate
-pnpm dev
-# In a second terminal, from the same repository:
-pnpm worker
-```
-
-The worker reads `.env`, schedules due listings in PostgreSQL, dispatches BullMQ jobs over TCP Redis, reserves per-source quotas and retries transient failures. Expired database leases are recovered even when Redis loses a queued job. Upstash currently reports an eviction policy different from BullMQ's recommended `noeviction`; review this in the Redis console before production operation.
-
-```powershell
-pnpm scrape:check https://www.amazon.in/dp/B09XS7JWHH
-pnpm scrape:import https://www.amazon.in/dp/B09XS7JWHH
-pnpm scrape:check https://www.flipkart.com/google-pixel-9-wintergreen-256-gb/p/itmcead5185c21a8
-pnpm scrape:import https://www.flipkart.com/google-pixel-9-wintergreen-256-gb/p/itmcead5185c21a8
-pnpm check:services
-pnpm check:email
-pnpm test:live-api
-```
-
-These example URLs were validated on 4 October 2026; their prices are observations, not guarantees of current checkout totals. The CLI import command is an operator tool. Browser imports require a verified account and rate limits.
-
-## Accounts and email
-
-1. In Supabase Auth URL Configuration, add the Vercel origin as Site URL, plus `https://price-atlas-ashen.vercel.app/auth/callback` and `http://127.0.0.1:3000/auth/callback` as allowed redirect URLs. Configure Google separately if you want that button to work.
-2. Email sign-in uses Supabase's PKCE flow. Open the link in the browser that requested it. Custom email templates using token hashes should target `/auth/confirm?token_hash={{ .TokenHash }}&type=email`.
-3. Resend's sandbox sender is `onboarding@resend.dev`. It supports Resend's reserved simulation addresses and restricts ordinary recipients to the account's own email. A verified sending domain is required for other users. `pnpm check:email` sends only to `delivered@resend.dev`, not a personal inbox.
-4. Set `EMAIL_LINK_ORIGIN` to the HTTPS deployment URL and keep `UNSUBSCRIBE_SECRET` consistent across web and worker. An unsubscribe link opens a confirmation page; a link scanner cannot unsubscribe someone merely by fetching it.
-5. Users explicitly enable email alerts in Settings. Sends recheck the verified destination, preferences, rule version, eligible fresh price and source capability. Stable Resend idempotency keys prevent duplicate retry sends within its [24-hour retention window](https://resend.com/docs/dashboard/emails/idempotency-keys). Older ambiguous sends enter operator review.
-6. Configure Resend's signed webhook at `/api/webhooks/resend` and put its signing secret in `RESEND_WEBHOOK_SECRET`. Bounce/complaint events suppress future email.
+Amazon extraction uses primary price containers, title, availability, purchase controls, image metadata and specification rows. Flipkart supports CSS price selectors and a unique primary Product JSON-LD record, including a truncated heading. Script text about unrelated stock does not determine primary availability. Missing prices, delivery charges and variant details are never invented.
 
 ## Source capabilities
 
-The supplied blueprint requires source rights for historical retention and alerting. A scraper/proxy key is not evidence of those rights. The default development policy displays current imports for one hour with **history and alerts disabled**. No synthetic history is generated in live mode.
+The default `retail` policy enables current prices, 30-day history, target alerts and exact variant matching. It describes retailer-page tracking without claiming a licensed feed agreement. `SOURCE_POLICIES_JSON` can override each source using the schema in `packages/providers/index.ts`. The separate `live` feed mode requires its actual agreement reference; do not fabricate one. Search currently searches the imported catalog. Paste a direct Amazon.in or Flipkart URL to add another listing.
 
-Set `SOURCE_POLICIES_JSON` only from actual source permissions. Its shape is an object keyed by `Amazon` and `Flipkart`, with each value matching `capabilitySchema` in `packages/providers/index.ts`: `source`, `mode: "live"`, `version`, `agreementReference`, the nine capability booleans, display TTL, history retention and request quota. Do not invent an agreement reference to switch on alerts. Amazon's [India agreement](https://affiliate-program.amazon.in/help/operating/agreement) specifically addresses price tracking/alert approval for Associates participants.
+New history starts with successful observations; the application cannot reconstruct uncollected past prices. Current offers expire after one hour. Retained prices can be shown as last observed, but stale offers cannot trigger alerts or win current-price comparisons. Product metadata is retained with source evidence rather than erased merely because no current offer exists.
 
-Two store listings remain separate until decisive category attributes agree. Operators can validate an assignment in `/admin`, approve/reject price anomalies, pause sources and retry failed jobs. Approval cannot override conflicting or missing required identity fields. Set the approved Supabase user UUID in `ADMIN_USER_IDS`, then use Settings → Operator verification to establish MFA.
+## Collection budget and hosting
 
-## Deploy this version
+`SCRAPER_REQUESTS_PER_DAY` defaults to 40 across public imports and scheduled collection, enforced transactionally in PostgreSQL. Each source also permits two requests per minute. This limits requests, not provider credits: premium/rendered requests have different costs. Unwatched catalog listings refresh daily; enabled targets receive hourly checks within the budget. A worker tick logs scheduled jobs and notification dispatch outcomes.
 
-Keep the Vercel project at repository root. Use `pnpm build`; Next's output is root `.next`. Configure Vercel's environment settings with the values from your private `.env`, set `APP_MODE=live`, set `APP_ORIGIN` to the HTTPS Vercel origin, and redeploy. Never commit `.env` or place database/Redis/Resend/service-role secrets in `NEXT_PUBLIC_*` variables.
+Run `pnpm migrate`, then `pnpm worker` on a continuous host. A free Render web service can sleep. The optional `.github/workflows/collection.yml` instead uses a bounded `pnpm worker:once` scheduled collector. Add its listed secrets to GitHub Actions and set repository variable `ATLAS_SCHEDULE_ENABLED=true` to enable it. It is disabled until configured. [GitHub schedules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule) can be delayed, so they do not guarantee instant detection.
 
-Run the worker on a long-running Node 24 host/container with `pnpm worker` as its start command and the same server settings. Vercel's web deployment alone does not keep that process running. The Dockerfile can run the worker by overriding its default web command. No worker hosting account or authenticated Vercel CLI is connected to this coding session.
+## Operator commands
 
-After deployment, `/api/v1/health` must report `mode: "live"`. Test sign-in, an authenticated import, a saved target, scheduled collection, delivery, opt-out and source failure. Do not call the commercial product complete until source permissions, the sending domain, worker hosting and those end-to-end checks are resolved.
+```sh
+pnpm catalog:import
+pnpm scrape:import <direct retailer URL>
+pnpm check:services
+pnpm telegram:setup
+pnpm alerts:test <your verified account email> <product ID> [telegram|email|both]
+```
 
-The pasted credential attachment includes a database password. Rotate that password in Supabase and update the private environment settings; it has not been copied into source or this document.
+The catalog importer uses real retailer responses, paces requests and reports failures. It does not populate simulated live prices. Exact category attributes must agree before two stores share a canonical variant; missing or conflicting attributes keep listings separate.
+
+The alert test command runs locally, evaluates a simulated item-price drop and writes a separate test outbox. It respects verified account preferences and the current Telegram connection, labels messages TEST, and never writes live observations or changes saved rules. Ambiguous sends enter review rather than being blindly duplicated.
+
+## Public authentication and alerts
+
+Supabase handles login emails; Resend and Telegram handle price alerts. Configure public Google OAuth rather than testing accounts only. Configure Supabase redirect URLs for the actual deployment.
+
+Resend's `onboarding@resend.dev` sandbox restricts ordinary recipients to the Resend account owner. A verified sender domain is needed for public email delivery. Telegram does not require an email domain; it needs the matching hosted webhook secret, registered webhook, and a user's Connect Telegram → Start action. API acceptance is not proof that a person read a message.
+
+Web and worker secrets belong in private environment settings, never source or `NEXT_PUBLIC_*`. Pasted credentials should be rotated at their providers. Source controls, MFA and owner-scoped data access remain active.

@@ -19,7 +19,7 @@ Users sign in to Price Atlas, open Settings → Connect Telegram, open the gener
 3. Migration `002_telegram` is applied to this project's database. For another database, run `pnpm migrate` before deployment.
 4. Run `pnpm telegram:setup` locally. This verifies the bot username, hosted live health and protected route, then registers `/api/webhooks/telegram` with Telegram. It does not send a message to a personal inbox.
 5. Sign in to the hosted app → Settings → Connect Telegram → open the link → press Start. Settings should show Connected within 15 seconds. Send `/stop` or use Disconnect Telegram in Settings to stop bot messages.
-6. Save a target and collect a fresh eligible price. Source alert capabilities must be enabled in the source's configured policy. The default current-import development policy disables alerts; bot configuration does not change that policy. See [source configuration](./SCRAPING.md#source-capabilities).
+6. Save a target and collect a fresh eligible price. Retailer tracking now enables history, alerts and exact matching by default. Explicit source policy overrides can still turn those features off. See [source configuration](./SCRAPING.md#source-capabilities).
 
 ## What is implemented
 

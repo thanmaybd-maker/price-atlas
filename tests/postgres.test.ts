@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import * as store from '../packages/database/postgres';
 import { demoPolicy } from '../packages/providers/index';
+import { livePolicy } from '../packages/providers/live';
+import { deliverTestAlerts } from '../packages/notifications/test-alerts';
 import { parseProductHtml } from '../packages/providers/scraper';
 import { deliverNotifications, reserveSource } from '../packages/jobs/index';
 import {
@@ -42,6 +44,18 @@ beforeAll(async () => {
     );
     return { rows: r.rows, rowCount: r.affectedRows ?? r.rows.length };
   };
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/003_collection_budget.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/004_test_alerts.sql', import.meta.url),
+      'utf8',
+    ),
+  );
   store.useTestDatabase({
     query,
     connect: async () => ({ query, release: () => {} }),
@@ -354,7 +368,16 @@ it('reserves a source quota transactionally', async () => {
 });
 it('revoked source capabilities immediately stop historical display and alert eligibility', async () => {
   const saved = process.env.SOURCE_POLICIES_JSON;
-  delete process.env.SOURCE_POLICIES_JSON;
+  process.env.SOURCE_POLICIES_JSON = JSON.stringify({
+    Amazon: {
+      ...demoPolicy('Amazon'),
+      mode: 'retail',
+      history: false,
+      alerts: false,
+      matching: false,
+      agreementReference: null,
+    },
+  });
   expect(await store.history(productId)).toHaveLength(0);
   expect((await store.offers(productId))[0].alertsAllowed).toBe(false);
   process.env.SOURCE_POLICIES_JSON = saved;
@@ -381,4 +404,109 @@ it('uses deletion tombstones to prevent restored identities from resurrecting pe
   await expect(
     store.syncAccount({ id: alice, email: 'alice@example.com', email_confirmed_at: 'now' }),
   ).rejects.toThrow('deleted');
+});
+it('enables retailer tracking without pretending to hold a licensed feed agreement', () => {
+  const saved = process.env.SOURCE_POLICIES_JSON;
+  delete process.env.SOURCE_POLICIES_JSON;
+  expect(livePolicy('Amazon')).toMatchObject({
+    mode: 'retail',
+    history: true,
+    alerts: true,
+    matching: true,
+    agreementReference: null,
+  });
+  process.env.SOURCE_POLICIES_JSON = saved;
+});
+it('shares a canonical product only when exact category attributes agree', async () => {
+  const base = {
+    ...parseProductHtml(html(), 'https://www.amazon.in/dp/B000000010'),
+    title: 'Sony WH-1000XM5 Bluetooth Headphones',
+    attributes: {
+      Brand: 'Sony',
+      'Model Number': 'WH-1000XM5',
+      Color: 'Black',
+      Connectivity: 'Bluetooth',
+    },
+  };
+  const a = await store.importScraped(base, 'match-amazon');
+  const b = await store.importScraped(
+    {
+      ...base,
+      store: 'Flipkart',
+      externalId: 'ACC000000010',
+      url: 'https://www.flipkart.com/headphones/p/itm123456789abc?pid=ACC000000010',
+    },
+    'match-flipkart',
+  );
+  expect(b.productId).toBe(a.productId);
+  expect(await store.offers(a.productId)).toHaveLength(2);
+  const different = await store.importScraped(
+    {
+      ...base,
+      store: 'Flipkart',
+      externalId: 'ACC000000011',
+      attributes: { ...base.attributes, Color: 'Silver' },
+    },
+    'different-color',
+  );
+  expect(different.productId).not.toBe(a.productId);
+  const incomplete = await store.importScraped(
+    {
+      ...base,
+      store: 'Flipkart',
+      externalId: 'ACC000000012',
+      attributes: { Brand: 'Sony', 'Model Number': 'WH-1000XM5' },
+    },
+    'missing-fields',
+  );
+  expect(incomplete.productId).not.toBe(a.productId);
+});
+it('keeps simulated alerts out of live history and holds uncertain sends for review', async () => {
+  const before = (await db.query('SELECT count(*) AS n FROM atlas.observations')).rows[0];
+  await store.preferences(bob, true, true);
+  const id = randomUUID(),
+    message = {
+      id,
+      eventKey: id,
+      userId: bob,
+      email: 'bob@example.com',
+      productId,
+      title: 'Fixture',
+      price: 10000,
+      target: 11000,
+      store: 'Amazon',
+      observedAt: Date.now(),
+      createdAt: Date.now(),
+    };
+  await db.query(
+    "INSERT INTO atlas.test_alerts(id,user_id,channel,data,created_at) VALUES($1,$2,'email',$3,$4)",
+    [id, bob, JSON.stringify({ message }), Date.now()],
+  );
+  let sends = 0;
+  await deliverTestAlerts({
+    send: async (m) => {
+      expect(m.test).toBe(true);
+      sends++;
+      throw new Error('Ambiguous');
+    },
+  });
+  await deliverTestAlerts({
+    send: async () => {
+      sends++;
+      return { id: 'duplicate' };
+    },
+  });
+  expect(sends).toBe(1);
+  expect(
+    (await db.query('SELECT state FROM atlas.test_alerts WHERE id=$1', [id])).rows[0].state,
+  ).toBe('review');
+  expect((await db.query('SELECT count(*) AS n FROM atlas.observations')).rows[0]).toEqual(before);
+});
+it('enforces the shared daily quota independently of each retailer minute quota', async () => {
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  process.env.SCRAPER_REQUESTS_PER_DAY = '1';
+  await db.query('DELETE FROM atlas.collection_budget');
+  await reserveSource('Amazon');
+  await expect(reserveSource('Flipkart')).rejects.toMatchObject({ code: 'daily_budget' });
+  delete process.env.SCRAPER_REQUESTS_PER_DAY;
 });

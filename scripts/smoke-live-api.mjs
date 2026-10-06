@@ -46,8 +46,6 @@ if (search.body.products.length) {
   const product = await request(`products/${search.body.products[0].id}`);
   assert.equal(product.status, 200);
   assert.equal(product.body.mode, 'live');
-  assert(
-    product.body.offers.every((o) => o.itemPrice > 0 && !o.historyAllowed && !o.alertsAllowed),
-  );
+  assert(product.body.offers.every((o) => o.itemPrice > 0 && o.historyAllowed && o.alertsAllowed));
 }
 console.log('Live API smoke: 10 checks passed. No users created and no messages sent.');

@@ -12,6 +12,27 @@ const amazonHtml = (
 ) =>
   `<html><title>Phone</title><body><input id="ASIN" value="B000000001"><span id="productTitle">Test phone 128 GB</span>${price}<div id="availability">In stock</div><input id="add-to-cart-button"><div id="deliveryBlockMessage">FREE delivery</div><img id="landingImage" data-a-dynamic-image='{"https://m.media-amazon.com/images/small.jpg":[200,200],"https://m.media-amazon.com/images/large.jpg":[1000,1000]}'><table id="productOverview_feature_div"><tr><td>Brand</td><td>Test</td></tr></table></body></html>`;
 describe('retailer parsing without inventing price or availability', () => {
+  it('resolves a truncated primary heading from one matching Product, excluding script stock text', () => {
+    const title = 'SONY WH-1000XM5 Wireless Noise Cancellation with AI Noise Reduction Bluetooth';
+    const page =
+      '<h1>SONY WH-1000XM5 Wireless Noise Cancellation with AI Noise Reducti...more</h1><script>const related="out of stock";</script><script type="application/ld+json">' +
+      JSON.stringify({
+        '@type': 'Product',
+        name: title,
+        sku: 'ACCHGBCB34ATPVM7',
+        offers: {
+          '@type': 'Offer',
+          price: 27990,
+          priceCurrency: 'INR',
+          availability: 'https://schema.org/InStock',
+          itemCondition: 'https://schema.org/NewCondition',
+        },
+      }) +
+      '</script>';
+    expect(
+      parseProductHtml(page, 'https://www.flipkart.com/sony-headphone/p/itm7f07dcc8df256'),
+    ).toMatchObject({ title, itemPrice: 2799000, stock: true, externalId: 'ACCHGBCB34ATPVM7' });
+  });
   it('supports the observed Flipkart structured layout, SKU identity and mandatory fee', () => {
     const page =
       '<h1>Google Pixel 9 (Wintergreen, 256 GB) (12 GB RAM)</h1><div>+₹299 Protect Promise Fee</div><script type="application/ld+json">' +
