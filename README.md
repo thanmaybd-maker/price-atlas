@@ -2,7 +2,7 @@
 
 Price Atlas imports Amazon.in and Flipkart product pages, stores observed prices in PostgreSQL, and supports verified Supabase accounts, saved products, target rules, and email/Telegram alert delivery. The public web app is [price-atlas-ashen.vercel.app](https://price-atlas-ashen.vercel.app); its live API health and ten smoke checks are verified.
 
-Start with [live scraper setup](docs/SCRAPING.md), [Telegram activation](docs/TELEGRAM.md), and [verification results](docs/LIVE-VERIFICATION.md). Source policies control history and alert eligibility. The default development policy supports current imports; history and alerts remain disabled until the source policy permits them. Bot credentials alone do not enable source alerts.
+Start with [live scraper setup](docs/SCRAPING.md), [Telegram activation](docs/TELEGRAM.md), and [verification results](docs/LIVE-VERIFICATION.md). Public signup is supported. Retailer tracking enables 30-day observed history, alerts and exact matching by default; an explicit policy override can disable them. No historical prices are invented.
 
 ## Run locally
 
@@ -49,7 +49,13 @@ pnpm test:live-api
 pnpm telegram:setup
 ```
 
-106 tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens and Telegram linking/delivery. Telegram setup uses private bot credentials to register the hosted webhook; it does not send test messages to personal inboxes. Real chat linking and human delivery still need end-to-end verification after cloud bot settings are applied.
+111 tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens, Telegram linking/delivery, daily budgeting, exact store matching and isolated test alerts. Telegram setup checks the hosted secret before registering the webhook.
+
+`pnpm catalog:import` imports curated retailer URLs with source pacing. `pnpm alerts:test <your verified account email> <product ID> [telegram|email|both]` evaluates a simulated drop and uses a separate test delivery outbox. Messages are labelled TEST; real rules, prices and history stay untouched. Run this operator command locally.
+
+The shared daily request limit defaults to 40 (`SCRAPER_REQUESTS_PER_DAY`). Unwatched catalog listings refresh daily; enabled targets refresh hourly, subject to that budget and retailer availability. Set a target's item-price basis when shipping is unknown. Premium proxy requests consume provider credits even when parsing cannot use the response.
+
+An optional GitHub Actions collector runs every 15 minutes without relying on a sleeping web service. Add server secrets under repository Settings → Secrets and variables → Actions, then set `ATLAS_SCHEDULE_ENABLED=true`. See `.github/workflows/collection.yml` for required settings. It is disabled until configured; schedules can be delayed.
 
 ## Code map
 

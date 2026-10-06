@@ -1,0 +1,36 @@
+name: Scheduled price checks
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: price-collection
+  cancel-in-progress: false
+jobs:
+  collect:
+    if: vars.ATLAS_SCHEDULE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_MODE: live
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SCRAPINGBEE_API_KEY: ${{ secrets.SCRAPINGBEE_API_KEY }}
+      SCRAPER_PROVIDER: scrapingbee
+      SCRAPER_PREMIUM_PROXY: 'true'
+      SCRAPER_REQUESTS_PER_DAY: ${{ vars.SCRAPER_REQUESTS_PER_DAY || '40' }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      EMAIL_FROM: ${{ vars.EMAIL_FROM || 'onboarding@resend.dev' }}
+      EMAIL_LINK_ORIGIN: https://price-atlas-ashen.vercel.app
+      UNSUBSCRIBE_SECRET: ${{ secrets.UNSUBSCRIBE_SECRET }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm worker:once

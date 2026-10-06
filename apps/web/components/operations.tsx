@@ -74,7 +74,8 @@ export function Operations({ state, reload }: { state: State; reload: () => Prom
         <p key={p.source}>
           {p.source}: history {p.history ? 'enabled' : 'disabled'} · alerts{' '}
           {p.alerts ? 'enabled' : 'disabled'} ·{' '}
-          {p.agreementReference || 'source permissions unverified'}
+          {p.agreementReference ||
+            (p.mode === 'retail' ? 'Retailer-page tracking' : 'source permissions unverified')}
         </p>
       ))}
       <h3>Listing matches</h3>

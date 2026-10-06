@@ -7,7 +7,7 @@ export const capabilitySchema = z
   .object({
     version: z.string().min(1),
     source: z.enum(['Amazon', 'Flipkart']),
-    mode: z.enum(['demo', 'live']),
+    mode: z.enum(['demo', 'live', 'retail']),
     search: z.boolean(),
     resolveLink: z.boolean(),
     currentPrices: z.boolean(),
@@ -21,7 +21,7 @@ export const capabilitySchema = z
     requestsPerMinute: z.number().int().positive(),
     agreementReference: z.string().nullable(),
   })
-  .refine((p) => p.mode === 'demo' || !!p.agreementReference, {
+  .refine((p) => p.mode !== 'live' || !!p.agreementReference, {
     message: 'A live source requires a recorded agreement reference.',
   });
 export type SourcePolicy = z.infer<typeof capabilitySchema>;

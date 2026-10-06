@@ -216,26 +216,52 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
     // Serialize same-listing imports so simultaneous browser submissions dedupe.
     await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [id]);
     const prior = (await c.query('SELECT * FROM atlas.listings WHERE id=$1', [id])).rows[0];
-    const productId: string = prior?.product_id || id;
+    const category = categoryFor(scraped.title, scraped.attributes);
+    const attributes = {
+      ...normalizedAttributes(scraped.attributes),
+      Condition: scraped.condition,
+    };
+    let productId: string = prior?.product_id || id;
+    if (
+      !prior &&
+      policy.matching &&
+      livePolicy(scraped.store === 'Amazon' ? 'Flipkart' : 'Amazon').matching &&
+      scraped.condition === 'new'
+    ) {
+      // Serialize candidate selection so concurrent store imports cannot split one variant.
+      await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`match:${category}`]);
+      const candidates = (
+        await c.query(
+          "SELECT p.id,p.data FROM atlas.products p WHERE p.data->>'category'=$1 AND EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=p.id AND l.store<>$2 AND l.match_state='accepted')",
+          [category, scraped.store],
+        )
+      ).rows;
+      const matches = candidates.filter(
+        (p) =>
+          p.data.attributes?.Condition === 'new' &&
+          compareAttributes(category, p.data.attributes, attributes).decision === 'accepted',
+      );
+      if (matches.length === 1) productId = matches[0].id;
+    }
     const product: Product = {
       id: productId,
       slug: id,
       name: scraped.title,
       brand: scraped.attributes.Brand || scraped.attributes['Brand Name'] || 'Unknown brand',
-      category: categoryFor(scraped.title, scraped.attributes),
+      category,
       color: scraped.attributes.Colour || scraped.attributes.Color || 'Not supplied',
       subtitle:
         scraped.attributes['Model Name'] ||
         `${scraped.store} listing · variant details from source`,
       description:
         'Imported retailer listing. Offers are comparable only after exact variant matching.',
-      attributes: normalizedAttributes(scraped.attributes),
+      attributes,
       basePrice: scraped.itemPrice || 0,
       accent: '#047857',
       imageUrl: scraped.imageUrl || undefined,
       sourceKind: 'live',
     };
-    if (!prior || productId === id)
+    if (productId === id)
       await c.query(
         'INSERT INTO atlas.products VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
         [productId, id, product, Date.now()],
@@ -253,7 +279,7 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
           title: scraped.title,
           parserVersion: scraped.parserVersion,
         },
-        Date.now() + Number(process.env.COLLECTION_INTERVAL_MINUTES || 60) * 60000,
+        Date.now() + Number(process.env.CATALOG_INTERVAL_MINUTES || 1440) * 60000,
         Date.now(),
       ],
     );
@@ -523,7 +549,7 @@ export async function collect(runKey = `live-${Math.floor(Date.now() / 60000)}`)
       [runKey, now],
     );
     const due = await c.query(
-      'SELECT l.id,l.url FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE l.next_check<=$1 AND s.paused=0 ORDER BY l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED',
+      "SELECT l.id,l.url,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean) AS tracked FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE l.next_check<=$1 AND s.paused=0 ORDER BY tracked DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
       [now],
     );
     for (const l of due.rows) {
@@ -532,7 +558,13 @@ export async function collect(runKey = `live-${Math.floor(Date.now() / 60000)}`)
         [observationKey(l.id, runKey), { listingId: l.id, url: l.url, runKey }, now],
       );
       await c.query('UPDATE atlas.listings SET next_check=$1 WHERE id=$2', [
-        now + Number(process.env.COLLECTION_INTERVAL_MINUTES || 60) * 60000,
+        now +
+          Number(
+            l.tracked
+              ? process.env.COLLECTION_INTERVAL_MINUTES || 60
+              : process.env.CATALOG_INTERVAL_MINUTES || 1440,
+          ) *
+            60000,
         l.id,
       ]);
     }
@@ -598,13 +630,12 @@ export async function maintenance() {
       );
       await c.query(
         "UPDATE atlas.listings SET evidence='{}'::jsonb WHERE store=$1 AND last_success<$2",
-        [store, Date.now() - policy.displayTtlSeconds * 1000],
+        [store, cutoff],
       );
     }
     await c.query('DELETE FROM atlas.observations WHERE expires_at<$1', [Date.now()]);
     await c.query(
-      "UPDATE atlas.products SET data=(data-'imageUrl'-'attributes'-'description') || jsonb_build_object('name','Saved product · source data expired','attributes','{}'::jsonb,'description','Source metadata expired. Awaiting a successful refresh.','subtitle','Source data expired') WHERE NOT EXISTS(SELECT 1 FROM atlas.current_offers c JOIN atlas.observations o ON o.id=c.observation_id WHERE o.product_id=atlas.products.id AND (o.data->>'validUntil')::bigint>$1)",
-      [Date.now()],
+      "UPDATE atlas.products SET data=(data-'imageUrl'-'attributes'-'description') || jsonb_build_object('name','Saved product · source data expired','attributes','{}'::jsonb,'description','Source metadata expired. Awaiting a successful refresh.','subtitle','Source data expired') WHERE NOT EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=atlas.products.id AND l.evidence<>'{}'::jsonb)",
     );
     await c.query(
       "UPDATE atlas.jobs SET state='pending',lease_until=NULL WHERE state='running' AND lease_until<$1",

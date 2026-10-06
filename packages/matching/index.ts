@@ -11,6 +11,7 @@ const aliases: Record<string, string> = {
   brand: 'Brand',
   manufacturer: 'Brand',
   'model number': 'Model Number',
+  'model id': 'Model Number',
   'item model number': 'Model Number',
   model: 'Model Number',
   'model name': 'Model Name',
@@ -21,6 +22,15 @@ const aliases: Record<string, string> = {
   'internal storage': 'Storage',
   'storage capacity': 'Storage',
   'ram capacity': 'RAM',
+  ram: 'RAM',
+  'ssd capacity': 'Storage',
+  'hard disk size': 'Storage',
+  'processor name': 'Processor',
+  'processor type': 'Processor',
+  'cpu model': 'Processor',
+  'graphic processor': 'Graphics',
+  'graphics card description': 'Graphics',
+  'screen resolution': 'Resolution',
   'connectivity technology': 'Connectivity',
   'screen size': 'Display',
   'display size': 'Display',
@@ -30,7 +40,7 @@ const aliases: Record<string, string> = {
 export function normalizedAttributes(input: Record<string, string>) {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(input))
-    out[aliases[key.toLowerCase().trim()] || key] = value;
+    out[aliases[key.toLowerCase().trim()] || key] = value.replace(/[‎‏]/g, '').trim();
   return out;
 }
 export function compareAttributes(
@@ -38,11 +48,25 @@ export function compareAttributes(
   a: Record<string, string>,
   b: Record<string, string>,
 ) {
-  return exactMatch(normalizedAttributes(a), normalizedAttributes(b), categoryRegistry[category]);
+  const first = normalizedAttributes(a),
+    second = normalizedAttributes(b);
+  // Apple retail part numbers encode the exact storage/color/regional SKU.
+  // RAM is not consistently disclosed on Apple's iPhone retailer pages.
+  const applePart =
+    category === 'phones' &&
+    /^apple$/i.test(first.Brand || '') &&
+    /^apple$/i.test(second.Brand || '') &&
+    /^[A-Z0-9]{5}[A-Z]{2}\/A$/i.test(first['Model Number'] || '') &&
+    /^[A-Z0-9]{5}[A-Z]{2}\/A$/i.test(second['Model Number'] || '');
+  return exactMatch(
+    first,
+    second,
+    applePart ? ['Brand', 'Model Number', 'Storage', 'Color'] : categoryRegistry[category],
+  );
 }
 export function categoryFor(title: string, attributes: Record<string, string>): Category {
   const text = `${title} ${Object.values(attributes).join(' ')}`.toLowerCase();
-  if (/headphone|earbud|earphone|headset/.test(text)) return 'audio';
+  if (/headphone|earbud|earphone|headset|\b(?:wh|wf)-[a-z0-9-]+\b/.test(text)) return 'audio';
   if (/laptop|notebook|macbook/.test(text)) return 'laptops';
   if (/tablet|ipad|galaxy tab/.test(text)) return 'tablets';
   if (/monitor/.test(text)) return 'monitors';

@@ -138,7 +138,7 @@ export function parseProductHtml(
       'identity_mismatch',
       'The returned Amazon variant differs from the requested ASIN.',
     );
-  const title =
+  let title =
     identity.store === 'Amazon'
       ? firstText($, ['#productTitle'])
       : firstText($, ['span[class*="VU-ZEz"]', 'span.B_NuCI', 'h1 span', 'h1']);
@@ -150,6 +150,10 @@ export function parseProductHtml(
   // Only a Product object whose name matches the main heading may supply a
   // structured fallback. Never use AggregateOffer.lowPrice or related items.
   const structured: Record<string, any>[] = [];
+  const truncatedHeading = identity.store === 'Flipkart' && /(?:\.{3}|…)\s*(?:more)?$/i.test(title);
+  const headingPrefix = clean(title)
+    .replace(/(?:\.{3}|…)\s*(?:more)?$/i, '')
+    .toLowerCase();
   const visit = (value: any, depth = 0) => {
     if (depth > 8 || !value) return;
     if (Array.isArray(value)) for (const item of value) visit(item, depth + 1);
@@ -157,7 +161,10 @@ export function parseProductHtml(
       if (
         value['@type'] === 'Product' &&
         typeof value.name === 'string' &&
-        clean(title).toLowerCase().includes(clean(value.name).toLowerCase()) &&
+        (clean(title).toLowerCase().includes(clean(value.name).toLowerCase()) ||
+          (truncatedHeading &&
+            headingPrefix.length >= 30 &&
+            clean(value.name).toLowerCase().startsWith(headingPrefix))) &&
         value.name.length > 5
       )
         structured.push(value);
@@ -170,6 +177,7 @@ export function parseProductHtml(
     } catch {}
   });
   const productData = structured.length === 1 ? structured[0] : null;
+  if (productData && truncatedHeading) title = clean(productData.name);
   if (
     productData?.sku &&
     !identity.externalId.startsWith('ITM') &&
@@ -217,7 +225,14 @@ export function parseProductHtml(
   const negative =
     /currently unavailable|out of stock|sold out|not available|coming soon/i.test(availability) ||
     (identity.store === 'Flipkart' &&
-      /sold out|currently unavailable|out of stock/i.test($('body').text()));
+      $('body *')
+        .toArray()
+        .some(
+          (node) =>
+            $(node).children().length === 0 &&
+            !['script', 'style', 'noscript'].includes(node.tagName || '') &&
+            /^(?:sold out|currently unavailable|out of stock)[.!]?$/i.test(clean($(node).text())),
+        ));
   const stock =
     negative || /\/(?:OutOfStock|SoldOut|Discontinued)$/.test(offerData?.availability || '')
       ? false
@@ -286,7 +301,7 @@ export function parseProductHtml(
   const attributes: Record<string, string> = {};
   $(
     identity.store === 'Amazon'
-      ? '#productDetails_techSpec_section_1 tr, #productDetails_detailBullets_sections1 tr, #productOverview_feature_div tr'
+      ? 'table[id^="productDetails_techSpec_section_"] tr, #productDetails_detailBullets_sections1 tr, #productOverview_feature_div tr'
       : 'table tr',
   ).each((_, row) => {
     const cells = $(row).find('th,td');
@@ -294,6 +309,20 @@ export function parseProductHtml(
     const value = clean(cells.slice(1).text()).replace(/[‎‏]/g, '').trim();
     if (key && value && key.length < 100 && value.length < 500) attributes[key] = value;
   });
+  if (identity.store === 'Amazon') {
+    $('#detailBullets_feature_div li').each((_, item) => {
+      const node = $(item),
+        label = node.find('.a-text-bold').first();
+      const key = clean(label.text()).replace(/[:‎‏]/g, '').trim();
+      const value = clean(node.text().slice(label.text().length))
+        .replace(/[‎‏]/g, '')
+        .replace(/^\s*:\s*/, '')
+        .trim();
+      if (key && value && key.length < 100 && value.length < 500) attributes[key] = value;
+    });
+    const selectedColor = clean($('#variation_color_name .selection').first().text());
+    if (selectedColor) attributes.Color = selectedColor;
+  }
   if (identity.store === 'Flipkart')
     for (const node of $('div').toArray()) {
       if ($(node).children().length) continue;
@@ -302,6 +331,7 @@ export function parseProductHtml(
         ![
           'Brand',
           'Model Number',
+          'Model ID',
           'Model Name',
           'Color',
           'RAM',
@@ -312,6 +342,13 @@ export function parseProductHtml(
           'Display Size',
           'Resolution',
           'Refresh Rate',
+          'Connectivity Technology',
+          'Processor Name',
+          'SSD Capacity',
+          'Graphic Processor',
+          'Screen Size',
+          'Screen Resolution',
+          'Wireless Type',
         ].includes(label)
       )
         continue;
@@ -320,6 +357,15 @@ export function parseProductHtml(
     }
   if (productData?.brand?.name && !attributes.Brand)
     attributes.Brand = String(productData.brand.name);
+  const sonyModel = /\b(WH-[A-Z0-9-]+|WF-[A-Z0-9-]+)\b/i.exec(title)?.[1];
+  if (/\bSony\b/i.test(title) && sonyModel) {
+    attributes.Brand ||= 'Sony';
+    attributes['Model Number'] ||= sonyModel.toUpperCase();
+    if (/\bbluetooth\b/i.test(title)) attributes.Connectivity ||= 'Bluetooth';
+    const colorKey = attributes.Color ? 'Color' : 'Colour';
+    if (attributes[colorKey]?.toLowerCase().startsWith(sonyModel.toLowerCase() + ','))
+      attributes[colorKey] = attributes[colorKey].slice(sonyModel.length + 1).trim();
+  }
   const condition = /renewed|refurbished/i.test(title)
     ? 'refurbished'
     : /\bused\b/i.test(title)

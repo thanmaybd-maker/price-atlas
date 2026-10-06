@@ -385,6 +385,9 @@ export default function Atlas({
     const po = offers.filter((o) => o.productId === p.id);
     const r = rank(po);
     const itemRank = rank(po, Date.now(), 'item');
+    const lastObserved = po
+      .filter((o) => o.displayAllowed)
+      .sort((a, b) => b.observedAt - a.observedAt)[0];
     return (
       <article key={p.id} className="product-card" style={{ animationDelay: `${index * 45}ms` }}>
         <div className="card-art">
@@ -415,9 +418,13 @@ export default function Atlas({
                     ? '1 available offer'
                     : itemRank.offers.length
                       ? 'Item price · delivery extra/unknown'
-                      : 'No fresh offers'}
+                      : lastObserved
+                        ? `Last observed · ${new Date(lastObserved.observedAt).toLocaleDateString('en-IN')}`
+                        : 'Currently unavailable'}
               </span>
-              <strong className="card-price">{money(r.lowest ?? itemRank.lowest)}</strong>
+              <strong className="card-price">
+                {money(r.lowest ?? itemRank.lowest ?? lastObserved?.itemPrice ?? null)}
+              </strong>
             </div>
             <span className="micro-trend">
               <TrendingDown size={22} />
@@ -447,7 +454,7 @@ export default function Atlas({
         <span className="demo-dot" />{' '}
         {demo
           ? 'You’re exploring the demo. All prices and products are synthetic fixtures.'
-          : 'Development preview · imported retailer pages. History and alerts depend on source capabilities.'}{' '}
+          : 'Live retailer tracking · recorded prices and stock can change at checkout.'}{' '}
         <Link href="/help">
           How it works <ArrowUpRight size={12} />
         </Link>
@@ -2179,8 +2186,8 @@ function SearchBox({
     <form className={`search-box ${hero ? 'hero-search' : ''}`} onSubmit={search}>
       <Search size={20} />
       <input
-        aria-label="Search products or paste a retailer link"
-        placeholder="Search a product or paste a link"
+        aria-label="Search products or paste an Amazon or Flipkart product URL to track"
+        placeholder="Search or paste an Amazon / Flipkart URL"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         list={hero ? 'hero-suggestions' : 'search-suggestions'}
@@ -2190,8 +2197,21 @@ function SearchBox({
           <option key={p.id} value={p.name} />
         ))}
       </datalist>
-      <button className="primary" type="submit" aria-label="Search">
-        {hero ? 'Find my price' : <Search size={18} />} {hero && <ArrowRight size={17} />}
+      <button
+        className="primary"
+        type="submit"
+        aria-label={/^https?:\/\//i.test(query.trim()) ? 'Import and track product' : 'Search'}
+      >
+        {hero ? (
+          /^https?:\/\//i.test(query.trim()) ? (
+            'Import & track'
+          ) : (
+            'Find my price'
+          )
+        ) : (
+          <Search size={18} />
+        )}{' '}
+        {hero && <ArrowRight size={17} />}
       </button>
     </form>
   );

@@ -18,26 +18,26 @@ export function livePolicy(store: Store): SourcePolicy {
     : {};
   if (configured[store]) {
     const policy = capabilitySchema.parse(configured[store]);
-    if (policy.source !== store || policy.mode !== 'live')
+    if (policy.source !== store || !['live', 'retail'].includes(policy.mode))
       throw new Error('Source policy identity mismatch.');
     return policy;
   }
-  // Development imports may display a current page; retention and alerts never
-  // follow merely from the existence of a scraper or proxy API credential.
+  // User-authorized retailer-page tracking is distinct from a licensed feed.
+  // No commercial source agreement is invented for this mode.
   return {
     source: store,
-    version: 'unverified-development',
-    mode: 'live',
+    version: 'retailer-tracking-v1',
+    mode: 'retail',
     search: false,
     resolveLink: true,
     currentPrices: true,
-    history: false,
-    alerts: false,
-    matching: false,
+    history: true,
+    alerts: true,
+    matching: true,
     aiProcessing: false,
     imageProxying: false,
     displayTtlSeconds: 3600,
-    historyRetentionDays: 0,
+    historyRetentionDays: 30,
     requestsPerMinute: 2,
     agreementReference: null,
   };

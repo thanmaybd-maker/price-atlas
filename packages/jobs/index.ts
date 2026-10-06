@@ -7,11 +7,30 @@ import { rank, type Rule } from '../domain/index';
 import { ResendNotifications, type NotificationProvider } from '../notifications/index';
 import type { Store } from '../domain/index';
 import { deliverTelegram } from '../notifications/telegram';
+import { deliverTestAlerts } from '../notifications/test-alerts';
 export async function reserveSource(store: Store) {
   const policy = livePolicy(store);
   if (!policy.currentPrices)
     throw new ScrapeError('disabled', 'Current price collection is disabled for this source.');
   await tx(async (c) => {
+    const day = new Date().toISOString().slice(0, 10);
+    const limit = Number(process.env.SCRAPER_REQUESTS_PER_DAY || 40);
+    if (!Number.isSafeInteger(limit) || limit < 1)
+      throw new ScrapeError(
+        'configuration',
+        'SCRAPER_REQUESTS_PER_DAY must be a positive integer.',
+      );
+    await c.query('INSERT INTO atlas.collection_budget(day) VALUES($1) ON CONFLICT DO NOTHING', [
+      day,
+    ]);
+    const budget = (
+      await c.query('SELECT requests FROM atlas.collection_budget WHERE day=$1 FOR UPDATE', [day])
+    ).rows[0];
+    if (budget.requests >= limit)
+      throw new ScrapeError(
+        'daily_budget',
+        'The daily collection limit has been reached. Tracking resumes tomorrow.',
+      );
     const row = (
       await c.query('SELECT * FROM atlas.provider_state WHERE store=$1 FOR UPDATE', [store])
     ).rows[0];
@@ -28,6 +47,7 @@ export async function reserveSource(store: Store) {
       'UPDATE atlas.provider_state SET requests=$1,window_start=$2,policy=$3 WHERE store=$4',
       [fresh ? 1 : row.requests + 1, fresh ? now : row.window_start, policy, store],
     );
+    await c.query('UPDATE atlas.collection_budget SET requests=requests+1 WHERE day=$1', [day]);
   });
 }
 export async function runCollectionJob(id: string) {
@@ -210,7 +230,7 @@ export async function startLiveWorker() {
     ticking = true;
     try {
       await maintenance();
-      await collect();
+      const run = await collect();
       const due = await postgres().query(
         "SELECT id FROM atlas.jobs WHERE state='pending' AND available_at<=$1 LIMIT 100",
         [Date.now()],
@@ -221,7 +241,19 @@ export async function startLiveWorker() {
           { id: row.id },
           { jobId: row.id, removeOnComplete: true, removeOnFail: true },
         );
-      const deliveries = await Promise.allSettled([deliverTelegram(), deliverNotifications()]);
+      const deliveries = await Promise.allSettled([
+        deliverTelegram(),
+        deliverNotifications(),
+        deliverTestAlerts(),
+      ]);
+      console.log(
+        JSON.stringify({
+          event: 'worker_tick',
+          ...run,
+          queued: due.rows.length,
+          notificationDispatch: deliveries.map((r) => r.status),
+        }),
+      );
       if (deliveries.some((result) => result.status === 'rejected'))
         console.error(JSON.stringify({ event: 'notification_dispatch_failed' }));
     } catch {
