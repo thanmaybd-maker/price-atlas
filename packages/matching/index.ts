@@ -66,7 +66,8 @@ export function compareAttributes(
 }
 export function categoryFor(title: string, attributes: Record<string, string>): Category {
   const text = `${title} ${Object.values(attributes).join(' ')}`.toLowerCase();
-  if (/headphone|earbud|earphone|headset|\b(?:wh|wf)-[a-z0-9-]+\b/.test(text)) return 'audio';
+  if (/headphone|earbud|earphone|headset|airpods|airdopes|\b(?:wh|wf)-[a-z0-9-]+\b/.test(text))
+    return 'audio';
   if (/laptop|notebook|macbook/.test(text)) return 'laptops';
   if (/tablet|ipad|galaxy tab/.test(text)) return 'tablets';
   if (/monitor/.test(text)) return 'monitors';

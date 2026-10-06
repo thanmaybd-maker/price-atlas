@@ -67,7 +67,9 @@ export async function syncAccount(user: {
 }
 export async function catalog(): Promise<Product[]> {
   return (
-    await postgres().query('SELECT data FROM atlas.products ORDER BY created_at DESC,id')
+    await postgres().query(
+      'SELECT data FROM atlas.products p WHERE EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=p.id) ORDER BY created_at DESC,id',
+    )
   ).rows.map((r) => r.data);
 }
 export async function offers(productId?: string): Promise<Offer[]> {
@@ -278,6 +280,8 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
           attributes: scraped.attributes,
           title: scraped.title,
           parserVersion: scraped.parserVersion,
+          condition: scraped.condition,
+          imageUrl: scraped.imageUrl,
         },
         Date.now() + Number(process.env.CATALOG_INTERVAL_MINUTES || 1440) * 60000,
         Date.now(),
@@ -593,6 +597,14 @@ export async function reviewMatch(
     const product = (await c.query('SELECT data FROM atlas.products WHERE id=$1', [productId]))
       .rows[0]?.data as Product | undefined;
     if (!listing || !product) throw new Error('Listing or product not found.');
+    if (
+      !livePolicy(listing.store).matching ||
+      product.attributes.Condition !== 'new' ||
+      listing.evidence.condition !== 'new'
+    )
+      throw new Error(
+        'Matching requires enabled source capabilities and confirmed new condition on both listings.',
+      );
     const evidence = compareAttributes(
       product.category,
       product.attributes,
