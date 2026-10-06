@@ -14,6 +14,9 @@ try {
     )
   ).rows;
   for (const job of jobs) await runCollectionJob(job.id);
+  const finalRun = (
+    await postgres().query('SELECT status,observations FROM atlas.runs WHERE id=$1', [run.id])
+  ).rows[0];
   const deliveries = await Promise.allSettled([
     deliverNotifications(),
     deliverTelegram(),
@@ -23,6 +26,7 @@ try {
     JSON.stringify({
       event: 'worker_once',
       ...run,
+      ...finalRun,
       processed: jobs.length,
       notificationDispatch: deliveries.map((r) => r.status),
     }),

@@ -75,10 +75,22 @@ export async function runCollectionJob(id: string) {
         [job.payload.runKey, Date.now()],
       );
     });
+    console.log(
+      JSON.stringify({
+        event: 'collection_completed',
+        jobId: id,
+        productId: result.productId,
+        observations: result.observations,
+        quarantined: !!result.quarantined,
+      }),
+    );
   } catch (error) {
     const code = error instanceof ScrapeError ? error.code : 'collection_failed';
     const retryable = error instanceof ScrapeError && error.retryable && job.attempts < 4;
-    const delay = Math.min(3600000, 60000 * 2 ** job.attempts);
+    const delay =
+      code === 'daily_budget'
+        ? 86400000 - (Date.now() % 86400000) + 60000
+        : Math.min(3600000, 60000 * 2 ** job.attempts);
     await tx(async (c) => {
       await c.query(
         'UPDATE atlas.jobs SET state=$2,available_at=$3,lease_until=NULL,last_error=$4 WHERE id=$1',

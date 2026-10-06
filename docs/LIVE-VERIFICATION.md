@@ -15,3 +15,17 @@
 - The live catalog was checked at the normal browser size and at 390px width, with no horizontal page overflow. A preview is saved in `docs/previews/live-catalog.png`.
 
 The user reports Supabase callbacks/Google OAuth, Redis eviction changes and a Render worker deployment are configured. Actual sign-in, continuous worker uptime, eligible source permissions, human recipient delivery, signed webhook registration and load/restore rehearsals remain unverified. The hosted web app is verified live.
+
+## Public tracking verification
+
+The public scope keeps signup open: Supabase settings report signup enabled with email and Google enabled. Google consent publishing and an unrelated user's login have not been tested.
+
+Retailer tracking now enables history, alerts and matching by default, with a 40-request shared daily limit and 30-day observation retention. Source metadata no longer disappears when an unavailable listing has no fresh price. Fourteen canonical real products have been imported across phones, laptops, tablets and audio; unavailable responses stay unavailable.
+
+Sony WH-1000XM5 Black/new/Bluetooth is matched across Amazon and Flipkart. The hosted API returned both in-stock offers with history and alert flags enabled, and recorded history points. A real refresh was processed through the worker's database job ledger. No synthetic price was written to the live catalog.
+
+111 tests, type checking, formatting and production build pass. Hosted live API smoke checks pass. Supabase Auth, PostgreSQL and Redis connectivity checks pass. Vercel reported successful deployment for commit 47f1847.
+
+The Telegram hosted-secret check still rejects the local secret; webhook registration and actual chat delivery are not verified. No connected Telegram chat exists yet. Test alerts use a separate operator outbox and do not change real rules or observations. A verified Resend domain is still needed for public email recipients. The optional GitHub Actions collector remains disabled until its secrets and enable variable are configured.
+
+![Verified live matching and history](previews/live-matched-history.png)
