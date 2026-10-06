@@ -5,6 +5,8 @@ import { scrapeProduct, canonicalRetailUrl, ScrapeError } from '../packages/prov
 import { reserveSource } from '../packages/jobs/index';
 import { importScraped, postgres } from '../packages/database/postgres';
 const urls = [
+  'https://www.flipkart.com/apple-airpods-pro-2nd-generation-magsafe-case-usb-c-bluetooth/p/itm60c8f5a308352',
+  'https://www.flipkart.com/apple-macbook-air-m2-16-gb-256-gb-ssd-macos-sequoia-mc7x4hn-a/p/itm85610764432a1',
   'https://www.amazon.in/dp/B09XS7JWHH',
   'https://www.flipkart.com/sony-wh-1000xm5-wireless-noise-cancellation-ai-reduction-bluetooth/p/itm7f07dcc8df256',
   'https://www.amazon.in/dp/B0DLHFM2XL',

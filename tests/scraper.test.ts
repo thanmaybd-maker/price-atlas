@@ -20,6 +20,7 @@ describe('retailer parsing without inventing price or availability', () => {
         '@type': 'Product',
         name: title,
         sku: 'ACCHGBCB34ATPVM7',
+        color: 'Black',
         offers: {
           '@type': 'Offer',
           price: 27990,

@@ -357,6 +357,13 @@ export function parseProductHtml(
     }
   if (productData?.brand?.name && !attributes.Brand)
     attributes.Brand = String(productData.brand.name);
+  if (
+    typeof productData?.color === 'string' &&
+    !attributes.Color &&
+    !attributes.Colour &&
+    productData.color.length < 100
+  )
+    attributes.Color = clean(productData.color);
   const sonyModel = /\b(WH-[A-Z0-9-]+|WF-[A-Z0-9-]+)\b/i.exec(title)?.[1];
   if (/\bSony\b/i.test(title) && sonyModel) {
     attributes.Brand ||= 'Sony';

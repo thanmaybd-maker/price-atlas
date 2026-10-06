@@ -14,6 +14,7 @@ type State = {
   telegram?: { notification_id: string; state: string; last_error: string; attempts: number }[];
   capabilities?: {
     source: string;
+    mode?: string;
     history: boolean;
     alerts: boolean;
     agreementReference: string | null;
