@@ -174,6 +174,11 @@ export async function saveRule(userId: string, input: RuleInput) {
     return rule;
   }, userId);
   await evaluateProduct(rule.productId);
+  if (rule.enabled)
+    await postgres().query(
+      'UPDATE atlas.listings SET next_check=LEAST(next_check,$2) WHERE product_id=$1',
+      [rule.productId, Date.now() + Number(process.env.COLLECTION_INTERVAL_MINUTES || 60) * 60000],
+    );
   return rule;
 }
 export async function deleteRule(userId: string, id: string) {
