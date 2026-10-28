@@ -62,10 +62,7 @@ async function handler(req: NextRequest) {
       const key = user?.id || req.headers.get('x-forwarded-for') || 'local';
       if (
         data.isLive() &&
-        (await limited(
-          `${path[0]}:${key}`,
-          ['auth', 'imports', 'discovery'].includes(path[0]) ? 5 : 60,
-        ))
+        (await limited(`${path[0]}:${key}`, ['auth', 'imports'].includes(path[0]) ? 5 : 60))
       )
         return json({ error: 'Too many requests. Try again shortly.' }, 429);
       const now = Date.now();
@@ -221,9 +218,20 @@ async function handler(req: NextRequest) {
         .object({
           query: z.string().trim().min(2).max(2000),
           store: z.enum(['all', ...STORE_NAMES]).default('all'),
+          searchMore: z.boolean().default(false),
         })
         .parse(await req.json());
-      const result = await discoverProducts(body.query, body.store);
+      const key = user?.id || req.headers.get('x-forwarded-for') || 'local';
+      const result = await discoverProducts(body.query, body.store, {
+        searchMore: body.searchMore,
+        beforeNetwork: async () => {
+          if (await limited(`discovery-fetch:${key}`, 5))
+            throw new ScrapeError(
+              'rate_limited',
+              'Fresh discovery is busy. Saved catalog results remain available; try again in a minute.',
+            );
+        },
+      });
       return json(result, result?.state === 'pending' ? 202 : 200);
     }
     if (path[0] === 'admin' && req.method === 'POST') {

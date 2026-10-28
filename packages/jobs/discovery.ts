@@ -69,17 +69,21 @@ export async function lookupStatus(value: string, store: Store | 'all' = 'all') 
       : [];
   return { state: row.state, ...data, products, offers: current, cached: true };
 }
-export async function discoverProducts(value: string, scope: Store | 'all' = 'all') {
+export async function discoverProducts(
+  value: string,
+  scope: Store | 'all' = 'all',
+  options: { searchMore?: boolean; beforeNetwork?: () => Promise<void> } = {},
+) {
   const { q, url, key } = lookupIdentity(value, scope);
   const claimed = await tx(async (c) => {
     await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`search:${key}`]);
     const prior = (
-      await c.query('SELECT 1 FROM atlas.search_cache WHERE query_key=$1 AND expires_at>$2', [
+      await c.query('SELECT state FROM atlas.search_cache WHERE query_key=$1 AND expires_at>$2', [
         key,
         Date.now(),
       ])
-    ).rows.length;
-    if (prior) return false;
+    ).rows[0];
+    if (prior && (!options.searchMore || prior.state === 'pending')) return false;
     await c.query(
       "INSERT INTO atlas.search_cache VALUES($1,'pending','{}'::jsonb,$2) ON CONFLICT(query_key) DO UPDATE SET state='pending',data='{}'::jsonb,expires_at=excluded.expires_at",
       [key, Date.now() + 90000],
@@ -88,6 +92,12 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
   });
   if (!claimed) return lookupStatus(q, scope);
   const data: LookupData = { productIds: [], candidates: [], sources: [] };
+  let networkAllowed = false;
+  const beforeNetwork = async () => {
+    if (networkAllowed) return;
+    await options.beforeNetwork?.();
+    networkAllowed = true;
+  };
   let credits = 0;
   const maximumCredits = url
     ? Math.max(0, Math.min(10, Number(process.env.LOOKUP_MAX_CREDITS || 10)))
@@ -104,6 +114,7 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
   const importUrl = async (destination: string) => {
     const cached = await reusableListing(destination);
     if (cached) return cached.productId;
+    await beforeNetwork();
     if (Date.now() > deadline - 5000)
       throw new ScrapeError(
         'lookup_timeout',
@@ -132,28 +143,21 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
           currentOffers.some((o) => o.productId === p.id && o.store === scope),
       );
       data.productIds.push(...scoped.slice(0, 12).map((p) => p.id));
-      await Promise.all(
-        (scope === 'all' ? STORE_NAMES : [scope]).map(async (store) => {
-          let candidates: SearchCandidate[] = [],
-            method = 'direct';
-          try {
-            if (!livePolicy(store).search)
-              throw new ScrapeError('disabled', 'Search is disabled for this retailer.');
+      if (scoped.length && !options.searchMore)
+        data.message =
+          'Showing recorded catalog matches. Open a direct retailer product URL to verify its latest details.';
+      else {
+        await beforeNetwork();
+        await Promise.all(
+          (scope === 'all' ? STORE_NAMES : [scope]).map(async (store) => {
+            let candidates: SearchCandidate[] = [],
+              method = 'direct';
             try {
-              await reserveSource(store, { transport: 'direct' });
-              candidates = parseSearchHtml(await scrapeSearchHtml(q, store), store);
-            } catch (e) {
-              if (
-                e instanceof ScrapeError &&
-                ['daily_budget', 'monthly_budget', 'paused', 'rate_limited'].includes(e.code)
-              )
-                throw e;
-            }
-            if (!candidates.length) {
-              method = 'web-search';
+              if (!livePolicy(store).search)
+                throw new ScrapeError('disabled', 'Search is disabled for this retailer.');
               try {
                 await reserveSource(store, { transport: 'direct' });
-                candidates = await duckDuckGoProducts(q, store);
+                candidates = parseSearchHtml(await scrapeSearchHtml(q, store), store);
               } catch (e) {
                 if (
                   e instanceof ScrapeError &&
@@ -161,57 +165,70 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
                 )
                   throw e;
               }
-            }
-            const relevant = candidates.filter((c) =>
-              matchesQuery({ name: c.title, brand: '', subtitle: '' }, q),
-            );
-            data.candidates.push(...(relevant.length ? relevant : candidates).slice(0, 6));
-            let imported = false;
-            let failure: unknown;
-            for (const selected of relevant.slice(0, 2)) {
-              try {
-                const id = await importUrl(selected.url);
-                const p = await findProduct(id);
-                if (p && matchesQuery(p, q)) {
-                  data.productIds.push(id);
-                  imported = true;
-                  break;
+              if (!candidates.length) {
+                method = 'web-search';
+                try {
+                  await reserveSource(store, { transport: 'direct' });
+                  candidates = await duckDuckGoProducts(q, store);
+                } catch (e) {
+                  if (
+                    e instanceof ScrapeError &&
+                    ['daily_budget', 'monthly_budget', 'paused', 'rate_limited'].includes(e.code)
+                  )
+                    throw e;
                 }
-              } catch (error) {
-                failure = error;
-                if (
-                  error instanceof ScrapeError &&
-                  [
-                    'daily_budget',
-                    'monthly_budget',
-                    'rate_limited',
-                    'lookup_timeout',
-                    'lookup_budget',
-                  ].includes(error.code)
-                )
-                  break;
               }
+              const relevant = candidates.filter((c) =>
+                matchesQuery({ name: c.title, brand: '', subtitle: '' }, q),
+              );
+              data.candidates.push(...(relevant.length ? relevant : candidates).slice(0, 6));
+              let imported = false;
+              let failure: unknown;
+              for (const selected of relevant.slice(0, 2)) {
+                try {
+                  const id = await importUrl(selected.url);
+                  const p = await findProduct(id);
+                  if (p && matchesQuery(p, q)) {
+                    data.productIds.push(id);
+                    imported = true;
+                    break;
+                  }
+                } catch (error) {
+                  failure = error;
+                  if (
+                    error instanceof ScrapeError &&
+                    [
+                      'daily_budget',
+                      'monthly_budget',
+                      'rate_limited',
+                      'lookup_timeout',
+                      'lookup_budget',
+                    ].includes(error.code)
+                  )
+                    break;
+                }
+              }
+              data.sources.push({
+                store,
+                method,
+                status: imported
+                  ? 'complete'
+                  : failure instanceof ScrapeError
+                    ? failure.code
+                    : candidates.length
+                      ? 'candidates_only'
+                      : 'no_results',
+              });
+            } catch (error) {
+              data.sources.push({
+                store,
+                method,
+                status: error instanceof ScrapeError ? error.code : 'unavailable',
+              });
             }
-            data.sources.push({
-              store,
-              method,
-              status: imported
-                ? 'complete'
-                : failure instanceof ScrapeError
-                  ? failure.code
-                  : candidates.length
-                    ? 'candidates_only'
-                    : 'no_results',
-            });
-          } catch (error) {
-            data.sources.push({
-              store,
-              method,
-              status: error instanceof ScrapeError ? error.code : 'unavailable',
-            });
-          }
-        }),
-      );
+          }),
+        );
+      }
     }
   } catch (error) {
     data.message =

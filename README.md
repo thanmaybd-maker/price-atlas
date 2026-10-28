@@ -49,7 +49,7 @@ pnpm test:live-api
 pnpm telegram:setup
 ```
 
-143 tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens, Telegram linking/delivery, daily/monthly credit budgeting, custom-product discovery, shared query caching, exact store matching and isolated test alerts. Telegram setup checks the hosted secret before registering the webhook. `pnpm check:readiness` inspects the catalog, hosted API, authentication settings, collection ledger, ScrapingBee balance and Telegram configuration without sending messages.
+144 tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens, Telegram linking/delivery, daily/monthly credit budgeting, custom-product discovery, shared query caching, exact store matching and isolated test alerts. Telegram setup checks the hosted secret before registering the webhook. `pnpm check:readiness` inspects the catalog, hosted API, authentication settings, collection ledger, ScrapingBee balance and Telegram configuration without sending messages.
 
 `pnpm catalog:import` imports curated retailer URLs with source pacing. `pnpm alerts:test <your verified account email> <product ID> [telegram|email|both]` evaluates a simulated drop and uses a separate test delivery outbox. Messages are labelled TEST; real rules, prices and history stay untouched. Run this operator command locally.
 
