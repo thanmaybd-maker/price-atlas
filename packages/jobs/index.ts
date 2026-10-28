@@ -81,7 +81,11 @@ export async function reserveSource(store: Store, config: ScraperConfig = scrape
     );
   });
 }
-export async function fetchProductWithBudget(url: string, timeoutMs?: number) {
+export async function fetchProductWithBudget(
+  url: string,
+  timeoutMs?: number,
+  allowPaid?: (cost: number) => boolean,
+) {
   const { store } = canonicalRetailUrl(url);
   const configured = { ...scraperConfig(), ...(timeoutMs ? { timeoutMs } : {}) };
   if (configured.transport !== 'direct' && process.env.SCRAPER_DIRECT_FIRST !== 'false') {
@@ -92,6 +96,11 @@ export async function fetchProductWithBudget(url: string, timeoutMs?: number) {
       if (!(error instanceof ScrapeError)) throw error;
     }
   }
+  if (allowPaid && !allowPaid(scraperCreditCost(configured)))
+    throw new SourceLimitError(
+      'lookup_budget',
+      'The paid allowance for this lookup has been reached. Try a direct product link.',
+    );
   await reserveSource(store, configured);
   return scrapeProduct(url, configured);
 }

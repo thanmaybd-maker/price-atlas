@@ -4,7 +4,15 @@ import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { products } from './catalog';
 import { validateObservation, demoPolicy, offerSchema } from '../providers/index';
-import { evaluate, rank, total, type Offer, type Product, type Rule } from '../domain/index';
+import {
+  evaluate,
+  rank,
+  total,
+  type Store,
+  type Offer,
+  type Product,
+  type Rule,
+} from '../domain/index';
 
 let connection: DatabaseSync;
 function root() {
@@ -193,7 +201,7 @@ export function saveRule(
     id?: string;
     productId: string;
     target: number;
-    store: 'all' | 'Amazon' | 'Flipkart';
+    store: 'all' | Store;
     basis: 'delivered' | 'item';
     operator: 'lte' | 'lt';
     enabled: boolean;

@@ -1,6 +1,16 @@
 import { Pool, type PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
-import { evaluate, rank, total, type Offer, type Product, type Rule } from '../domain/index';
+import {
+  STORE_NAMES,
+  evaluate,
+  rank,
+  total,
+  type Store,
+  type Offer,
+  type Product,
+  type Rule,
+} from '../domain/index';
+import { retailers } from '../domain/retailers';
 import {
   canonicalRetailUrl,
   listingKey,
@@ -258,22 +268,18 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
       Condition: scraped.condition,
     };
     let productId: string = prior?.product_id || id;
-    if (
-      !prior &&
-      policy.matching &&
-      livePolicy(scraped.store === 'Amazon' ? 'Flipkart' : 'Amazon').matching &&
-      scraped.condition === 'new'
-    ) {
+    if (!prior && policy.matching && scraped.condition === 'new') {
       // Serialize candidate selection so concurrent store imports cannot split one variant.
       await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`match:${category}`]);
       const candidates = (
         await c.query(
-          "SELECT p.id,p.data FROM atlas.products p WHERE p.data->>'category'=$1 AND EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=p.id AND l.store<>$2 AND l.match_state='accepted')",
+          "SELECT p.id,p.data, array_agg(DISTINCT l.store) AS stores FROM atlas.products p JOIN atlas.listings l ON l.product_id=p.id AND l.store<>$2 AND l.match_state='accepted' WHERE p.data->>'category'=$1 GROUP BY p.id",
           [category, scraped.store],
         )
       ).rows;
       const matches = candidates.filter(
         (p) =>
+          p.stores.every((store: Store) => livePolicy(store).matching) &&
           p.data.attributes?.Condition === 'new' &&
           compareAttributes(category, p.data.attributes, attributes).decision === 'accepted',
       );
@@ -359,7 +365,7 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
       alertsAllowed: policy.alerts,
       displayAllowed: policy.currentPrices,
       seller: scraped.seller,
-      context: 'Retailer default location; your pincode not checked',
+      context: retailers[scraped.store].deliveryNote,
       purchaseUrl: scraped.url,
     };
     const current = (
@@ -507,7 +513,7 @@ export async function admin() {
     quarantine: quarantine.rows,
     jobs: jobs.rows,
     telegram: telegram.rows,
-    capabilities: (['Amazon', 'Flipkart'] as const).map((store) => livePolicy(store)),
+    capabilities: STORE_NAMES.map((store) => livePolicy(store)),
   };
 }
 export async function reviewAnomaly(id: string, accept: boolean, actor: string, reason: string) {
@@ -682,7 +688,7 @@ export async function reviewMatch(
 export async function maintenance() {
   return tx(async (c) => {
     await c.query('DELETE FROM atlas.search_cache WHERE expires_at<$1', [Date.now() - 86400000]);
-    for (const store of ['Amazon', 'Flipkart'] as const) {
+    for (const store of STORE_NAMES) {
       const policy = livePolicy(store);
       const cutoff =
         Date.now() -

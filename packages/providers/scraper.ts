@@ -1,6 +1,8 @@
 import { load, type CheerioAPI } from 'cheerio';
 import { createHash } from 'node:crypto';
 import { parseRetailUrl, type Store } from '../domain/index';
+import { retailers } from '../domain/retailers';
+import { structuredData, hasType } from './structured-data';
 
 export class ScrapeError extends Error {
   constructor(
@@ -52,12 +54,19 @@ export function parseINR(value: string): number | null {
 export function canonicalRetailUrl(value: string) {
   const identity = parseRetailUrl(value);
   const url = new URL(value);
+  const preserved = new URLSearchParams();
+  if (identity.store === 'Flipkart' && url.searchParams.has('pid'))
+    preserved.set('pid', identity.externalId);
+  if (identity.store === 'Nykaa' && url.searchParams.has('skuId'))
+    preserved.set('skuId', identity.externalId);
+  const path =
+    identity.store === 'B&H' ? url.pathname.replace(/\.html\/.*/, '.html') : url.pathname;
   return {
     ...identity,
     url:
       identity.store === 'Amazon'
         ? `https://www.amazon.in/dp/${identity.externalId}`
-        : `https://www.flipkart.com${url.pathname}${url.searchParams.has('pid') ? '?pid=' + identity.externalId : ''}`,
+        : `https://${retailers[identity.store].host}${path}${preserved.size ? '?' + preserved : ''}`,
   };
 }
 function imageUrl(value?: string | null): string | null {
@@ -68,7 +77,7 @@ function imageUrl(value?: string | null): string | null {
       !url.username &&
       !url.password &&
       !url.port &&
-      /(?:^|\.)(?:media-amazon\.com|ssl-images-amazon\.com|amazon\.in|flixcart\.com|flipkart\.com)$/.test(
+      /(?:^|\.)(?:media-amazon\.com|ssl-images-amazon\.com|amazon\.in|flixcart\.com|flipkart\.com|meesho\.com|tatacroma\.com|croma\.com|nykaa\.com|iherb\.com|images-iherb\.com|bhphotovideo\.com|bhphoto\.com)$/.test(
         url.hostname,
       )
       ? url.href
@@ -99,6 +108,215 @@ function price($: CheerioAPI, selectors: string[]) {
   }
   return null;
 }
+function parseStructuredRetailer(
+  $: CheerioAPI,
+  identity: ReturnType<typeof canonicalRetailUrl>,
+  observedAt: number,
+): ScrapedProduct {
+  let nykaaVariant: Record<string, any> | null = null;
+  if (identity.store === 'Nykaa') {
+    // This assignment is a JSON payload. Parse it as data; never execute page JS.
+    for (const node of $('script:not([src])').toArray()) {
+      const script = $(node).text().trim();
+      if (!/^window\.__PRELOADED_STATE__\s*=/.test(script)) continue;
+      try {
+        const state = JSON.parse(
+          script.replace(/^window\.__PRELOADED_STATE__\s*=\s*/, '').replace(/;\s*$/, ''),
+        );
+        const parent = state.productPage?.product;
+        const selected =
+          new URL(identity.url).searchParams.get('skuId') ||
+          String(parent?.selectedVariantId || '');
+        const parentId = new URL(identity.url).pathname.match(/\/p\/(\d+)/)?.[1];
+        if (
+          String(parent?.id) !== parentId ||
+          !/^\d{3,12}$/.test(selected) ||
+          String(parent?.selectedVariantId) !== selected
+        )
+          continue;
+        const variants = Array.isArray(parent.variants)
+          ? parent.variants.filter((p: Record<string, any>) => String(p.childId) === selected)
+          : [];
+        if (variants.length !== 1) continue;
+        nykaaVariant = variants[0];
+        identity.externalId = selected;
+        const url = new URL(identity.url);
+        url.searchParams.set('skuId', selected);
+        identity.url = url.href;
+      } catch {}
+    }
+  }
+  const heading = firstText($, ['h1']);
+  const og = clean($('meta[property="og:title"]').attr('content') || '');
+  const sameListing = (value: unknown) => {
+    if (typeof value !== 'string') return false;
+    try {
+      const actual = canonicalRetailUrl(new URL(value, identity.url).href);
+      return actual.store === identity.store && actual.externalId === identity.externalId;
+    } catch {
+      return false;
+    }
+  };
+  const requestedVariant =
+    identity.store === 'Nykaa' && new URL(identity.url).searchParams.has('skuId');
+  const products = structuredData($).filter((p) => {
+    if (!hasType(p, 'Product') || typeof p.name !== 'string' || p.name.length < 4) return false;
+    const offerList = [p.offers].flat().filter(Boolean);
+    const sku = String(p.sku || '');
+    const skuMatches = sku.toLowerCase() === identity.externalId.toLowerCase();
+    if (['Meesho', 'Croma'].includes(identity.store) && sku && !skuMatches) return false;
+    const linked =
+      sameListing(p.url) || sameListing(p['@id']) || offerList.some((o) => sameListing(o.url));
+    // A parent Nykaa product cannot establish the selected shade/size.
+    if (requestedVariant)
+      return (
+        skuMatches ||
+        linked ||
+        Boolean(nykaaVariant && p.sku === nykaaVariant.sku && p.name === nykaaVariant.name)
+      );
+    const title = clean(p.name).toLowerCase();
+    const nameMatches =
+      (heading.length > 5 && clean(heading).toLowerCase().includes(title)) ||
+      (og.length > 5 && og.toLowerCase().includes(title));
+    return skuMatches || linked || nameMatches;
+  });
+  if (products.length !== 1)
+    throw new ScrapeError('parser_changed', 'A unique primary product could not be verified.');
+  const product = products[0];
+  const candidates = [product.offers].flat().filter((o) => o && hasType(o, 'Offer'));
+  const selected = candidates.filter((o) => sameListing(o.url));
+  const offer =
+    selected.length === 1 ? selected[0] : candidates.length === 1 ? candidates[0] : null;
+  const verifiedNykaaParent =
+    nykaaVariant &&
+    product.sku === nykaaVariant.sku &&
+    product.name === nykaaVariant.name &&
+    parseINR(String(nykaaVariant.offerPrice)) === parseINR(String(offer?.price)) &&
+    (() => {
+      try {
+        return (
+          new URL(offer?.url, identity.url).origin === new URL(identity.url).origin &&
+          new URL(offer?.url, identity.url).pathname === new URL(identity.url).pathname
+        );
+      } catch {
+        return false;
+      }
+    })();
+  if (offer?.url && !sameListing(offer.url) && !verifiedNykaaParent)
+    throw new ScrapeError(
+      'identity_mismatch',
+      'The offer represents a different product or variant.',
+    );
+  const currency =
+    typeof offer?.priceCurrency === 'string' ? offer.priceCurrency.toUpperCase() : '';
+  const amount = offer?.price !== undefined ? parseINR(String(offer.price)) : null;
+  const stock = /(?:^|\/)(?:OutOfStock|SoldOut|Discontinued)$/.test(offer?.availability || '')
+    ? false
+    : /(?:^|\/)(?:InStock|LimitedAvailability)$/.test(offer?.availability || '')
+      ? true
+      : null;
+  if (!amount && stock !== false)
+    throw new ScrapeError('price_missing', 'No unambiguous current product price was found.');
+  if (amount && !/^[A-Z]{3}$/.test(currency))
+    throw new ScrapeError('price_missing', 'The source did not identify its price currency.');
+  const statedCondition = offer?.itemCondition || product.itemCondition || '';
+  const condition =
+    /refurbished|renewed/i.test(product.name) ||
+    /(?:^|\/)RefurbishedCondition$/.test(statedCondition)
+      ? 'refurbished'
+      : /\bused\b/i.test(product.name) || /(?:^|\/)UsedCondition$/.test(statedCondition)
+        ? 'used'
+        : /(?:^|\/)NewCondition$/.test(statedCondition) ||
+            (verifiedNykaaParent &&
+              nykaaVariant?.inStock === true &&
+              /add to bag/i.test(nykaaVariant?.buttonText || ''))
+          ? 'new'
+          : 'unknown';
+  const attributes: Record<string, string> = {
+    Retailer: identity.store,
+    'Product URL': identity.url,
+    'Delivery note': retailers[identity.store].deliveryNote,
+    Availability:
+      stock === true
+        ? 'In stock at source'
+        : stock === false
+          ? 'Out of stock at source'
+          : 'Not confirmed by source',
+    'Checked at': new Date(observedAt).toISOString(),
+  };
+  if (verifiedNykaaParent) {
+    if (typeof nykaaVariant?.packSize === 'string') attributes.Size = nykaaVariant.packSize;
+    if (typeof nykaaVariant?.variantName === 'string') attributes.Shade = nykaaVariant.variantName;
+  }
+  const brand = typeof product.brand === 'string' ? product.brand : product.brand?.name;
+  if (typeof brand === 'string') attributes.Brand = clean(brand).slice(0, 100);
+  for (const [key, value] of Object.entries({
+    Color: product.color,
+    Size: product.size,
+    'Model Number': product.mpn,
+    GTIN: product.gtin13 || product.gtin14 || product.gtin12 || product.gtin,
+    Condition: condition,
+  })) {
+    if (typeof value === 'string' && value.length < 200) attributes[key] = clean(value);
+  }
+  if (identity.store === 'Meesho') {
+    try {
+      const data = JSON.parse($('#__NEXT_DATA__').text())?.props?.pageProps?.initialState?.product
+        ?.details?.data;
+      if (data?.product_id === identity.externalId && data.name === product.name) {
+        if (Array.isArray(data.variations) && data.variations.length > 1)
+          attributes['Price note'] =
+            'Listing price; select a size at the retailer to confirm its exact price and availability.';
+        for (const group of ['product_highlights', 'additional_details']) {
+          const specs = data.product_details?.[group]?.attributes;
+          if (Array.isArray(specs))
+            for (const spec of specs.slice(0, 30)) {
+              if (
+                typeof spec.display_name === 'string' &&
+                typeof spec.value === 'string' &&
+                spec.display_name.length < 100 &&
+                spec.value.length < 300 &&
+                !Object.hasOwn(attributes, spec.display_name)
+              )
+                attributes[spec.display_name] = clean(spec.value);
+            }
+        }
+      }
+    } catch {}
+  }
+  if (amount && currency !== 'INR') {
+    attributes['Source price'] = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency,
+    }).format(amount / 100);
+    attributes['Source currency'] = currency;
+  }
+  const rate = offer?.shippingDetails?.shippingRate;
+  const shipping =
+    !retailers[identity.store].international &&
+    rate?.currency === 'INR' &&
+    [0, '0', '0.00'].includes(rate.value)
+      ? 0
+      : null;
+  const images = [product.image].flat();
+  const image =
+    images.map((v) => imageUrl(typeof v === 'string' ? v : v?.url)).find(Boolean) ||
+    imageUrl($('meta[property="og:image"]').attr('content'));
+  return {
+    ...identity,
+    title: clean(product.name),
+    imageUrl: image,
+    itemPrice: currency === 'INR' ? amount : null,
+    shipping,
+    charges: 0,
+    stock,
+    condition,
+    seller: typeof offer?.seller?.name === 'string' ? clean(offer.seller.name).slice(0, 500) : '',
+    attributes,
+    observedAt,
+    parserVersion: 'structured-retail-v1',
+  };
+}
 export function parseProductHtml(
   html: string,
   inputUrl: string,
@@ -109,7 +327,7 @@ export function parseProductHtml(
   const pageTitle = $('title').text();
   if (
     $('#captchacharacters, form[action*="validateCaptcha"], #retry_btn').length ||
-    /robot check|access denied|captcha|request blocked/i.test(pageTitle) ||
+    /robot check|access denied|captcha|request blocked|just a moment/i.test(pageTitle) ||
     /enter the characters you see below|sorry, we just need to make sure/i.test($('body').text())
   )
     throw new ScrapeError(
@@ -124,15 +342,21 @@ export function parseProductHtml(
         identity.store === 'Flipkart' &&
         new URL(canonical).pathname === new URL(identity.url).pathname &&
         (actual.externalId.startsWith('ITM') || identity.externalId.startsWith('ITM'));
+      const nykaaParent =
+        identity.store === 'Nykaa' &&
+        new URL(identity.url).pathname === new URL(canonical).pathname &&
+        !new URL(canonical).searchParams.has('skuId');
       if (
         actual.store !== identity.store ||
-        (actual.externalId !== identity.externalId && !sameFlipkartPath)
+        (actual.externalId !== identity.externalId && !sameFlipkartPath && !nykaaParent)
       )
         throw new ScrapeError('identity_mismatch', 'The page represents a different product.');
     } catch (error) {
       if (error instanceof ScrapeError) throw error;
     }
   }
+  if (!['Amazon', 'Flipkart'].includes(identity.store))
+    return parseStructuredRetailer($, identity, observedAt);
   const asin = $('input#ASIN, input[name="ASIN"]').first().attr('value');
   if (identity.store === 'Amazon' && asin && asin.toUpperCase() !== identity.externalId)
     throw new ScrapeError(
@@ -568,7 +792,9 @@ async function retailerHtml(
         response = await fetcher(url, {
           headers: {
             'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
+              identity.store === 'Meesho'
+                ? 'Mozilla/5.0'
+                : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
             Accept: 'text/html,application/xhtml+xml',
             'Accept-Language': 'en-IN,en;q=0.9',
           },
@@ -628,13 +854,12 @@ export async function scrapeSearchHtml(
 ) {
   if (query.trim().length < 2 || query.length > 160)
     throw new ScrapeError('invalid_query', 'Search must contain 2–160 characters.');
-  const url = new URL(
-    store === 'Amazon' ? 'https://www.amazon.in/s' : 'https://www.flipkart.com/search',
-  );
-  url.searchParams.set(store === 'Amazon' ? 'k' : 'q', query.trim());
+  const source = retailers[store];
+  const url = new URL(source.searchPath, `https://${source.host}`);
+  url.searchParams.set(source.queryParam, query.trim());
   return retailerHtml({ store, url: url.href }, config, fetcher);
 }
 export const listingKey = (product: Pick<ScrapedProduct, 'store' | 'externalId'>) =>
-  `${product.store.toLowerCase()}-${product.externalId.toLowerCase()}`;
+  `${product.store === 'B&H' ? 'bhphoto' : product.store.toLowerCase()}-${product.externalId.toLowerCase()}`;
 export const observationKey = (listingId: string, run: string) =>
   createHash('sha256').update(`${listingId}:${run}`).digest('hex');

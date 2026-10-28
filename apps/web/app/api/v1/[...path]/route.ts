@@ -22,7 +22,7 @@ import {
   disconnectTelegram,
   reviewTelegramDelivery,
 } from '../../../../../../packages/notifications/telegram';
-import { parseRetailUrl, rank } from '@domain/index';
+import { STORE_NAMES, parseRetailUrl, rank } from '@domain/index';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,7 @@ const ruleSchema = z.object({
   id: z.string().uuid().optional(),
   productId: z.string().max(100),
   target: z.number().int().positive().max(10000000000),
-  store: z.enum(['all', 'Amazon', 'Flipkart']).default('all'),
+  store: z.enum(['all', ...STORE_NAMES]).default('all'),
   basis: z.enum(['delivered', 'item']).default('delivered'),
   operator: z.enum(['lte', 'lt']).default('lte'),
   enabled: z.boolean().default(true),
@@ -77,7 +77,10 @@ async function handler(req: NextRequest) {
     if (req.method === 'GET') {
       if (path[0] === 'discovery' && data.isLive()) {
         const query = z.string().min(2).max(2000).parse(req.nextUrl.searchParams.get('q'));
-        return json((await lookupStatus(query)) || { state: 'missing' });
+        const scope = z
+          .enum(['all', ...STORE_NAMES])
+          .parse(req.nextUrl.searchParams.get('store') || 'all');
+        return json((await lookupStatus(query, scope)) || { state: 'missing' });
       }
       if (path[0] === 'health')
         return json({
@@ -187,8 +190,13 @@ async function handler(req: NextRequest) {
       );
     }
     if (req.method === 'POST' && path[0] === 'discovery' && data.isLive()) {
-      const body = z.object({ query: z.string().trim().min(2).max(2000) }).parse(await req.json());
-      const result = await discoverProducts(body.query);
+      const body = z
+        .object({
+          query: z.string().trim().min(2).max(2000),
+          store: z.enum(['all', ...STORE_NAMES]).default('all'),
+        })
+        .parse(await req.json());
+      const result = await discoverProducts(body.query, body.store);
       return json(result, result?.state === 'pending' ? 202 : 200);
     }
     if (path[0] === 'admin' && req.method === 'POST') {
@@ -255,7 +263,7 @@ async function handler(req: NextRequest) {
       if (path[1] === 'provider') {
         const b = z
           .object({
-            store: z.enum(['Amazon', 'Flipkart']),
+            store: z.enum(STORE_NAMES),
             paused: z.boolean(),
             reason: z.string().min(3).max(300),
           })

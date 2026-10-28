@@ -3,6 +3,9 @@ export const normalizeQuery = (value: string) =>
   value
     .normalize('NFKC')
     .toLowerCase()
+    .replace(/\b(cook\s+top|air\s+fryer|t[ -]shirt|smart\s+watch|smart\s+phone)\b/g, (word) =>
+      word.replace(/[ -]/g, ''),
+    )
     .replace(/\b(fx|wh|wf|sm|rtx|gtx|mx|dx|dhx|iphone|pixel)[\s-]+(?=\d)/g, '$1')
     .replace(/cancell?ing|cancellation/g, 'cancel')
     .replace(/\b(headphones|earphones|earbuds|calculators)\b/g, (word) => word.slice(0, -1))
