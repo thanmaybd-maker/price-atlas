@@ -13,6 +13,8 @@ import {
 import { ScrapeError } from '../../../../../../packages/providers/scraper';
 import { fetchProductWithBudget } from '../../../../../../packages/jobs/index';
 import { discoverProducts, lookupStatus } from '../../../../../../packages/jobs/discovery';
+import { catalogExpansionStatus } from '../../../../../../packages/jobs/catalog-expansion';
+import { categoryLabels } from '../../../../../../packages/domain/categories';
 import { matchesQuery } from '../../../../../../packages/domain/search';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import { verifyUnsubscribe } from '../../../../../../packages/notifications/index';
@@ -75,6 +77,31 @@ async function handler(req: NextRequest) {
       } else buckets.set(key, { count: 1, until: now + 60000 });
     }
     if (req.method === 'GET') {
+      if (path[0] === 'catalog' && path[1] === 'status' && data.isLive()) {
+        const counts = (
+          await postgres().query(
+            "SELECT p.data->>'category' AS category,count(*)::integer AS count FROM atlas.products p WHERE EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=p.id AND l.match_state<>'rejected') GROUP BY p.data->>'category'",
+          )
+        ).rows;
+        const expansion = await catalogExpansionStatus();
+        return json({
+          mode: 'live',
+          products: counts.reduce((sum, row) => sum + row.count, 0),
+          categories: Object.entries(categoryLabels).map(([id, name]) => ({
+            id,
+            name,
+            count: counts.find((row) => row.category === id)?.count || 0,
+          })),
+          expansion: {
+            enabled: expansion.enabled || false,
+            target: expansion.target || 2500,
+            verifiedBaseProducts: expansion.counts.verified || 0,
+            pendingBaseProducts: expansion.counts.pending || 0,
+            blockedUntil: Number(expansion.blocked_until || 0),
+            lastError: expansion.last_error || null,
+          },
+        });
+      }
       if (path[0] === 'discovery' && data.isLive()) {
         const query = z.string().min(2).max(2000).parse(req.nextUrl.searchParams.get('q'));
         const scope = z

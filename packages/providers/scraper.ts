@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { parseRetailUrl, type Store } from '../domain/index';
 import { retailers } from '../domain/retailers';
 import { structuredData, hasType } from './structured-data';
+import { nykaaFetch } from './nykaa-http';
 
 export class ScrapeError extends Error {
   constructor(
@@ -244,6 +245,18 @@ function parseStructuredRetailer(
           : 'Not confirmed by source',
     'Checked at': new Date(observedAt).toISOString(),
   };
+  const breadcrumbs = structuredData($)
+    .filter((value) => hasType(value, 'BreadcrumbList'))
+    .flatMap((value) => (Array.isArray(value.itemListElement) ? value.itemListElement : []))
+    .map((value) => value.name || value.item?.name)
+    .filter(
+      (value): value is string =>
+        typeof value === 'string' && value !== product.name && value.length < 120,
+    );
+  if (breadcrumbs.length) attributes['Source category'] = breadcrumbs.join(' > ').slice(0, 500);
+  if (identity.store === 'Nykaa')
+    attributes['Base product ID'] =
+      new URL(identity.url).pathname.match(/\/p\/(\d+)/)?.[1] || identity.externalId;
   if (verifiedNykaaParent) {
     if (typeof nykaaVariant?.packSize === 'string') attributes.Size = nykaaVariant.packSize;
     if (typeof nykaaVariant?.variantName === 'string') attributes.Shade = nykaaVariant.variantName;
@@ -749,6 +762,8 @@ async function retailerHtml(
   fetcher: typeof fetch = fetch,
 ): Promise<string> {
   scraperCreditCost(config);
+  if (config.transport === 'direct' && identity.store === 'Nykaa' && fetcher === fetch)
+    fetcher = nykaaFetch;
   const signal = AbortSignal.timeout(Math.min(config.timeoutMs || 25000, 55000));
   try {
     let response: Response;

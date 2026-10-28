@@ -113,6 +113,11 @@ export function categoryFor(title: string, attributes: Record<string, string>): 
     return 'tablets';
   if (/\bmonitor\b/i.test(title) && /\b(?:ips|panel|inch|resolution|hz)\b/i.test(title))
     return 'monitors';
+  const sourceCategory = attributes['Source category'] || '';
+  if (/\b(?:makeup|lips|lipstick|cosmetics|nails|eye makeup)\b/i.test(sourceCategory))
+    return 'beauty';
+  if (/\b(?:skin|skin care|skincare|hair|hair care|bath|body|fragrance)\b/i.test(sourceCategory))
+    return 'personal-care';
   if (
     /\b(?:lipstick|lip gloss|lip tint|lip liner|foundation|concealer|mascara|eyeliner|eyeshadow|blush|makeup|cosmetics|nail polish|nail lacquer|kajal|compact powder)\b/i.test(
       title,

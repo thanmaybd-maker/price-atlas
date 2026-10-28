@@ -15,7 +15,12 @@ import { ResendNotifications, type NotificationProvider } from '../notifications
 import type { Store } from '../domain/index';
 import { deliverTelegram } from '../notifications/telegram';
 import { deliverTestAlerts } from '../notifications/test-alerts';
-import { availableCredentials, recordCredentialFailure } from './provider-pool';
+import {
+  availableCredentials,
+  recordCredentialFailure,
+  recordCredentialSuccess,
+} from './provider-pool';
+import { runCatalogExpansionStep } from './catalog-expansion';
 export class SourceLimitError extends ScrapeError {}
 export async function reserveSource(store: Store, config: ScraperConfig = scraperConfig()) {
   const policy = livePolicy(store);
@@ -99,7 +104,7 @@ export async function fetchProductWithBudget(
     }
   }
   const cost = scraperCreditCost(configured);
-  if (configured.transport !== 'direct' && allowPaid && !allowPaid(cost))
+  if (configured.transport !== 'direct' && allowPaid && !allowPaid(Math.max(1, cost)))
     throw new SourceLimitError(
       'lookup_budget',
       'The paid allowance for this lookup has been reached. Try a direct product link.',
@@ -125,7 +130,9 @@ export async function fetchProductWithBudget(
     await reserveSource(store, attempt);
     spent += cost;
     try {
-      return await scrapeProduct(url, attempt);
+      const result = await scrapeProduct(url, attempt);
+      await recordCredentialSuccess(apiKey);
+      return result;
     } catch (error) {
       if (!(error instanceof ScrapeError)) throw error;
       const permanent = ['provider_credits', 'provider_auth'].includes(error.code);
@@ -371,6 +378,12 @@ export async function startLiveWorker() {
         deliverNotifications(),
         deliverTestAlerts(),
       ]);
+      for (let i = 0; i < 2; i++) {
+        const expansion = await runCatalogExpansionStep();
+        if (expansion.event === 'catalog_idle') break;
+        console.log(JSON.stringify(expansion));
+        if (expansion.event === 'catalog_budget_pause') break;
+      }
       console.log(
         JSON.stringify({
           event: 'worker_tick',

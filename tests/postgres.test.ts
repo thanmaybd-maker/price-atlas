@@ -1,4 +1,7 @@
 import { beforeAll, afterAll, it, expect, vi } from 'vitest';
+vi.mock('../packages/providers/nykaa-http', () => ({
+  nykaaFetch: (...args: Parameters<typeof fetch>) => fetch(...args),
+}));
 import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -7,6 +10,12 @@ import * as store from '../packages/database/postgres';
 import { demoPolicy } from '../packages/providers/index';
 import { livePolicy } from '../packages/providers/live';
 import { credentialFingerprint } from '../packages/jobs/provider-pool';
+import {
+  startCatalogExpansion,
+  runCatalogExpansionStep,
+  catalogExpansionStatus,
+  parseCatalogPage,
+} from '../packages/jobs/catalog-expansion';
 import { deliverTestAlerts } from '../packages/notifications/test-alerts';
 import { parseProductHtml } from '../packages/providers/scraper';
 import { discoverProducts } from '../packages/jobs/discovery';
@@ -88,6 +97,18 @@ beforeAll(async () => {
   await db.exec(
     await readFile(
       new URL('../packages/database/migrations/008_provider_keys.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/009_catalog_expansion.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/010_provider_cursor.sql', import.meta.url),
       'utf8',
     ),
   );
@@ -860,6 +881,9 @@ it('fails over an exhausted account and skips it on subsequent requests without 
     ).rows[0];
     expect(state.disabled).toBe(true);
     expect(JSON.stringify(state)).not.toContain('fixture-primary');
+    await db.query('DELETE FROM atlas.provider_keys WHERE fingerprint=$1', [
+      credentialFingerprint('fixture-primary-exhausted'),
+    ]);
     await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
     auth.length = 0;
     await fetchProductWithBudget('https://www.amazon.in/dp/B000000093');
@@ -918,5 +942,99 @@ it('fails over a temporary provider outage but does not rotate accounts for a re
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
     }
+  }
+});
+it('expands unique base products from free catalog discovery but saves only verified product-page prices', async () => {
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  const url = 'https://www.nykaa.com/test-lipstick/p/900001';
+  const listing = {
+    categoryListing: {
+      pageNumber: 1,
+      listingData: {
+        totalFound: 1,
+        products: [
+          { parentId: '900001', slug: '/test-lipstick/p/900001', name: 'Test Lipstick', price: 1 },
+          {
+            parentId: '900001',
+            slug: '/test-lipstick/p/900001?skuId=900003',
+            name: 'Other shade',
+            price: 1,
+          },
+        ],
+      },
+    },
+  };
+  const listHtml = `<script>window.__PRELOADED_STATE__ = ${JSON.stringify(listing)}</script>`;
+  expect(parseCatalogPage(listHtml, 1).products).toHaveLength(1);
+  expect(() => parseCatalogPage(listHtml, 2)).toThrow();
+  const secondPageHtml = listHtml.replace('"pageNumber":1', '"pageNumber":"2"');
+  expect(parseCatalogPage(secondPageHtml, 2).products).toHaveLength(1);
+  const variant = {
+    childId: '900002',
+    sku: 'TEST_ROSE',
+    name: 'Test Lipstick Rose',
+    offerPrice: 50,
+    inStock: true,
+    buttonText: 'ADD TO BAG',
+    packSize: '4g',
+    variantName: 'Rose',
+  };
+  const state = {
+    productPage: { product: { id: '900001', selectedVariantId: '900002', variants: [variant] } },
+  };
+  const product = {
+    '@type': 'Product',
+    name: variant.name,
+    sku: variant.sku,
+    url,
+    brand: 'Test',
+    offers: { '@type': 'Offer', url, price: 50, priceCurrency: 'INR', availability: 'InStock' },
+  };
+  const pageHtml = `<script>window.__PRELOADED_STATE__ = ${JSON.stringify(state)}</script><script type="application/ld+json">${JSON.stringify(product)}</script>`;
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementation(
+      async (input) => new Response(String(input).includes('/c/') ? listHtml : pageHtml),
+    );
+  await startCatalogExpansion(1);
+  for (let i = 0; i < 5; i++) await runCatalogExpansionStep(fetcher);
+  const status = await catalogExpansionStatus();
+  expect(status.enabled).toBe(false);
+  expect(status.counts.verified).toBe(1);
+  const row = (
+    await db.query(
+      "SELECT product_id,catalog_interval_minutes FROM atlas.listings WHERE store='Nykaa' AND external_id='900002'",
+    )
+  ).rows[0];
+  expect(row.catalog_interval_minutes).toBe(10080);
+  expect((await store.offers(row.product_id))[0].itemPrice).toBe(5000);
+  expect((await store.findProduct(row.product_id))?.category).toBe('beauty');
+  expect(fetcher).toHaveBeenCalledTimes(4);
+});
+it('preserves the expansion frontier and pauses until the next UTC day when the shared request budget is exhausted', async () => {
+  await startCatalogExpansion(2);
+  await db.query(
+    "INSERT INTO atlas.catalog_frontier(id,url,name,priority) VALUES('900010','https://www.nykaa.com/another-lipstick/p/900010','Another lipstick',0)",
+  );
+  const prior = process.env.SCRAPER_REQUESTS_PER_DAY;
+  process.env.SCRAPER_REQUESTS_PER_DAY = '1';
+  const fetcher = vi.fn<typeof fetch>();
+  try {
+    expect(await runCatalogExpansionStep(fetcher)).toMatchObject({
+      event: 'catalog_budget_pause',
+      code: 'daily_budget',
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    const status = await catalogExpansionStatus();
+    expect(Number(status.blocked_until)).toBeGreaterThan(Date.now());
+    expect(status.counts.pending).toBe(1);
+    expect(
+      (await db.query("SELECT attempts,state FROM atlas.catalog_frontier WHERE id='900010'"))
+        .rows[0],
+    ).toEqual({ attempts: 0, state: 'pending' });
+    expect(await runCatalogExpansionStep(fetcher)).toEqual({ event: 'catalog_idle' });
+  } finally {
+    if (prior === undefined) delete process.env.SCRAPER_REQUESTS_PER_DAY;
+    else process.env.SCRAPER_REQUESTS_PER_DAY = prior;
   }
 });

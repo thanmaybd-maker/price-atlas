@@ -24,10 +24,24 @@ export async function availableCredentials(primary?: string) {
       keys.map(credentialFingerprint),
     )
   ).rows;
-  return keys.filter((key) => {
+  const cursor = (
+    await postgres().query("SELECT fingerprint FROM atlas.provider_cursor WHERE id='scrapingbee'")
+  ).rows[0]?.fingerprint;
+  const start = Math.max(
+    0,
+    keys.findIndex((key) => credentialFingerprint(key) === cursor),
+  );
+  const ordered = [...keys.slice(start), ...keys.slice(0, start)];
+  return ordered.filter((key) => {
     const state = states.find((s) => s.fingerprint === credentialFingerprint(key));
     return !state || (!state.disabled && Number(state.retry_after) <= Date.now());
   });
+}
+export async function recordCredentialSuccess(key: string) {
+  await postgres().query(
+    "INSERT INTO atlas.provider_cursor(id,fingerprint,updated_at) VALUES('scrapingbee',$1,$2) ON CONFLICT(id) DO UPDATE SET fingerprint=excluded.fingerprint,updated_at=excluded.updated_at",
+    [credentialFingerprint(key), Date.now()],
+  );
 }
 export async function recordCredentialFailure(key: string, code: string) {
   const disabled = ['provider_credits', 'provider_auth'].includes(code);
