@@ -28,7 +28,7 @@ export function livePolicy(store: Store): SourcePolicy {
     source: store,
     version: 'retailer-tracking-v1',
     mode: 'retail',
-    search: false,
+    search: true,
     resolveLink: true,
     currentPrices: true,
     history: true,
@@ -36,9 +36,11 @@ export function livePolicy(store: Store): SourcePolicy {
     matching: true,
     aiProcessing: false,
     imageProxying: false,
-    displayTtlSeconds: 3600,
+    // Catalog checks run daily. Keep their actual observation time visible;
+    // alert eligibility has a separate one-hour maximum in the repository.
+    displayTtlSeconds: 86400,
     historyRetentionDays: 30,
-    requestsPerMinute: 2,
+    requestsPerMinute: 12,
     agreementReference: null,
   };
 }

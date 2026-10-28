@@ -5,6 +5,7 @@ export const categoryRegistry: Record<Category, string[]> = {
   tablets: ['Brand', 'Model Number', 'RAM', 'Storage', 'Connectivity', 'Color'],
   audio: ['Brand', 'Model Number', 'Color', 'Connectivity'],
   monitors: ['Brand', 'Model Number', 'Display', 'Resolution', 'Refresh Rate'],
+  other: ['Brand', 'GTIN', 'Condition', 'Pack', 'Size', 'Color'],
 };
 const aliases: Record<string, string> = {
   'brand name': 'Brand',
@@ -65,14 +66,27 @@ export function compareAttributes(
   );
 }
 export function categoryFor(title: string, attributes: Record<string, string>): Category {
-  const text = `${title} ${Object.values(attributes).join(' ')}`.toLowerCase();
+  const deviceAt = title.search(
+    /\b(?:headphones?|earbuds?|earphones?|headset|airpods|laptop|notebook|macbook|tablet|ipad|monitor|smartphone|iphone|pixel|galaxy tab|pad\s+\d)\b/i,
+  );
+  const accessoryAt = title.search(
+    /\b(?:mouse|keyboard|webcam|printer|router|power bank|cable|charger|adapter)\b/i,
+  );
+  if (accessoryAt >= 0 && (deviceAt < 0 || accessoryAt < deviceAt)) return 'other';
+  if (/\b(?:extended warranty|warranty plan|insurance|protection plan)\b/i.test(title))
+    return 'other';
+  if (
+    /\b(?:charging|data|usb|hdmi|type[- ]?c)\s+(?:[\w-]+\s+){0,4}cable\b|\b(?:screen protector|tempered glass|replacement ear(?:pads| cushions)|protective (?:case|cover)|laptop (?:stand|sleeve)|phone (?:case|cover|holder)|power adapter)\b/i.test(
+      title,
+    )
+  )
+    return 'other';
+  const text = title.toLowerCase();
   if (/headphone|earbud|earphone|headset|airpods|airdopes|\b(?:wh|wf)-[a-z0-9-]+\b/.test(text))
     return 'audio';
   if (/laptop|notebook|macbook/.test(text)) return 'laptops';
   if (/tablet|ipad|galaxy tab/.test(text)) return 'tablets';
   if (/monitor/.test(text)) return 'monitors';
   if (/phone|pixel|iphone|galaxy|oneplus|redmi|mobile/.test(text)) return 'phones';
-  throw new Error(
-    'This product category is not supported yet. Import a phone, laptop, tablet, audio product or monitor.',
-  );
+  return 'other';
 }

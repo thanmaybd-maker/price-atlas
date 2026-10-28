@@ -2,10 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import * as data from '@database/runtime';
 import { account, authClient, isAdmin, safeReturn } from '@/lib/auth';
-import { importScraped, postgres, reviewMatch, reviewAnomaly, retryJob } from '@database/postgres';
+import {
+  importScraped,
+  postgres,
+  reviewMatch,
+  reviewAnomaly,
+  retryJob,
+  reusableListing,
+} from '@database/postgres';
 import { ScrapeError } from '../../../../../../packages/providers/scraper';
-import { getSourceAdapter } from '../../../../../../packages/providers/index';
-import { reserveSource } from '../../../../../../packages/jobs/index';
+import { fetchProductWithBudget } from '../../../../../../packages/jobs/index';
+import { discoverProducts, lookupStatus } from '../../../../../../packages/jobs/discovery';
+import { matchesQuery } from '../../../../../../packages/domain/search';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import { verifyUnsubscribe } from '../../../../../../packages/notifications/index';
 import {
@@ -18,6 +26,7 @@ import { parseRetailUrl, rank } from '@domain/index';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 const ruleSchema = z.object({
   id: z.string().uuid().optional(),
   productId: z.string().max(100),
@@ -53,7 +62,7 @@ async function handler(req: NextRequest) {
         data.isLive() &&
         (await limited(
           `${path[0]}:${key}`,
-          path[0] === 'auth' ? 5 : path[0] === 'imports' ? 5 : 60,
+          ['auth', 'imports', 'discovery'].includes(path[0]) ? 5 : 60,
         ))
       )
         return json({ error: 'Too many requests. Try again shortly.' }, 429);
@@ -66,6 +75,10 @@ async function handler(req: NextRequest) {
       } else buckets.set(key, { count: 1, until: now + 60000 });
     }
     if (req.method === 'GET') {
+      if (path[0] === 'discovery' && data.isLive()) {
+        const query = z.string().min(2).max(2000).parse(req.nextUrl.searchParams.get('q'));
+        return json((await lookupStatus(query)) || { state: 'missing' });
+      }
       if (path[0] === 'health')
         return json({
           status: 'ok',
@@ -82,9 +95,7 @@ async function handler(req: NextRequest) {
         const category = req.nextUrl.searchParams.get('category');
         const sort = req.nextUrl.searchParams.get('sort');
         let products = (await data.catalog()).filter(
-          (p) =>
-            (!category || p.category === category) &&
-            `${p.name} ${p.subtitle} ${p.brand}`.toLowerCase().includes(query),
+          (p) => (!category || p.category === category) && matchesQuery(p, query),
         );
         const all = await data.offers();
         if (sort === 'price-asc')
@@ -157,9 +168,10 @@ async function handler(req: NextRequest) {
       const parsed = parseRetailUrl(body.url);
       if (data.isLive()) {
         if (!user) return json({ error: 'Sign in to import a live product.' }, 401);
-        await reserveSource(parsed.store);
+        const cached = await reusableListing(body.url);
+        if (cached) return json({ status: 'complete', ...cached }, 200);
         const result = await importScraped(
-          await getSourceAdapter(parsed.store).scrape(body.url),
+          await fetchProductWithBudget(body.url),
           `import-${randomUUID()}`,
         );
         return json({ status: result.quarantined ? 'review' : 'complete', ...result }, 201);
@@ -173,6 +185,11 @@ async function handler(req: NextRequest) {
         },
         422,
       );
+    }
+    if (req.method === 'POST' && path[0] === 'discovery' && data.isLive()) {
+      const body = z.object({ query: z.string().trim().min(2).max(2000) }).parse(await req.json());
+      const result = await discoverProducts(body.query);
+      return json(result, result?.state === 'pending' ? 202 : 200);
     }
     if (path[0] === 'admin' && req.method === 'POST') {
       const configured = process.env.ADMIN_TOKEN;
@@ -410,7 +427,11 @@ async function handler(req: NextRequest) {
     if (error instanceof ScrapeError)
       return json(
         { error: error.message, code: error.code, requestId },
-        error.code === 'rate_limited' ? 429 : 502,
+        error.code === 'invalid_query'
+          ? 400
+          : ['rate_limited', 'daily_budget', 'monthly_budget'].includes(error.code)
+            ? 429
+            : 502,
       );
     if (error instanceof z.ZodError)
       return json({ error: error.issues[0]?.message || 'Invalid input.', requestId }, 400);

@@ -26,6 +26,7 @@ export type ScrapedProduct = {
   attributes: Record<string, string>;
   observedAt: number;
   parserVersion: string;
+  relatedUrls?: string[];
 };
 export type ScraperConfig = {
   transport: 'direct' | 'scrapingbee' | 'brightdata';
@@ -107,7 +108,7 @@ export function parseProductHtml(
   const $ = load(html);
   const pageTitle = $('title').text();
   if (
-    $('#captchacharacters, form[action*="validateCaptcha"]').length ||
+    $('#captchacharacters, form[action*="validateCaptcha"], #retry_btn').length ||
     /robot check|access denied|captcha|request blocked/i.test(pageTitle) ||
     /enter the characters you see below|sorry, we just need to make sure/i.test($('body').text())
   )
@@ -150,6 +151,30 @@ export function parseProductHtml(
   // Only a Product object whose name matches the main heading may supply a
   // structured fallback. Never use AggregateOffer.lowPrice or related items.
   const structured: Record<string, any>[] = [];
+  const primaryOgTitle = clean($('meta[property="og:title"]').attr('content') || '').toLowerCase();
+  const headingTokens = clean(title)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter(Boolean);
+  const compatiblePrimaryName = (value: Record<string, any>) => {
+    if (identity.store !== 'Flipkart') return false;
+    const skuMatches =
+      !identity.externalId.startsWith('ITM') &&
+      String(value.sku).toUpperCase() === identity.externalId;
+    const ogMatches =
+      typeof value.name === 'string' &&
+      value.name.length > 10 &&
+      primaryOgTitle.startsWith(clean(value.name).toLowerCase());
+    if (!skuMatches && !ogMatches) return false;
+    const label = `${value.name} ${value.color || ''}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+    return (
+      headingTokens.length >= 4 &&
+      headingTokens.filter((t) => label.split(' ').includes(t)).length / headingTokens.length >=
+        0.7 &&
+      headingTokens.filter((t) => /^\d+$/.test(t)).every((t) => label.split(' ').includes(t))
+    );
+  };
   const truncatedHeading = identity.store === 'Flipkart' && /(?:\.{3}|…)\s*(?:more)?$/i.test(title);
   const headingPrefix = clean(title)
     .replace(/(?:\.{3}|…)\s*(?:more)?$/i, '')
@@ -162,6 +187,7 @@ export function parseProductHtml(
         value['@type'] === 'Product' &&
         typeof value.name === 'string' &&
         (clean(title).toLowerCase().includes(clean(value.name).toLowerCase()) ||
+          compatiblePrimaryName(value) ||
           (truncatedHeading &&
             headingPrefix.length >= 30 &&
             clean(value.name).toLowerCase().startsWith(headingPrefix))) &&
@@ -401,6 +427,24 @@ export function parseProductHtml(
     attributes,
     observedAt,
     parserVersion: 'retailer-html-v2',
+    relatedUrls: [
+      ...new Set(
+        $('a[href]')
+          .toArray()
+          .flatMap((node) => {
+            try {
+              const url = new URL($(node).attr('href')!, identity.url);
+              const candidate = canonicalRetailUrl(url.href);
+              return candidate.store === identity.store &&
+                candidate.externalId !== identity.externalId
+                ? [candidate.url]
+                : [];
+            } catch {
+              return [];
+            }
+          }),
+      ),
+    ].slice(0, 40),
   };
 }
 export function scraperConfig(): ScraperConfig {
@@ -426,7 +470,17 @@ export function scraperConfig(): ScraperConfig {
     timeoutMs: 25000,
   };
 }
-async function boundedHtml(response: Response) {
+// Reserve the full configured cost before making a request, including failed parses.
+// Fixed tiers only: never enable automatic escalation against a limited balance.
+export function scraperCreditCost(config = scraperConfig()) {
+  if (config.transport !== 'scrapingbee') return 0;
+  const cost = config.premiumProxy ? (config.renderJs ? 25 : 10) : config.renderJs ? 5 : 1;
+  const maximum = config.maxCredits ?? 10;
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || cost > maximum)
+    throw new ScrapeError('configuration', 'Scraper settings exceed SCRAPER_MAX_CREDITS.');
+  return cost;
+}
+export async function boundedHtml(response: Response) {
   if (!response.ok) {
     await response.body?.cancel();
     throw new ScrapeError(
@@ -465,12 +519,12 @@ async function boundedHtml(response: Response) {
   }
   return Buffer.concat(chunks).toString('utf8');
 }
-export async function scrapeProduct(
-  inputUrl: string,
-  config = scraperConfig(),
+async function retailerHtml(
+  identity: { store: Store; url: string; externalId?: string },
+  config: ScraperConfig,
   fetcher: typeof fetch = fetch,
-): Promise<ScrapedProduct> {
-  const identity = canonicalRetailUrl(inputUrl);
+): Promise<string> {
+  scraperCreditCost(config);
   const signal = AbortSignal.timeout(Math.min(config.timeoutMs || 25000, 55000));
   try {
     let response: Response;
@@ -527,8 +581,13 @@ export async function scrapeProduct(
         if (!location || redirects >= 2)
           throw new ScrapeError('redirect', 'Unsupported retailer redirect.');
         const next = new URL(location, url);
-        const parsed = parseRetailUrl(next.href);
-        if (parsed.store !== identity.store || parsed.externalId !== identity.externalId)
+        const parsed = identity.externalId ? parseRetailUrl(next.href) : null;
+        if (
+          parsed
+            ? parsed.store !== identity.store || parsed.externalId !== identity.externalId
+            : next.origin !== new URL(identity.url).origin ||
+              next.pathname !== new URL(identity.url).pathname
+        )
           throw new ScrapeError(
             'redirect',
             'Retailer redirect changed the product or destination.',
@@ -536,7 +595,14 @@ export async function scrapeProduct(
         url = next.href;
       }
     }
-    return parseProductHtml(await boundedHtml(response), identity.url);
+    if (config.transport === 'scrapingbee' && [401, 402].includes(response.status)) {
+      await response.body?.cancel();
+      throw new ScrapeError(
+        response.status === 402 ? 'provider_credits' : 'provider_auth',
+        'Collection provider credits or authentication need attention.',
+      );
+    }
+    return boundedHtml(response);
   } catch (error) {
     if (error instanceof ScrapeError) throw error;
     throw new ScrapeError(
@@ -545,6 +611,28 @@ export async function scrapeProduct(
       true,
     );
   }
+}
+export async function scrapeProduct(
+  inputUrl: string,
+  config = scraperConfig(),
+  fetcher: typeof fetch = fetch,
+): Promise<ScrapedProduct> {
+  const identity = canonicalRetailUrl(inputUrl);
+  return parseProductHtml(await retailerHtml(identity, config, fetcher), identity.url);
+}
+export async function scrapeSearchHtml(
+  query: string,
+  store: Store,
+  config: ScraperConfig = { transport: 'direct', timeoutMs: 6000 },
+  fetcher: typeof fetch = fetch,
+) {
+  if (query.trim().length < 2 || query.length > 160)
+    throw new ScrapeError('invalid_query', 'Search must contain 2–160 characters.');
+  const url = new URL(
+    store === 'Amazon' ? 'https://www.amazon.in/s' : 'https://www.flipkart.com/search',
+  );
+  url.searchParams.set(store === 'Amazon' ? 'k' : 'q', query.trim());
+  return retailerHtml({ store, url: url.href }, config, fetcher);
 }
 export const listingKey = (product: Pick<ScrapedProduct, 'store' | 'externalId'>) =>
   `${product.store.toLowerCase()}-${product.externalId.toLowerCase()}`;

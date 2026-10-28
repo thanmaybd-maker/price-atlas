@@ -46,6 +46,8 @@ import { LiveLogin } from './live-login';
 import { Operations } from './operations';
 import { Mfa } from './mfa';
 import { TelegramSettings } from './telegram-settings';
+import { matchesQuery } from '../../../packages/domain/search';
+import type { SearchCandidate } from '../../../packages/providers/search';
 type User = {
   id: string;
   name: string;
@@ -94,6 +96,7 @@ const categories: { id: Category; name: string; icon: typeof Smartphone }[] = [
   { id: 'audio', name: 'Audio', icon: Headphones },
   { id: 'tablets', name: 'Tablets', icon: Tablet },
   { id: 'monitors', name: 'Monitors', icon: Monitor },
+  { id: 'other', name: 'Other products', icon: LayoutGrid },
 ];
 const empty: Session = { user: null, watches: [], rules: [], notifications: [] };
 async function api(path: string, method = 'GET', body?: unknown, headers?: Record<string, string>) {
@@ -144,6 +147,13 @@ export default function Atlas({
   const [scope, setScope] = useState('all');
   const [basis, setBasis] = useState<'delivered' | 'item'>('delivered');
   const [busy, setBusy] = useState(false);
+  const [lookup, setLookup] = useState<{
+    query: string;
+    busy: boolean;
+    ids: string[];
+    message: string;
+    candidates: SearchCandidate[];
+  }>({ query: '', busy: false, ids: [], message: '', candidates: [] });
   const [compare, setCompare] = useState<string[]>([]);
   const [history, setHistory] = useState(initialHistory);
   const [range, setRange] = useState(30);
@@ -160,6 +170,64 @@ export default function Atlas({
   const sort = params.get('sort') || 'recommended';
   const brand = params.get('brand') || '';
   const maximum = Number(params.get('max') || 0);
+  const searchText = params.get('q') || '';
+  useEffect(() => {
+    if (demo || page !== 'search' || searchText.trim().length < 2) return;
+    let active = true;
+    const controller = new AbortController();
+    setLookup({ query: searchText, busy: true, ids: [], message: '', candidates: [] });
+    void (async () => {
+      const response = await fetch('/api/v1/discovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchText }),
+        signal: controller.signal,
+      });
+      let result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || 'Product lookup is temporarily unavailable.');
+      for (let attempt = 0; result.state === 'pending' && attempt < 30 && active; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const status = await fetch(`/api/v1/discovery?q=${encodeURIComponent(searchText)}`, {
+          signal: controller.signal,
+        });
+        result = await status.json();
+      }
+      if (!active) return;
+      const found = (result.products || []) as Product[];
+      const incoming = (result.offers || []) as Offer[];
+      setProducts((prior) => [...found, ...prior.filter((p) => !found.some((f) => f.id === p.id))]);
+      setOffers((prior) => [
+        ...incoming,
+        ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
+      ]);
+      setLookup({
+        query: searchText,
+        busy: false,
+        ids: found.map((p) => p.id),
+        message:
+          result.message ||
+          (found.length
+            ? `${found.length} product${found.length === 1 ? '' : 's'} found. Prices and availability are from recorded retailer checks.`
+            : 'No verified details found. Try a specific model name or retailer product URL.'),
+        candidates: result.candidates || [],
+      });
+      if (/^https?:\/\//i.test(searchText) && found[0]) router.push(`/p/${found[0].slug}`);
+    })().catch((error) => {
+      if (active)
+        setLookup({
+          query: searchText,
+          busy: false,
+          ids: [],
+          message: error instanceof Error ? error.message : 'Unable to check products.',
+          candidates: [],
+        });
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [demo, page, searchText, router]);
   async function refresh() {
     const result = await api('session');
     setSession(result);
@@ -347,6 +415,10 @@ export default function Atlas({
   }
   async function search(e: FormEvent) {
     e.preventDefault();
+    if (!demo) {
+      router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+      return;
+    }
     if (/^https?:\/\//i.test(query)) {
       if (!demo && !session.user) {
         sessionStorage.setItem(
@@ -367,9 +439,8 @@ export default function Atlas({
     (p) =>
       (!category || p.category === category) &&
       (!params.get('q') ||
-        `${p.name} ${p.subtitle} ${p.brand}`
-          .toLowerCase()
-          .includes(params.get('q')!.toLowerCase())) &&
+        (lookup.query === searchText && lookup.ids.includes(p.id)) ||
+        matchesQuery(p, params.get('q') || '')) &&
       (!brand || p.brand === brand) &&
       (!maximum ||
         (rank(offers.filter((o) => o.productId === p.id)).lowest ?? Infinity) <= maximum * 100),
@@ -766,6 +837,30 @@ export default function Atlas({
               </div>
               <SearchBox query={query} setQuery={setQuery} search={search} products={products} />
             </div>
+            {!demo && searchText && (
+              <section aria-label="Live product lookup">
+                <p role="status" aria-live="polite">
+                  {lookup.query === searchText && lookup.busy
+                    ? 'Checking retailer results and product details…'
+                    : lookup.query === searchText
+                      ? lookup.message
+                      : ''}
+                </p>
+                {lookup.query === searchText && lookup.candidates.length > 0 && (
+                  <details>
+                    <summary>More retailer results — choose a product to check</summary>
+                    <ul>
+                      {lookup.candidates.map((c) => (
+                        <li key={c.url}>
+                          <Link href={`/search?q=${encodeURIComponent(c.url)}`}>{c.title}</Link> ·{' '}
+                          {c.store}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </section>
+            )}
             <div className="category-tabs">
               <Link className={`category-tab ${!category ? 'selected' : ''}`} href="/search">
                 <LayoutGrid size={17} />
@@ -840,11 +935,17 @@ export default function Atlas({
             ) : (
               <Empty
                 icon={Search}
-                title="No exact match this time."
+                title={
+                  !demo && lookup.query === searchText && lookup.busy
+                    ? 'Checking products…'
+                    : 'No exact match this time.'
+                }
                 text={
                   demo
                     ? 'Try a model name, clear a filter, or explore another category. The demo has eight carefully defined variants.'
-                    : 'No imported products match. Try another query or paste a direct retailer product URL.'
+                    : lookup.query === searchText && lookup.busy
+                      ? 'Searching supported retailers and verifying product details. This can take a few seconds.'
+                      : 'Try a more specific model name, clear a filter, or paste a direct Amazon.in or Flipkart product URL.'
                 }
                 action={
                   <Link className="primary" href="/search">

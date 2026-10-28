@@ -1,6 +1,13 @@
 import { Queue, Worker } from 'bullmq';
 import { postgres, tx, collect, importScraped, maintenance, offers } from '../database/postgres';
-import { ScrapeError, canonicalRetailUrl } from '../providers/scraper';
+import {
+  ScrapeError,
+  canonicalRetailUrl,
+  scraperCreditCost,
+  scraperConfig,
+  scrapeProduct,
+  type ScraperConfig,
+} from '../providers/scraper';
 import { getSourceAdapter } from '../providers/index';
 import { livePolicy } from '../providers/live';
 import { rank, type Rule } from '../domain/index';
@@ -8,37 +15,58 @@ import { ResendNotifications, type NotificationProvider } from '../notifications
 import type { Store } from '../domain/index';
 import { deliverTelegram } from '../notifications/telegram';
 import { deliverTestAlerts } from '../notifications/test-alerts';
-export async function reserveSource(store: Store) {
+export class SourceLimitError extends ScrapeError {}
+export async function reserveSource(store: Store, config: ScraperConfig = scraperConfig()) {
   const policy = livePolicy(store);
   if (!policy.currentPrices)
     throw new ScrapeError('disabled', 'Current price collection is disabled for this source.');
   await tx(async (c) => {
     const day = new Date().toISOString().slice(0, 10);
-    const limit = Number(process.env.SCRAPER_REQUESTS_PER_DAY || 40);
+    const limit = Number(process.env.SCRAPER_REQUESTS_PER_DAY || 1000);
+    const creditLimit = Number(process.env.SCRAPER_CREDITS_PER_DAY || 100);
+    const monthLimit = Number(process.env.SCRAPER_CREDITS_PER_MONTH || 300);
+    const cost = scraperCreditCost(config);
+    if (![creditLimit, monthLimit].every((n) => Number.isSafeInteger(n) && n >= 0))
+      throw new ScrapeError('configuration', 'Scraper credit limits must be nonnegative integers.');
     if (!Number.isSafeInteger(limit) || limit < 1)
       throw new ScrapeError(
         'configuration',
         'SCRAPER_REQUESTS_PER_DAY must be a positive integer.',
       );
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('atlas:collection-budget'))");
     await c.query('INSERT INTO atlas.collection_budget(day) VALUES($1) ON CONFLICT DO NOTHING', [
       day,
     ]);
     const budget = (
-      await c.query('SELECT requests FROM atlas.collection_budget WHERE day=$1 FOR UPDATE', [day])
+      await c.query(
+        'SELECT requests,credits FROM atlas.collection_budget WHERE day=$1 FOR UPDATE',
+        [day],
+      )
     ).rows[0];
-    if (budget.requests >= limit)
-      throw new ScrapeError(
+    if (budget.requests >= limit || (cost > 0 && Number(budget.credits) + cost > creditLimit))
+      throw new SourceLimitError(
         'daily_budget',
         'The daily collection limit has been reached. Tracking resumes tomorrow.',
+      );
+    const month = (
+      await c.query(
+        'SELECT COALESCE(sum(credits),0) AS credits FROM atlas.collection_budget WHERE day >= $1 AND day <= $2',
+        [day.slice(0, 7) + '-01', day],
+      )
+    ).rows[0];
+    if (cost > 0 && Number(month.credits) + cost > monthLimit)
+      throw new SourceLimitError(
+        'monthly_budget',
+        'The monthly collection credit limit has been reached.',
       );
     const row = (
       await c.query('SELECT * FROM atlas.provider_state WHERE store=$1 FOR UPDATE', [store])
     ).rows[0];
-    if (!row || row.paused) throw new ScrapeError('paused', 'This retailer is paused.');
+    if (!row || row.paused) throw new SourceLimitError('paused', 'This retailer is paused.');
     const now = Date.now(),
       fresh = now - Number(row.window_start) >= 60000;
     if (!fresh && row.requests >= policy.requestsPerMinute)
-      throw new ScrapeError(
+      throw new SourceLimitError(
         'rate_limited',
         'The source request budget is exhausted. Try again in a minute.',
         true,
@@ -47,8 +75,25 @@ export async function reserveSource(store: Store) {
       'UPDATE atlas.provider_state SET requests=$1,window_start=$2,policy=$3 WHERE store=$4',
       [fresh ? 1 : row.requests + 1, fresh ? now : row.window_start, policy, store],
     );
-    await c.query('UPDATE atlas.collection_budget SET requests=requests+1 WHERE day=$1', [day]);
+    await c.query(
+      'UPDATE atlas.collection_budget SET requests=requests+1,credits=credits+$2 WHERE day=$1',
+      [day, cost],
+    );
   });
+}
+export async function fetchProductWithBudget(url: string, timeoutMs?: number) {
+  const { store } = canonicalRetailUrl(url);
+  const configured = { ...scraperConfig(), ...(timeoutMs ? { timeoutMs } : {}) };
+  if (configured.transport !== 'direct' && process.env.SCRAPER_DIRECT_FIRST !== 'false') {
+    await reserveSource(store, { transport: 'direct' });
+    try {
+      return await scrapeProduct(url, { transport: 'direct', timeoutMs: 6000 });
+    } catch (error) {
+      if (!(error instanceof ScrapeError)) throw error;
+    }
+  }
+  await reserveSource(store, configured);
+  return scrapeProduct(url, configured);
 }
 export async function runCollectionJob(id: string) {
   const claimed = await postgres().query(
@@ -58,10 +103,8 @@ export async function runCollectionJob(id: string) {
   const job = claimed.rows[0];
   if (!job) return;
   try {
-    const identity = canonicalRetailUrl(job.payload.url);
-    await reserveSource(identity.store);
     const result = await importScraped(
-      await getSourceAdapter(identity.store).scrape(job.payload.url),
+      await fetchProductWithBudget(job.payload.url),
       job.payload.runKey,
     );
     await tx(async (c) => {
@@ -71,7 +114,7 @@ export async function runCollectionJob(id: string) {
         [job.payload.runKey, result.observations],
       );
       await c.query(
-        "UPDATE atlas.runs SET status='complete',completed_at=$2 WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM atlas.jobs WHERE payload->>'runKey'=$1 AND state IN ('pending','running'))",
+        "UPDATE atlas.runs SET status=CASE WHEN EXISTS(SELECT 1 FROM atlas.jobs WHERE payload->>'runKey'=$1 AND state='failed') THEN 'partial' ELSE 'complete' END,completed_at=$2 WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM atlas.jobs WHERE payload->>'runKey'=$1 AND state IN ('pending','running'))",
         [job.payload.runKey, Date.now()],
       );
     });
@@ -86,19 +129,28 @@ export async function runCollectionJob(id: string) {
     );
   } catch (error) {
     const code = error instanceof ScrapeError ? error.code : 'collection_failed';
-    const retryable = error instanceof ScrapeError && error.retryable && job.attempts < 4;
-    const delay =
-      code === 'daily_budget'
-        ? 86400000 - (Date.now() % 86400000) + 60000
-        : Math.min(3600000, 60000 * 2 ** job.attempts);
+    const deferred =
+      error instanceof SourceLimitError &&
+      ['daily_budget', 'monthly_budget', 'rate_limited', 'paused'].includes(code);
+    const retryable =
+      deferred || (error instanceof ScrapeError && error.retryable && job.attempts < 4);
+    const now = new Date();
+    const delay = !retryable
+      ? 86400000
+      : code === 'monthly_budget'
+        ? Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) - Date.now() + 60000
+        : code === 'daily_budget'
+          ? 86400000 - (Date.now() % 86400000) + 60000
+          : Math.min(3600000, 60000 * 2 ** job.attempts);
     await tx(async (c) => {
       await c.query(
-        'UPDATE atlas.jobs SET state=$2,available_at=$3,lease_until=NULL,last_error=$4 WHERE id=$1',
-        [id, retryable ? 'pending' : 'failed', Date.now() + delay, code],
+        'UPDATE atlas.jobs SET state=$2,available_at=$3,lease_until=NULL,last_error=$4,attempts=attempts-$5 WHERE id=$1',
+        [id, retryable ? 'pending' : 'failed', Date.now() + delay, code, deferred ? 1 : 0],
       );
-      await c.query('UPDATE atlas.listings SET failures=failures+1,next_check=$2 WHERE id=$1', [
+      await c.query('UPDATE atlas.listings SET failures=failures+$3,next_check=$2 WHERE id=$1', [
         job.payload.listingId,
         Date.now() + delay,
+        deferred ? 0 : 1,
       ]);
       await c.query('UPDATE atlas.provider_state SET last_error=$2 WHERE store=$1', [
         canonicalRetailUrl(job.payload.url).store,
@@ -218,25 +270,33 @@ export async function deliverNotifications(
   }
 }
 export async function startLiveWorker() {
-  if (!process.env.REDIS_URL) throw new Error('REDIS_URL is required for the live worker.');
-  const redis = new URL(process.env.REDIS_URL);
-  const connection = {
-    host: redis.hostname,
-    port: Number(redis.port || 6379),
-    username: decodeURIComponent(redis.username) || undefined,
-    password: decodeURIComponent(redis.password) || undefined,
-    tls: redis.protocol === 'rediss:' ? {} : undefined,
-    maxRetriesPerRequest: null,
-  };
-  const queue = new Queue('atlas-collection', { connection });
-  const worker = new Worker('atlas-collection', (job) => runCollectionJob(job.data.id), {
-    connection,
-    concurrency: 2,
-  });
-  queue.on('error', () => console.error(JSON.stringify({ event: 'queue_error' })));
-  worker.on('error', () => console.error(JSON.stringify({ event: 'worker_error' })));
+  const useRedis = process.env.WORKER_QUEUE === 'redis';
+  if (useRedis && !process.env.REDIS_URL)
+    throw new Error('REDIS_URL is required for Redis queue mode.');
+  const redis = useRedis ? new URL(process.env.REDIS_URL!) : null;
+  const connection = redis
+    ? {
+        host: redis.hostname,
+        port: Number(redis.port || 6379),
+        username: decodeURIComponent(redis.username) || undefined,
+        password: decodeURIComponent(redis.password) || undefined,
+        tls: redis.protocol === 'rediss:' ? {} : undefined,
+        maxRetriesPerRequest: null,
+      }
+    : null;
+  const queue = connection ? new Queue('atlas-collection', { connection }) : null;
+  const worker = connection
+    ? new Worker('atlas-collection', (job) => runCollectionJob(job.data.id), {
+        connection,
+        concurrency: 2,
+        drainDelay: 60,
+      })
+    : null;
+  queue?.on('error', () => console.error(JSON.stringify({ event: 'queue_error' })));
+  worker?.on('error', () => console.error(JSON.stringify({ event: 'worker_error' })));
   let ticking = false,
     stopping = false;
+  let lastSuccess = 0;
   async function tick() {
     if (ticking || stopping) return;
     ticking = true;
@@ -244,15 +304,17 @@ export async function startLiveWorker() {
       await maintenance();
       const run = await collect();
       const due = await postgres().query(
-        "SELECT id FROM atlas.jobs WHERE state='pending' AND available_at<=$1 LIMIT 100",
+        "SELECT j.id FROM atlas.jobs j WHERE j.state='pending' AND j.available_at<=$1 ORDER BY EXISTS(SELECT 1 FROM atlas.listings l JOIN atlas.rules r ON r.product_id=l.product_id WHERE l.id=j.payload->>'listingId' AND (r.data->>'enabled')::boolean) DESC,j.created_at,j.id LIMIT 4",
         [Date.now()],
       );
       for (const row of due.rows)
-        await queue.add(
-          'collect',
-          { id: row.id },
-          { jobId: row.id, removeOnComplete: true, removeOnFail: true },
-        );
+        if (queue)
+          await queue.add(
+            'collect',
+            { id: row.id },
+            { jobId: row.id, removeOnComplete: true, removeOnFail: true },
+          );
+        else await runCollectionJob(row.id);
       const deliveries = await Promise.allSettled([
         deliverTelegram(),
         deliverNotifications(),
@@ -268,20 +330,28 @@ export async function startLiveWorker() {
       );
       if (deliveries.some((result) => result.status === 'rejected'))
         console.error(JSON.stringify({ event: 'notification_dispatch_failed' }));
+      else lastSuccess = Date.now();
     } catch {
       console.error(JSON.stringify({ event: 'worker_tick_failed' }));
     } finally {
       ticking = false;
     }
   }
-  const timer = setInterval(() => void tick(), 30000);
+  const timer = setInterval(() => void tick(), 60000);
   void tick();
-  return async () => {
+  const close = async () => {
     stopping = true;
     clearInterval(timer);
-    await worker.close();
+    await worker?.close();
     while (ticking) await new Promise((resolve) => setTimeout(resolve, 100));
-    await queue.close();
+    await queue?.close();
     await postgres().end();
   };
+  return Object.assign(close, {
+    health: () => ({
+      ready: !stopping && lastSuccess > Date.now() - 180000,
+      lastSuccessfulTick: lastSuccess || null,
+      queue: useRedis ? 'redis' : 'database',
+    }),
+  });
 }

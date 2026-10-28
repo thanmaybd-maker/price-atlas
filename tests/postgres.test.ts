@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, it, expect } from 'vitest';
+import { beforeAll, afterAll, it, expect, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +8,8 @@ import { demoPolicy } from '../packages/providers/index';
 import { livePolicy } from '../packages/providers/live';
 import { deliverTestAlerts } from '../packages/notifications/test-alerts';
 import { parseProductHtml } from '../packages/providers/scraper';
-import { deliverNotifications, reserveSource } from '../packages/jobs/index';
+import { discoverProducts } from '../packages/jobs/discovery';
+import { deliverNotifications, reserveSource, runCollectionJob } from '../packages/jobs/index';
 import {
   createTelegramLink,
   handleTelegramUpdate,
@@ -53,6 +54,18 @@ beforeAll(async () => {
   await db.exec(
     await readFile(
       new URL('../packages/database/migrations/004_test_alerts.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/005_credit_budget.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/006_live_search.sql', import.meta.url),
       'utf8',
     ),
   );
@@ -113,6 +126,15 @@ it('deduplicates logical observations and keeps a late response from replacing t
   await store.importScraped(
     parseProductHtml(html(), 'https://www.amazon.in/dp/B000000001', current.observedAt - 10000),
     'older',
+  );
+  expect((await store.offers(productId))[0].id).toBe(current.id);
+  await store.importScraped(
+    parseProductHtml(
+      '<span id="productTitle">Old unavailable phone</span><div id="availability">Currently unavailable</div>',
+      'https://www.amazon.in/dp/B000000001',
+      current.observedAt - 20000,
+    ),
+    'older-unavailable',
   );
   expect((await store.offers(productId))[0].id).toBe(current.id);
   expect(
@@ -509,4 +531,195 @@ it('enforces the shared daily quota independently of each retailer minute quota'
   await reserveSource('Amazon');
   await expect(reserveSource('Flipkart')).rejects.toMatchObject({ code: 'daily_budget' });
   delete process.env.SCRAPER_REQUESTS_PER_DAY;
+});
+it('keeps tracked listings hourly after a successful refresh', async () => {
+  const imported = await store.importScraped(
+    parseProductHtml(html(), 'https://www.amazon.in/dp/B000000030'),
+    'tracked-initial',
+  );
+  await store.saveRule(bob, {
+    productId: imported.productId,
+    target: 100,
+    basis: 'item',
+    operator: 'lte',
+    store: 'all',
+    enabled: true,
+  });
+  const now = Date.now();
+  await store.importScraped(
+    parseProductHtml(html(), 'https://www.amazon.in/dp/B000000030'),
+    'tracked-refresh',
+  );
+  const row = (
+    await db.query<{ next_check: number }>('SELECT next_check FROM atlas.listings WHERE id=$1', [
+      imported.productId,
+    ])
+  ).rows[0];
+  expect(Number(row.next_check) - now).toBeGreaterThanOrEqual(3600000);
+  expect(Number(row.next_check) - now).toBeLessThan(3610000);
+});
+it('reuses recent imports and separates daily catalog display from hourly alert eligibility', async () => {
+  const saved = process.env.SOURCE_POLICIES_JSON;
+  delete process.env.SOURCE_POLICIES_JSON;
+  try {
+    const url = 'https://www.amazon.in/dp/B000000040';
+    const result = await store.importScraped(
+      parseProductHtml(html(), url, Date.now() - 2 * 3600000),
+      'daily-display',
+    );
+    const offer = (await store.offers(result.productId))[0];
+    expect(offer.validUntil).toBeGreaterThan(Date.now());
+    expect(offer.alertsAllowed).toBe(false);
+    expect(await store.reusableListing(url)).toBeNull();
+    const freshUrl = 'https://www.amazon.in/dp/B000000041';
+    const fresh = await store.importScraped(parseProductHtml(html(), freshUrl), 'reuse-fresh');
+    expect(await store.reusableListing(freshUrl)).toMatchObject({
+      productId: fresh.productId,
+      cached: true,
+      observations: 0,
+    });
+  } finally {
+    process.env.SOURCE_POLICIES_JSON = saved;
+  }
+});
+it('reserves premium credits across sources and defers jobs without counting a retailer failure', async () => {
+  process.env.SCRAPER_PROVIDER = 'scrapingbee';
+  process.env.SCRAPER_PREMIUM_PROXY = 'true';
+  process.env.SCRAPER_CREDITS_PER_DAY = '10';
+  process.env.SCRAPER_DIRECT_FIRST = 'false';
+  try {
+    await db.query('DELETE FROM atlas.collection_budget');
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    await reserveSource('Amazon');
+    await expect(reserveSource('Flipkart')).rejects.toMatchObject({ code: 'daily_budget' });
+    const row = (
+      await db.query<{ credits: number; requests: number }>(
+        'SELECT credits,requests FROM atlas.collection_budget',
+      )
+    ).rows[0];
+    expect(row).toEqual({ credits: 10, requests: 1 });
+    const listingId = 'amazon-b000000030';
+    const payload = {
+      listingId,
+      url: 'https://www.amazon.in/dp/B000000030',
+      runKey: 'credit-deferred',
+    };
+    await db.query(
+      "INSERT INTO atlas.jobs VALUES('credit-deferred','collect',$1,'pending',0,NULL,0,NULL,0)",
+      [payload],
+    );
+    const before = (
+      await db.query<{ failures: number }>('SELECT failures FROM atlas.listings WHERE id=$1', [
+        listingId,
+      ])
+    ).rows[0];
+    await runCollectionJob('credit-deferred');
+    expect(
+      (
+        await db.query(
+          "SELECT state,attempts,last_error FROM atlas.jobs WHERE id='credit-deferred'",
+        )
+      ).rows[0],
+    ).toEqual({ state: 'pending', attempts: 0, last_error: 'daily_budget' });
+    expect(
+      (await db.query('SELECT failures FROM atlas.listings WHERE id=$1', [listingId])).rows[0],
+    ).toEqual(before);
+    await db.query('UPDATE atlas.listings SET next_check=0 WHERE id=$1', [listingId]);
+    await store.collect('no-duplicate-deferred');
+    expect(
+      (
+        await db.query(
+          "SELECT id FROM atlas.jobs WHERE payload->>'listingId'=$1 AND state IN ('pending','running')",
+          [listingId],
+        )
+      ).rows,
+    ).toHaveLength(1);
+    process.env.SCRAPER_CREDITS_PER_DAY = '100';
+    process.env.SCRAPER_CREDITS_PER_MONTH = '10';
+    await expect(reserveSource('Flipkart')).rejects.toMatchObject({ code: 'monthly_budget' });
+  } finally {
+    delete process.env.SCRAPER_PROVIDER;
+    delete process.env.SCRAPER_PREMIUM_PROXY;
+    delete process.env.SCRAPER_CREDITS_PER_DAY;
+    delete process.env.SCRAPER_CREDITS_PER_MONTH;
+    delete process.env.SCRAPER_DIRECT_FIRST;
+  }
+});
+it('backs off a terminal blocked listing for a day instead of scraping it every minute', async () => {
+  process.env.SCRAPER_PROVIDER = 'direct';
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response('<title>Phone</title><button id="retry_btn">Retry</button>', {
+      headers: { 'content-type': 'text/html' },
+    }),
+  );
+  try {
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    const id = 'terminal-blocked',
+      listingId = 'amazon-b000000040';
+    await db.query("INSERT INTO atlas.jobs VALUES($1,'collect',$2,'pending',0,NULL,0,NULL,0)", [
+      id,
+      { listingId, url: 'https://www.amazon.in/dp/B000000040', runKey: 'blocked-backoff' },
+    ]);
+    const before = Date.now();
+    await runCollectionJob(id);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(
+      (await db.query('SELECT state,last_error FROM atlas.jobs WHERE id=$1', [id])).rows[0],
+    ).toEqual({ state: 'failed', last_error: 'blocked' });
+    const next = (
+      await db.query<{ next_check: number }>('SELECT next_check FROM atlas.listings WHERE id=$1', [
+        listingId,
+      ])
+    ).rows[0];
+    expect(Number(next.next_check)).toBeGreaterThanOrEqual(before + 86400000);
+  } finally {
+    fetcher.mockRestore();
+    delete process.env.SCRAPER_PROVIDER;
+  }
+});
+it('discovers a custom product, imports verified details, and reuses shared search results without scraping again', async () => {
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  process.env.SCRAPER_CREDITS_PER_DAY = '0';
+  process.env.SCRAPER_CREDITS_PER_MONTH = '0';
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'www.amazon.in' && url.pathname === '/s')
+      return new Response(
+        '<div data-component-type="s-search-result" data-asin="B000000090"><h2>Acme QZ9 Kitchen Mixer</h2></div>',
+      );
+    if (url.hostname === 'www.amazon.in')
+      return new Response(
+        '<span id="productTitle">Acme QZ9 Kitchen Mixer</span><span class="a-price"><span class="a-offscreen">₹4,200</span></span><div id="availability">In stock</div><input id="add-to-cart-button">',
+      );
+    if (url.pathname === '/search')
+      return new Response(
+        '<a href="/acme-qz9-mixer/p/itm999?pid=HOM000000090" title="Acme QZ9 Kitchen Mixer"></a>',
+      );
+    return new Response(
+      '<h1>Acme QZ9 Kitchen Mixer</h1><div class="Nx9bqj">₹4,300</div><button>Add to cart</button>',
+    );
+  });
+  try {
+    const result = await discoverProducts('Acme QZ9 mixer');
+    expect(result?.state).toBe('complete');
+    expect(result?.products).toHaveLength(2);
+    expect(result?.products.every((p) => p?.category === 'other')).toBe(true);
+    expect(result?.offers.every((o) => o.itemPrice > 0)).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    const cached = await discoverProducts('  ACME qz9 Mixer  ');
+    expect(cached?.cached).toBe(true);
+    expect(cached?.products).toHaveLength(2);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(
+      (
+        await db.query('SELECT credits FROM atlas.collection_budget WHERE day=$1', [
+          new Date().toISOString().slice(0, 10),
+        ])
+      ).rows[0].credits,
+    ).toBe(10);
+  } finally {
+    fetcher.mockRestore();
+    delete process.env.SCRAPER_CREDITS_PER_DAY;
+    delete process.env.SCRAPER_CREDITS_PER_MONTH;
+  }
 });
