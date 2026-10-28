@@ -55,6 +55,9 @@ import { LiveLogin } from './live-login';
 import { Operations } from './operations';
 import { Mfa } from './mfa';
 import { TelegramSettings } from './telegram-settings';
+import { SeaHero } from './sea-hero';
+import { SearchFlower } from './search-flower';
+import { WeekLedger } from './week-ledger';
 import { matchesQuery } from '../../../packages/domain/search';
 import type { SearchCandidate } from '../../../packages/providers/search';
 type User = {
@@ -180,6 +183,8 @@ export default function Atlas({
   const [menu, setMenu] = useState(false);
   const [collection, setCollection] = useState('All collections');
   const [reportProduct, setReportProduct] = useState<Product | null>(null);
+  const [heroStore, setHeroStore] = useState('all');
+  const [bloom, setBloom] = useState(false);
   const pending = useRef<(() => void) | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const targetInput = useRef<HTMLInputElement>(null);
@@ -250,6 +255,10 @@ export default function Atlas({
       controller.abort();
     };
   }, [demo, page, searchText, searchStore, router]);
+  useEffect(() => {
+    if (!demo && page === 'search' && searchText.trim().length >= 2) setBloom(true);
+    else setBloom(false);
+  }, [demo, page, searchText]);
   async function refresh() {
     const result = await api('session');
     setSession(result);
@@ -437,8 +446,9 @@ export default function Atlas({
   }
   async function search(e: FormEvent) {
     e.preventDefault();
+    const storeParam = heroStore !== 'all' ? `&store=${encodeURIComponent(heroStore)}` : '';
     if (!demo) {
-      router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+      router.push(`/search?q=${encodeURIComponent(query.trim())}${storeParam}`);
       return;
     }
     if (/^https?:\/\//i.test(query)) {
@@ -623,28 +633,13 @@ export default function Atlas({
       <main id="main-content">
         {page === 'home' ? (
           <>
-            <section className="hero page-width">
-              <div className="hero-copy">
-                <div className="eyebrow hero-eyebrow">
-                  <span className="small-line" /> A LITTLE RESEARCH. A BETTER BUY.
-                </div>
+            <section className="v2-hero page-width">
+              <div className="v2-copy">
                 <h1>
-                  The right product.
-                  <br />
-                  The{' '}
-                  <span>
-                    better price
-                    <svg viewBox="0 0 360 16" aria-hidden="true">
-                      <path d="M4 11 Q172 -3 350 9" />
-                    </svg>
-                  </span>
-                  .
+                  The right product. <span>The better price.</span>
                 </h1>
-                <p className="hero-description">
-                  Less tab hopping. More knowing.
-                  <br />
-                  Compare matching offers, explore price history,
-                  <br className="desktop-only" /> and make your next purchase a considered one.
+                <p className="v2-lede">
+                  One search reads seven stores and compares only the exact same variant.
                 </p>
                 <SearchBox
                   hero
@@ -653,134 +648,51 @@ export default function Atlas({
                   search={search}
                   products={products}
                 />
-                <div className="popular-searches">
-                  <span>On your radar?</span>
-                  {['Pixel 9', 'MacBook Air', 'Sony'].map((q) => (
-                    <Link key={q} href={`/search?q=${encodeURIComponent(q)}`}>
-                      {q}
-                      <ArrowUpRight size={11} />
-                    </Link>
+                <div className="v2-stores" role="group" aria-label="Retailer scope">
+                  {['all', ...STORE_NAMES].map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      className={`v2-store s-${st.toLowerCase().replace(/[^a-z]/g, '')}${heroStore === st ? ' on' : ''}`}
+                      aria-pressed={heroStore === st}
+                      onClick={() => setHeroStore(st)}
+                    >
+                      {st === 'all' ? 'All' : st === 'Amazon' ? 'Amazon.in' : st}
+                    </button>
                   ))}
                 </div>
-                <div className="hero-trust">
-                  <span>
-                    <ShieldCheck size={15} /> Exact variant matching
-                  </span>
-                  <span>
-                    <Bell size={15} /> Your price. Your reminder.
-                  </span>
-                </div>
+                <p className="v2-hint">
+                  {demo
+                    ? 'You’re exploring the demo. All prices and products are synthetic fixtures.'
+                    : 'Name searches are free. A pasted product link may use a paid check, capped at ten credits.'}
+                </p>
               </div>
-              {heroProduct ? (
-                <div className="hero-stage">
-                  <div className="orbital orbit-one" />
-                  <div className="orbital orbit-two" />
-                  <span className="stage-index">01 / THE EVERYDAY FLAGSHIP</span>
-                  <div className="hero-product">
-                    <ProductArt product={heroProduct} hero />
-                  </div>
-                  <div className="match-tag">
-                    <span className="check-round">
-                      <Check size={12} />
-                    </span>{' '}
-                    Same product. Better informed.
-                  </div>
-                  <div className="floating-price">
-                    <div className="floating-top">
-                      <span className="eyebrow">A PRICE WORTH WATCHING</span>
-                      <TrendingDown size={20} />
-                    </div>
-                    <div className="floating-title">
-                      {heroProduct.name} <span>{heroProduct.subtitle}</span>
-                    </div>
-                    <div className="floating-number">
-                      {money(rank(offers.filter((o) => o.productId === heroProduct.id)).lowest)}
-                      <span>{demo ? 'lowest demo offer' : 'eligible delivered offer'}</span>
-                    </div>
-                    {demo && (
-                      <svg className="hero-spark" viewBox="0 0 290 43" aria-hidden="true">
-                        <path
-                          d="M0 7 L31 7 L31 15 L62 15 L62 10 L101 10 L101 22 L145 22 L145 18 L177 18 L177 29 L220 29 L220 35 L290 35"
-                          fill="none"
-                          stroke="#147a57"
-                          strokeWidth="2"
-                        />
-                        <path
-                          d="M0 7 L31 7 L31 15 L62 15 L62 10 L101 10 L101 22 L145 22 L145 18 L177 18 L177 29 L220 29 L220 35 L290 35 L290 43 L0 43Z"
-                          fill="#147a57"
-                          opacity=".05"
-                        />
-                      </svg>
-                    )}
-                    <Link href={`/p/${heroProduct.slug}`}>
-                      Take a closer look <ArrowRight size={15} />
-                    </Link>
-                  </div>
-                  <div className="stage-note">
-                    <span className="live-dot" />{' '}
-                    {demo
-                      ? 'Illustrative demo · never a live quote'
-                      : 'Recorded observation · check the retailer before buying'}
-                  </div>
-                </div>
-              ) : (
-                <div className="hero-stage empty-catalog panel">
-                  <Link2 size={52} />
-                  <h2>Your first good find starts with a link.</h2>
-                  <p>
-                    Paste an supported retailer product URL above. Imported listings stay separate
-                    until their exact variants are verified.
-                  </p>
-                </div>
-              )}
+              <div className="v2-art">
+                <SeaHero />
+              </div>
             </section>
-            <div className="source-strip">
-              <div className="page-width">
-                <span>
-                  ONE CLEAR VIEW.
-                  <br />
-                  <strong>TWO FAMILIAR STORES.</strong>
-                </span>
-                <div className="store-word amazon-word">
-                  amazon<span>.in</span>
-                  <i />
-                </div>
-                <span className="source-plus">+</span>
-                <div className="store-word flipkart-word">
-                  Flipkart <span>f</span>
-                </div>
-                <div className="source-strip-note">
-                  <CheckCheck size={20} />
-                  <span>
-                    Matching variants.
-                    <br />
-                    Transparent comparisons.
-                  </span>
-                </div>
+            <section className="v2-cats page-width" aria-labelledby="v2-cats-title">
+              <div className="v2-cats-head">
+                <h2 id="v2-cats-title">Shop by category</h2>
+                <Link href="/search">See everything</Link>
               </div>
-            </div>
+              <div className="v2-cat-grid">
+                {categories.map((c) => (
+                  <Link className="v2-cat" key={c.id} href={`/category/${c.id}`}>
+                    <c.icon size={30} strokeWidth={1.8} />
+                    <span>{c.name}</span>
+                  </Link>
+                ))}
+              </div>
+            </section>
             <section className="discovery-section page-width">
               <div className="section-heading">
                 <div>
-                  <p className="eyebrow">GOOD FINDS START HERE</p>
                   <h2>A little closer to your next upgrade.</h2>
                 </div>
                 <Link className="text-link" href="/search">
                   Explore all products <ArrowUpRight size={17} />
                 </Link>
-              </div>
-              <div className="category-tabs">
-                <Link className="category-tab selected" href="/">
-                  <LayoutGrid size={17} />
-                  All discoveries
-                </Link>
-                {categories.map((c) => (
-                  <Link className="category-tab" key={c.id} href={`/category/${c.id}`}>
-                    <c.icon size={17} />
-                    {c.name}
-                  </Link>
-                ))}
-                <span className="category-caption">Thoughtfully compared. Never rushed.</span>
               </div>
               <div className="product-grid">
                 {products.slice(0, 4).map((p, i) => Card({ p, index: i }))}
@@ -977,7 +889,17 @@ export default function Atlas({
                 </select>
               </label>
             </div>
-            {filtered.length ? (
+            {bloom && (
+              <SearchFlower
+                key={searchText}
+                query={searchText}
+                busy={lookup.query !== searchText || lookup.busy}
+                found={lookup.query === searchText ? lookup.ids.length : 0}
+                message={lookup.query === searchText ? lookup.message : ''}
+                onDone={() => setBloom(false)}
+              />
+            )}
+            {bloom ? null : filtered.length ? (
               <div className="product-grid">
                 {filtered
                   .slice(
@@ -1773,6 +1695,7 @@ export default function Atlas({
             Report a price or match issue
           </button>
         </p>
+        <WeekLedger observations={history} basis={rule?.basis || 'delivered'} />
         <div className="history-panel">
           <div className="section-heading">
             <div>

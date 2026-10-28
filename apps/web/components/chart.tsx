@@ -101,8 +101,7 @@ export function PriceChart({
                     onMouseLeave={() => setHover(null)}
                   >
                     <title>
-                      {o.store}: {money(total(o, basis))} ·{' '}
-                      {new Date(o.observedAt).toLocaleString('en-IN')}
+                      {`${o.store}: ${money(total(o, basis))} · ${new Date(o.observedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}
                     </title>
                   </circle>
                 ))}
@@ -121,6 +120,7 @@ export function PriceChart({
               {new Date(start + ((end - start) * i) / 4).toLocaleDateString('en-IN', {
                 day: 'numeric',
                 month: 'short',
+                timeZone: 'Asia/Kolkata',
               })}
             </text>
           ))}
@@ -159,7 +159,11 @@ export function PriceChart({
                     .reverse()
                     .map((o) => (
                       <tr key={o.id}>
-                        <td>{new Date(o.observedAt).toLocaleString('en-IN')}</td>
+                        <td>
+                          {new Date(o.observedAt).toLocaleString('en-IN', {
+                            timeZone: 'Asia/Kolkata',
+                          })}
+                        </td>
                         <td>{o.store}</td>
                         <td>{money(total(o, basis))}</td>
                       </tr>
