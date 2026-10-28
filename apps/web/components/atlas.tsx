@@ -35,6 +35,7 @@ import {
   rank,
   total,
   eligible,
+  STORE_NAMES,
   type Product,
   type Offer,
   type Rule,
@@ -171,6 +172,7 @@ export default function Atlas({
   const brand = params.get('brand') || '';
   const maximum = Number(params.get('max') || 0);
   const searchText = params.get('q') || '';
+  const searchStore = params.get('store') || 'all';
   useEffect(() => {
     if (demo || page !== 'search' || searchText.trim().length < 2) return;
     let active = true;
@@ -180,7 +182,7 @@ export default function Atlas({
       const response = await fetch('/api/v1/discovery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchText }),
+        body: JSON.stringify({ query: searchText, store: searchStore }),
         signal: controller.signal,
       });
       let result = await response.json();
@@ -188,9 +190,12 @@ export default function Atlas({
         throw new Error(result.error || 'Product lookup is temporarily unavailable.');
       for (let attempt = 0; result.state === 'pending' && attempt < 30 && active; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
-        const status = await fetch(`/api/v1/discovery?q=${encodeURIComponent(searchText)}`, {
-          signal: controller.signal,
-        });
+        const status = await fetch(
+          `/api/v1/discovery?q=${encodeURIComponent(searchText)}&store=${encodeURIComponent(searchStore)}`,
+          {
+            signal: controller.signal,
+          },
+        );
         result = await status.json();
       }
       if (!active) return;
@@ -227,7 +232,7 @@ export default function Atlas({
       active = false;
       controller.abort();
     };
-  }, [demo, page, searchText, router]);
+  }, [demo, page, searchText, searchStore, router]);
   async function refresh() {
     const result = await api('session');
     setSession(result);
@@ -442,6 +447,9 @@ export default function Atlas({
         (lookup.query === searchText && lookup.ids.includes(p.id)) ||
         matchesQuery(p, params.get('q') || '')) &&
       (!brand || p.brand === brand) &&
+      (searchStore === 'all' ||
+        p.attributes.Retailer === searchStore ||
+        offers.some((o) => o.productId === p.id && o.store === searchStore)) &&
       (!maximum ||
         (rank(offers.filter((o) => o.productId === p.id)).lowest ?? Infinity) <= maximum * 100),
   );
@@ -491,10 +499,14 @@ export default function Atlas({
                       ? 'Item price · delivery extra/unknown'
                       : lastObserved
                         ? `Last observed · ${new Date(lastObserved.observedAt).toLocaleDateString('en-IN')}`
-                        : 'Currently unavailable'}
+                        : p.attributes['Source price']
+                          ? 'Source price · shipping/import fees extra'
+                          : 'Currently unavailable'}
               </span>
               <strong className="card-price">
-                {money(r.lowest ?? itemRank.lowest ?? lastObserved?.itemPrice ?? null)}
+                {p.attributes['Source price'] && !po.length
+                  ? p.attributes['Source price']
+                  : money(r.lowest ?? itemRank.lowest ?? lastObserved?.itemPrice ?? null)}
               </strong>
             </div>
             <span className="micro-trend">
@@ -699,8 +711,8 @@ export default function Atlas({
                   <Link2 size={52} />
                   <h2>Your first good find starts with a link.</h2>
                   <p>
-                    Paste an Amazon.in or Flipkart product URL above. Imported listings stay
-                    separate until their exact variants are verified.
+                    Paste an supported retailer product URL above. Imported listings stay separate
+                    until their exact variants are verified.
                   </p>
                 </div>
               )}
@@ -880,6 +892,25 @@ export default function Atlas({
             <div className="filter-bar">
               <div className="filter-controls">
                 <SlidersHorizontal size={18} />
+                {!demo && (
+                  <>
+                    <label className="sr-only" htmlFor="retailer">
+                      Retailer
+                    </label>
+                    <select
+                      id="retailer"
+                      value={searchStore}
+                      onChange={(e) => navigateFilter('store', e.target.value)}
+                    >
+                      <option value="all">All retailers</option>
+                      {STORE_NAMES.map((store) => (
+                        <option key={store} value={store}>
+                          {store}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
                 <label className="sr-only" htmlFor="brand">
                   Brand
                 </label>
@@ -945,7 +976,7 @@ export default function Atlas({
                     ? 'Try a model name, clear a filter, or explore another category. The demo has eight carefully defined variants.'
                     : lookup.query === searchText && lookup.busy
                       ? 'Searching supported retailers and verifying product details. This can take a few seconds.'
-                      : 'Try a more specific model name, clear a filter, or paste a direct Amazon.in or Flipkart product URL.'
+                      : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
                 }
                 action={
                   <Link className="primary" href="/search">
@@ -1392,8 +1423,9 @@ export default function Atlas({
                       <option value="all">
                         {demo ? 'Both demo sources' : 'All matching stores'}
                       </option>
-                      <option>Amazon</option>
-                      <option>Flipkart</option>
+                      {(demo ? STORE_NAMES.slice(0, 2) : STORE_NAMES).map((store) => (
+                        <option key={store}>{store}</option>
+                      ))}
                     </select>
                   </label>
                   <label>
@@ -1465,6 +1497,9 @@ export default function Atlas({
     if (!current) return null;
     const p = current;
     const po = offers.filter((o) => o.productId === p.id);
+    const lastObserved = po
+      .filter((o) => o.displayAllowed)
+      .sort((a, b) => b.observedAt - a.observedAt)[0];
     const r = rank(po);
     const itemRank = rank(po, Date.now(), 'item');
     const rule = session.rules.find((r) => r.productId === p.id);
@@ -1530,10 +1565,18 @@ export default function Atlas({
                     ? 'Available delivered price'
                     : itemRank.offers.length
                       ? 'Listed item price · delivery extra/unknown'
-                      : 'No fresh eligible offers'}
+                      : p.attributes['Source price']
+                        ? 'Source price · shipping/import fees extra'
+                        : lastObserved
+                          ? 'Observed item price · no eligible offer confirmed'
+                          : 'No fresh eligible offers'}
               </span>
               <div>
-                <strong>{money(r.lowest ?? itemRank.lowest)}</strong>
+                <strong>
+                  {p.attributes['Source price'] && !po.length
+                    ? p.attributes['Source price']
+                    : money(r.lowest ?? itemRank.lowest ?? lastObserved?.itemPrice)}
+                </strong>
                 <span className="status-pill">
                   {r.winners.length > 1
                     ? 'Price tie'
@@ -1546,8 +1589,35 @@ export default function Atlas({
                 {demo ? 'Synthetic demo prices' : 'Retailer observation'}
               </p>
             </div>
+            {p.attributes['Delivery note'] && (
+              <p className="muted">{p.attributes['Delivery note']}</p>
+            )}
+            {p.attributes['Price note'] && <p className="muted">{p.attributes['Price note']}</p>}
+            {p.attributes['Source price'] && (
+              <p className="muted">
+                {p.attributes.Availability} · Checked{' '}
+                {p.attributes['Checked at']
+                  ? relative(Date.parse(p.attributes['Checked at']))
+                  : 'at source'}
+                . Original currency; excluded from INR comparisons and alerts.
+              </p>
+            )}
+            {p.attributes['Product URL'] && (
+              <a
+                className="outline-button"
+                href={p.attributes['Product URL']}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View on {p.attributes.Retailer} <ExternalLink size={15} />
+              </a>
+            )}
             <div className="detail-actions">
-              <button className="primary" onClick={() => openTarget(p, rule)}>
+              <button
+                className="primary"
+                disabled={Boolean(p.attributes['Source currency']) && !po.length}
+                onClick={() => openTarget(p, rule)}
+              >
                 <Bell size={17} />
                 {rule ? 'Edit price target' : 'Set a price target'}
               </button>
@@ -2196,7 +2266,7 @@ export default function Atlas({
             'Can I paste a retailer link?',
             demo
               ? 'Direct product links are validated in demo mode. Live resolution runs in the separate live catalog.'
-              : 'Sign in and paste a direct Amazon.in /dp/ link or Flipkart /p/ link. Collection errors are shown explicitly. Short links and unsupported hosts are not fetched.',
+              : 'Sign in and paste a direct product URL from Amazon.in, Flipkart, Meesho, Croma, Nykaa, iHerb or B&H. Collection errors are shown explicitly. Short links and unsupported hosts are not fetched.',
           ],
           [
             'How are purchases and affiliate links handled?',
@@ -2287,8 +2357,8 @@ function SearchBox({
     <form className={`search-box ${hero ? 'hero-search' : ''}`} onSubmit={search}>
       <Search size={20} />
       <input
-        aria-label="Search products or paste an Amazon or Flipkart product URL to track"
-        placeholder="Search or paste an Amazon / Flipkart URL"
+        aria-label="Search products or paste an supported retailer product URL to track"
+        placeholder="Search any product or paste a retailer URL"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         list={hero ? 'hero-suggestions' : 'search-suggestions'}

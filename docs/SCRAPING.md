@@ -4,6 +4,10 @@ Public signup is supported. Supabase provides verified accounts and PostgreSQL p
 
 Amazon extraction uses primary price containers, title, availability, purchase controls, image metadata and specification rows. Flipkart supports CSS price selectors and a unique primary Product JSON-LD record, including a truncated heading. Script text about unrelated stock does not determine primary availability. Missing prices, delivery charges and variant details are never invented.
 
+Meesho, Croma, Nykaa, iHerb and B&H have validated product-URL and structured-data adapters. Nykaa selected shades/sizes require a matching primary variant payload and matching structured price/SKU; its parent starting price is never substituted. Meesho may publish a listing price before size selection, which is labelled explicitly. Croma's known extra closing brace in JSON-LD is repaired only when removing that final brace yields valid JSON. A page without positive stock/condition evidence cannot enter eligible rankings. B&H is integrated but was blocked in the live checks; an adapter does not guarantee retailer access.
+
+[Croma](https://www.croma.com/shipping-information) and [Nykaa](https://www.nykaa.com/shipping-policy) describe Indian delivery, with product/location restrictions. [iHerb's India policy](https://www.iherb.com/shipping/in) and [B&H's international policy](https://www.bhphotovideo.com/c/find/HelpCenter/International.jsp) describe international service subject to item, carrier and import restrictions. International-source shipping is always unknown until verified for the destination. Original foreign-currency prices are displayed as source metadata and never converted into an INR observation or an assumed delivered total.
+
 ## Source capabilities
 
 The default `retail` policy enables search, current prices, 30-day history, target alerts and exact variant matching. It describes retailer-page tracking without claiming a licensed feed agreement. `SOURCE_POLICIES_JSON` can override each source using the schema in `packages/providers/index.ts`. The separate `live` feed mode requires its actual agreement reference; do not fabricate one.
@@ -15,6 +19,8 @@ Public searches check existing products and live retailer search pages. If direc
 Phones, laptops, tablets, audio and monitors retain category-specific matching. Other products—including books, calculators, kitchen appliances and accessories—can be imported without pretending they are one of those devices. Generic cross-store matching requires identifying attributes including GTIN and pack/variant evidence; unknown fields keep products separate. Successful queries share a six-hour PostgreSQL cache. Negative queries are cached for two minutes and concurrent identical requests share one lookup. No browser automation or new API account is needed for the default free paths. See [alternatives researched](./PROVIDER-ALTERNATIVES.md).
 
 New history starts with successful observations; the application cannot reconstruct uncollected past prices. New catalog observations expire for display after 24 hours, matching daily checks. Their actual observation timestamps remain visible. Alert eligibility separately expires after one hour. Explicit source policy overrides can shorten display validity; existing stored expiry timestamps are not extended. Product metadata is retained with source evidence rather than erased merely because no current offer exists.
+
+Each lookup accepts `store: 'all'` or one supported retailer. Store-specific query caches are separate. `LOOKUP_MAX_CREDITS` defaults to four paid credits shared by all source attempts within one public lookup; free requests remain allowed. The overall daily and monthly transactional limits still apply. At most two relevant candidate product pages per store are attempted within a lookup time budget.
 
 ## Collection budget and hosting
 

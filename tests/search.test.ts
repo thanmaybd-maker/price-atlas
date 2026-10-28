@@ -31,6 +31,15 @@ it('uses a fixed retailer search origin and encodes query input', async () => {
   expect(new URL(fetcher.mock.calls[0][0]).origin).toBe('https://www.amazon.in');
   expect(new URL(fetcher.mock.calls[0][0]).searchParams.get('k')).toBe('mouse & keyboard');
 });
+it('preserves an Amazon brand heading when the product heading omits it', () => {
+  const result = parseSearchHtml(
+    '<div data-component-type="s-search-result" data-asin="B000000001"><h2>Pigeon</h2><h2>by Stovekraft Induction Cooktop 1800W</h2></div>',
+    'Amazon',
+  );
+  expect(
+    matchesQuery({ name: result[0].title, brand: '', subtitle: '' }, 'Pigeon induction cook top'),
+  ).toBe(true);
+});
 it('validates web-search destinations before considering a free fallback', async () => {
   const fetcher = vi
     .fn()

@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { parseRetailUrl, type Offer, type Store } from '../domain/index';
+import { parseRetailUrl, STORE_NAMES, type Offer, type Store } from '../domain/index';
 export { RetailerScraperAdapter, livePolicy, getSourceAdapter } from './live';
 export { scrapeProduct, parseProductHtml, ScrapeError } from './scraper';
 
 export const capabilitySchema = z
   .object({
     version: z.string().min(1),
-    source: z.enum(['Amazon', 'Flipkart']),
+    source: z.enum(STORE_NAMES),
     mode: z.enum(['demo', 'live', 'retail']),
     search: z.boolean(),
     resolveLink: z.boolean(),
@@ -30,7 +30,7 @@ export const offerSchema = z
   .object({
     id: z.string().min(1),
     productId: z.string().min(1),
-    store: z.enum(['Amazon', 'Flipkart']),
+    store: z.enum(STORE_NAMES),
     itemPrice: paise.positive(),
     shipping: paise.nullable(),
     charges: paise,

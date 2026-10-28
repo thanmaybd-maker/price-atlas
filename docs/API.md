@@ -24,7 +24,7 @@ Base path `/api/v1`. All responses are `Cache-Control: no-store` and include an 
 | POST       | `/admin/collect`                     | Requires `X-Admin-Token`; idempotent current-minute collection                                       |
 | POST       | `/admin/provider`                    | Requires `X-Admin-Token`; `{store,paused,reason}` with audit                                         |
 
-Rules accept `store` = `all | Amazon | Flipkart`, `basis` = `delivered | item`, and `operator` = `lte | lt`. UI-created rules intentionally use delivered totals and `lte`. Material changes increment the rule version; pause/resume preserves it and the episode state. A target already met creates a single event. Delivery is revalidated against fresh offers and preferences.
+Rules accept `store` = `all | Amazon | Flipkart | Meesho | Croma | Nykaa | iHerb | B&H`, `basis` = `delivered | item`, and `operator` = `lte | lt`. UI-created rules intentionally use delivered totals and `lte`. Material changes increment the rule version; pause/resume preserves it and the episode state. A target already met creates a single event. Delivery is revalidated against fresh offers and preferences.
 
 Owner-unknown rule updates return 400 without revealing another user's rule. Deleting an unknown/non-owned saved item or rule is an idempotent no-op. Invalid numeric input returns 400. Guarded admin writes without a configured matching token return 403. Missing authenticated context returns 401.
 
@@ -32,8 +32,8 @@ The table above describes the separate local demo. Live mode uses verified Supab
 
 ## Public live product discovery
 
-- `POST /discovery` accepts `{ "query": "Logitech M331 mouse" }` or a direct HTTPS Amazon.in/Flipkart product URL. No sign-in is required for product information. The response contains `state`, `products`, `offers`, `candidates`, `sources`, and `cached`. A concurrent duplicate lookup may return HTTP 202 with `state: "pending"`.
-- `GET /discovery?q=...` reads the shared lookup result without starting collection; use this to poll a pending lookup. A missing cache entry returns `state: "missing"`.
+- `POST /discovery` accepts `{ "query": "Logitech M331 mouse", "store": "Croma" }` or a supported direct HTTPS product URL as `query`. `store` defaults to `all` and accepts the supported retailer names. No sign-in is required for product information. The response contains `state`, `products`, `offers`, `candidates`, `sources`, and `cached`. A concurrent duplicate lookup may return HTTP 202 with `state: "pending"`.
+- `GET /discovery?q=...&store=Croma` reads the shared lookup result without starting collection; use this to poll a pending lookup. A missing cache entry returns `state: "missing"`. Poll with the same retailer scope; direct URL cache keys ignore the scope.
 - Product names accept 2–160 characters; direct URLs up to 2,000. Private addresses, unsupported hosts, credentials and unsafe retailer redirects are rejected. Search results supply candidate links only; prices enter the catalog only after a verified product-page parse.
 - Successful queries are cached for six hours; negative/partial failures for two minutes. Anonymous writes share distributed per-client limits plus transactional source and paid-credit limits. Free direct collection continues when paid credits are exhausted, within request limits.
 - `POST /imports` remains an authenticated operator/user import path. A recently verified known listing can be reused without scraping. Saving watches, rules, account exports and preferences requires a verified owner session.

@@ -1,4 +1,13 @@
-export type Store = 'Amazon' | 'Flipkart';
+export const STORE_NAMES = [
+  'Amazon',
+  'Flipkart',
+  'Meesho',
+  'Croma',
+  'Nykaa',
+  'iHerb',
+  'B&H',
+] as const;
+export type Store = (typeof STORE_NAMES)[number];
 export type Category = 'phones' | 'laptops' | 'tablets' | 'audio' | 'monitors' | 'other';
 export interface Product {
   id: string;
@@ -166,7 +175,30 @@ export function parseRetailUrl(value: string): { store: Store; externalId: strin
     const item = url.pathname.match(/\/p\/(itm[a-f0-9]{10,24})(?:\/|$)/i)?.[1];
     if (!id && item) return { store: 'Flipkart', externalId: item.toUpperCase() };
   }
+  if (['meesho.com', 'www.meesho.com'].includes(host)) {
+    const id = url.pathname.match(/\/(?:[^/]+\/)?p\/([a-z0-9]{4,20})(?:\/|$)/i)?.[1];
+    if (id) return { store: 'Meesho', externalId: id.toLowerCase() };
+  }
+  if (['croma.com', 'www.croma.com'].includes(host)) {
+    const id = url.pathname.match(/\/p\/(\d{4,12})(?:\/|$)/)?.[1];
+    if (id) return { store: 'Croma', externalId: id };
+  }
+  if (['nykaa.com', 'www.nykaa.com'].includes(host)) {
+    const id = url.pathname.match(/\/p\/(\d{3,12})(?:\/|$)/)?.[1];
+    const sku = url.searchParams.get('skuId');
+    if (id && (!sku || /^\d{3,12}$/.test(sku))) return { store: 'Nykaa', externalId: sku || id };
+  }
+  if (['iherb.com', 'www.iherb.com', 'in.iherb.com'].includes(host)) {
+    const id = url.pathname.match(/^\/pr\/[^/]+\/(\d{3,12})(?:\/|$)/)?.[1];
+    if (id) return { store: 'iHerb', externalId: id };
+  }
+  if (['bhphotovideo.com', 'www.bhphotovideo.com'].includes(host)) {
+    const id = url.pathname.match(
+      /^\/c\/product\/(\d{3,12}-(?:REG|USA|IMP))\/[^/]+\.html(?:\/|$)/i,
+    )?.[1];
+    if (id) return { store: 'B&H', externalId: id.toUpperCase() };
+  }
   throw new Error(
-    'Use a direct Amazon.in /dp/ link or Flipkart /p/ product link. Short links and other destinations are not fetched.',
+    'Use a direct product URL from a supported retailer. Short links and unrecognized destinations are not fetched.',
   );
 }

@@ -9,7 +9,12 @@ import { livePolicy } from '../packages/providers/live';
 import { deliverTestAlerts } from '../packages/notifications/test-alerts';
 import { parseProductHtml } from '../packages/providers/scraper';
 import { discoverProducts } from '../packages/jobs/discovery';
-import { deliverNotifications, reserveSource, runCollectionJob } from '../packages/jobs/index';
+import {
+  deliverNotifications,
+  reserveSource,
+  runCollectionJob,
+  fetchProductWithBudget,
+} from '../packages/jobs/index';
 import {
   createTelegramLink,
   handleTelegramUpdate,
@@ -73,6 +78,12 @@ beforeAll(async () => {
     query,
     connect: async () => ({ query, release: () => {} }),
   } as unknown as Pool);
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/007_retailers.sql', import.meta.url),
+      'utf8',
+    ),
+  );
   process.env.DATABASE_URL = 'isolated-tests';
   process.env.SOURCE_POLICIES_JSON = JSON.stringify({
     Amazon: {
@@ -683,6 +694,8 @@ it('discovers a custom product, imports verified details, and reuses shared sear
   process.env.SCRAPER_CREDITS_PER_MONTH = '0';
   const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     const url = new URL(String(input));
+    if (!['www.amazon.in', 'www.flipkart.com'].includes(url.hostname))
+      return new Response('<title>No results</title>');
     if (url.hostname === 'www.amazon.in' && url.pathname === '/s')
       return new Response(
         '<div data-component-type="s-search-result" data-asin="B000000090"><h2>Acme QZ9 Kitchen Mixer</h2></div>',
@@ -705,11 +718,11 @@ it('discovers a custom product, imports verified details, and reuses shared sear
     expect(result?.products).toHaveLength(2);
     expect(result?.products.every((p) => p?.category === 'other')).toBe(true);
     expect(result?.offers.every((o) => o.itemPrice > 0)).toBe(true);
-    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher).toHaveBeenCalledTimes(14);
     const cached = await discoverProducts('  ACME qz9 Mixer  ');
     expect(cached?.cached).toBe(true);
     expect(cached?.products).toHaveLength(2);
-    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher).toHaveBeenCalledTimes(14);
     expect(
       (
         await db.query('SELECT credits FROM atlas.collection_budget WHERE day=$1', [
@@ -722,4 +735,47 @@ it('discovers a custom product, imports verified details, and reuses shared sear
     delete process.env.SCRAPER_CREDITS_PER_DAY;
     delete process.env.SCRAPER_CREDITS_PER_MONTH;
   }
+});
+it('permits free product checks but stops a denied lookup allowance before contacting the paid provider', async () => {
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  process.env.SCRAPER_PROVIDER = 'scrapingbee';
+  const fetcher = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response('<title>Access denied</title>', { status: 403 }));
+  try {
+    await expect(
+      fetchProductWithBudget('https://www.amazon.in/dp/B000000091', 1000, () => false),
+    ).rejects.toMatchObject({ code: 'lookup_budget' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(new URL(String(fetcher.mock.calls[0][0])).hostname).toBe('www.amazon.in');
+  } finally {
+    fetcher.mockRestore();
+    delete process.env.SCRAPER_PROVIDER;
+  }
+});
+it('stores an international original-currency product without creating INR history or eligible offers', async () => {
+  const url = 'https://www.bhphotovideo.com/c/product/1706293-REG/test.html';
+  const product = parseProductHtml(
+    '<script type="application/ld+json">' +
+      JSON.stringify({
+        '@type': 'Product',
+        name: 'Test International Camera',
+        url,
+        offers: {
+          '@type': 'Offer',
+          url,
+          price: 298,
+          priceCurrency: 'USD',
+          availability: 'InStock',
+          itemCondition: 'NewCondition',
+        },
+      }) +
+      '</script>',
+    url,
+  );
+  const imported = await store.importScraped(product, 'foreign-only');
+  expect(imported.observations).toBe(0);
+  expect((await store.findProduct(imported.productId))?.attributes['Source currency']).toBe('USD');
+  expect(await store.offers(imported.productId)).toHaveLength(0);
+  expect(await store.history(imported.productId)).toHaveLength(0);
 });

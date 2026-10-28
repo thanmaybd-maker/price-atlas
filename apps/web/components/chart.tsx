@@ -25,7 +25,8 @@ export function PriceChart({
   const end = Math.max(...valid.map((o) => o.observedAt));
   const x = (t: number) => 54 + ((t - start) / (end - start || 1)) * 640;
   const y = (v: number) => 190 - ((v - min) / (max - min || 1)) * 155;
-  const stores = ['Amazon', 'Flipkart'];
+  const stores = [...new Set(valid.map((o) => o.store))];
+  const colors = ['#8e99b8', '#117855', '#b05b88', '#a56a22', '#6554a4', '#2277a5', '#9a4141'];
   return (
     <div className={compact ? 'chart compact' : 'chart'}>
       <svg
@@ -76,7 +77,7 @@ export function PriceChart({
                   )
                   .join(' ')}
                 fill="none"
-                stroke={i ? '#117855' : '#8e99b8'}
+                stroke={colors[i % colors.length]}
                 strokeWidth={compact ? 4 : 2.5}
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -89,7 +90,7 @@ export function PriceChart({
                     cx={x(o.observedAt)}
                     cy={y(total(o, basis)!)}
                     r="5"
-                    fill={i ? '#117855' : '#8e99b8'}
+                    fill={colors[i % colors.length]}
                     fillOpacity=".1"
                     onMouseEnter={() => setHover(o)}
                     onMouseLeave={() => setHover(null)}
@@ -122,14 +123,12 @@ export function PriceChart({
       {!compact && (
         <>
           <div className="chart-legend">
-            <span>
-              <i className="legend-dot amazon" />
-              Amazon
-            </span>
-            <span>
-              <i className="legend-dot" />
-              Flipkart
-            </span>
+            {stores.map((store, i) => (
+              <span key={store}>
+                <i className="legend-dot" style={{ background: colors[i % colors.length] }} />
+                {store}
+              </span>
+            ))}
             <span className="chart-hover">
               {hover
                 ? `${hover.store} · ${money(total(hover, basis))}`
