@@ -31,7 +31,7 @@ pnpm start
 
 ## Use the app
 
-Sign in with verified email or configured Google OAuth. Paste a direct retailer product URL to import a real listing, inspect price components and source attributes, then save a product or target. Missing shipping is shown as unknown; bank/exchange discounts do not reduce ranking prices. Separate store listings require decisive variant evidence before matching.
+Search any product name/model or paste a direct Amazon.in or Flipkart product URL. Public live lookup checks retailer search pages, verifies product details and adds successful results to the catalog; it is not limited to seeded products or electronics. Search can find mice, books, kitchen appliances and other product types. Unsupported or blocked pages produce explicit partial/unavailable results. Sign in with verified email or Google to save a product or target. Missing shipping is shown as unknown; bank/exchange discounts do not reduce ranking prices. Separate store listings require decisive variant evidence before matching.
 
 Settings controls email opt-in, Telegram connection, notification preferences, MFA, export, sign-out and account deletion. Telegram links expire after ten minutes and require pressing Start in the bot. Disconnect in Settings or send `/stop` in Telegram. Email's sandbox sender is restricted to supported recipients; Telegram avoids the email-domain requirement, but cannot guarantee delivery.
 
@@ -49,13 +49,17 @@ pnpm test:live-api
 pnpm telegram:setup
 ```
 
-111 tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens, Telegram linking/delivery, daily budgeting, exact store matching and isolated test alerts. Telegram setup checks the hosted secret before registering the webhook.
+124 tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens, Telegram linking/delivery, daily/monthly credit budgeting, custom-product discovery, shared query caching, exact store matching and isolated test alerts. Telegram setup checks the hosted secret before registering the webhook. `pnpm check:readiness` inspects the catalog, hosted API, authentication settings, collection ledger, ScrapingBee balance and Telegram configuration without sending messages.
 
 `pnpm catalog:import` imports curated retailer URLs with source pacing. `pnpm alerts:test <your verified account email> <product ID> [telegram|email|both]` evaluates a simulated drop and uses a separate test delivery outbox. Messages are labelled TEST; real rules, prices and history stay untouched. Run this operator command locally.
 
-The shared daily request limit defaults to 40 (`SCRAPER_REQUESTS_PER_DAY`). Unwatched catalog listings refresh daily; enabled targets refresh hourly, subject to that budget and retailer availability. Set a target's item-price basis when shipping is unknown. Premium proxy requests consume provider credits even when parsing cannot use the response.
+The shared daily request limit defaults to 1,000 (`SCRAPER_REQUESTS_PER_DAY`), including free direct fetches. Paid credit reservations remain capped at 100/day and 300/UTC calendar month, shared across web imports and workers. Direct product fetching runs first; search can also use free DuckDuckGo discovery. Only a failed free fetch falls back to the configured provider. Standard ScrapingBee requests without JavaScript cost 1 credit; premium without JavaScript costs 10. No automatic premium escalation is enabled. Set `SCRAPER_DIRECT_FIRST=false` only to explicitly skip the free product-fetch attempt. Successful searches are cached for six hours; unsuccessful searches for two minutes. Unwatched catalog listings refresh daily; enabled targets refresh hourly, subject to budget and retailer availability. Catalog display expires after 24 hours; alerts require observations less than one hour old. Set a target's item-price basis when shipping is unknown. Failed paid parsing still consumes the reserved allowance conservatively.
 
-An optional GitHub Actions collector runs every 15 minutes without relying on a sleeping web service. Add server secrets under repository Settings → Secrets and variables → Actions, then set `ATLAS_SCHEDULE_ENABLED=true`. See `.github/workflows/collection.yml` for required settings. It is disabled until configured; schedules can be delayed.
+Use `pnpm catalog:import --discover --limit 40 --credits 100` for bounded expansion from retailer product links. The importer validates same-store destinations, skips recently checked listings, and saves its resumable discovery frontier under ignored `data/`. `--file path/to/urls.json` adds a JSON array of product URLs; `--dry-run` shows planned requests without scraping. Discovery links alone never create products or prices.
+
+The live worker defaults to polling the durable PostgreSQL ledger once per minute (`WORKER_QUEUE=database`), avoiding idle BullMQ traffic on metered Upstash. API rate limiting still uses Redis. Set `WORKER_QUEUE=redis` explicitly for BullMQ. Apply migrations before starting the new release. Worker HTTP health returns 503 until a successful tick and when its last successful tick is over three minutes old.
+
+GitHub Actions checks the existing Render worker hourly and waits for a successful collection tick, resuming it after idle sleep. This default needs no application secrets in GitHub. If a fully independent scheduled collector is preferred, configure the secrets listed in `.github/workflows/collection.yml` and set `ATLAS_SCHEDULE_ENABLED=true`; that replaces the Render wake check. GitHub schedules can be delayed and free hosting does not guarantee continuous uptime. The worker defaults to standard, unrendered scraping even on deployments with a legacy premium setting; enable `WORKER_SCRAPER_PREMIUM_PROXY` or `WORKER_SCRAPER_RENDER_JS` explicitly to change that.
 
 ## Code map
 

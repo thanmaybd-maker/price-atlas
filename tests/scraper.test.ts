@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
+import { categoryFor } from '../packages/matching/index';
 import {
   parseINR,
   parseProductHtml,
   scrapeProduct,
   canonicalRetailUrl,
+  scraperCreditCost,
 } from '../packages/providers/scraper';
 const amazon = 'https://www.amazon.in/dp/B000000001';
 const flipkart = 'https://www.flipkart.com/test-phone/p/itm123?pid=MOB000000001';
@@ -12,6 +14,74 @@ const amazonHtml = (
 ) =>
   `<html><title>Phone</title><body><input id="ASIN" value="B000000001"><span id="productTitle">Test phone 128 GB</span>${price}<div id="availability">In stock</div><input id="add-to-cart-button"><div id="deliveryBlockMessage">FREE delivery</div><img id="landingImage" data-a-dynamic-image='{"https://m.media-amazon.com/images/small.jpg":[200,200],"https://m.media-amazon.com/images/large.jpg":[1000,1000]}'><table id="productOverview_feature_div"><tr><td>Brand</td><td>Test</td></tr></table></body></html>`;
 describe('retailer parsing without inventing price or availability', () => {
+  it('uses matching primary SKU when a retailer inserts brand wording into the structured name', () => {
+    const html =
+      '<h1>BAJAJ Majesty DX 6 1000 W Dry Iron (White)</h1><script type="application/ld+json">' +
+      JSON.stringify({
+        '@type': 'Product',
+        name: 'BAJAJ by Bajaj Electricals Majesty DX 6 1000 W Dry Iron',
+        sku: 'IRNEFSJ4CJHXSUW8',
+        color: 'White',
+        offers: {
+          '@type': 'Offer',
+          price: 649,
+          priceCurrency: 'INR',
+          availability: 'https://schema.org/InStock',
+          itemCondition: 'https://schema.org/NewCondition',
+        },
+      }) +
+      '</script>';
+    expect(
+      parseProductHtml(
+        html,
+        'https://www.flipkart.com/bajaj-iron/p/itm482c037e4fcc6?pid=IRNEFSJ4CJHXSUW8',
+      ).itemPrice,
+    ).toBe(64900);
+    const og =
+      '<meta property="og:title" content="BAJAJ by Bajaj Electricals Majesty DX 6 1000 W Dry Iron Price in India">';
+    expect(
+      parseProductHtml(og + html, 'https://www.flipkart.com/bajaj-iron/p/itm482c037e4fcc6')
+        .itemPrice,
+    ).toBe(64900);
+  });
+  it('keeps generic products out of device categories when compatibility text mentions them', () => {
+    expect(
+      categoryFor(
+        'amazon basics Type C to Type C Braided 60W Fast Charging Data Usb Cable, Laptop, Smartphone',
+        {},
+      ),
+    ).toBe('other');
+    expect(categoryFor('Apple AirPods Pro with MagSafe Charging Case', {})).toBe('audio');
+    expect(categoryFor('Samsung Monitor with Height Adjustable Stand', {})).toBe('monitors');
+    expect(categoryFor('Logitech M331 Wireless Mouse for PC/Mac/Laptop', {})).toBe('other');
+  });
+  it('discovers only validated same-retailer product destinations', () => {
+    const parsed = parseProductHtml(
+      amazonHtml() +
+        '<a href="https://evil.example/dp/B000000002">link</a><a href="http://127.0.0.1/dp/B000000002">link</a><a href="https://www.amazon.in/dp/B000000002?tag=tracking">related</a><a href="https://www.flipkart.com/phone/p/itm123?pid=MOB000000001">other store</a>',
+      amazon,
+    );
+    expect(parsed.relatedUrls).toEqual(['https://www.amazon.in/dp/B000000002']);
+  });
+  it('enforces credit ceilings before issuing a paid request', async () => {
+    const fetcher = vi.fn();
+    expect(scraperCreditCost({ transport: 'scrapingbee', premiumProxy: true })).toBe(10);
+    expect(scraperCreditCost({ transport: 'scrapingbee' })).toBe(1);
+    await expect(
+      scrapeProduct(
+        amazon,
+        {
+          transport: 'scrapingbee',
+          apiKey: 'test',
+          premiumProxy: true,
+          renderJs: true,
+          maxCredits: 10,
+        },
+        fetcher,
+      ),
+    ).rejects.toMatchObject({ code: 'configuration' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it('resolves a truncated primary heading from one matching Product, excluding script stock text', () => {
     const title = 'SONY WH-1000XM5 Wireless Noise Cancellation with AI Noise Reduction Bluetooth';
     const page =

@@ -9,7 +9,7 @@ try {
   const run = await collect();
   const jobs = (
     await postgres().query(
-      "SELECT id FROM atlas.jobs WHERE state='pending' AND available_at<=$1 ORDER BY created_at LIMIT 4",
+      "SELECT j.id FROM atlas.jobs j WHERE j.state='pending' AND j.available_at<=$1 ORDER BY EXISTS(SELECT 1 FROM atlas.listings l JOIN atlas.rules r ON r.product_id=l.product_id WHERE l.id=j.payload->>'listingId' AND (r.data->>'enabled')::boolean) DESC,j.created_at,j.id LIMIT 4",
       [Date.now()],
     )
   ).rows;

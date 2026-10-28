@@ -1,7 +1,12 @@
 import { Pool, type PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { evaluate, rank, total, type Offer, type Product, type Rule } from '../domain/index';
-import { listingKey, observationKey, type ScrapedProduct } from '../providers/scraper';
+import {
+  canonicalRetailUrl,
+  listingKey,
+  observationKey,
+  type ScrapedProduct,
+} from '../providers/scraper';
 import { categoryFor, compareAttributes, normalizedAttributes } from '../matching/index';
 import { livePolicy } from '../providers/live';
 let pool: Pool;
@@ -68,7 +73,7 @@ export async function syncAccount(user: {
 export async function catalog(): Promise<Product[]> {
   return (
     await postgres().query(
-      'SELECT data FROM atlas.products p WHERE EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=p.id) ORDER BY created_at DESC,id',
+      "SELECT data FROM atlas.products p WHERE EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=p.id AND l.match_state<>'rejected') ORDER BY created_at DESC,id",
     )
   ).rows.map((r) => r.data);
 }
@@ -84,7 +89,10 @@ export async function offers(productId?: string): Promise<Offer[]> {
     return {
       ...offer,
       displayAllowed: offer.displayAllowed && policy.currentPrices,
-      alertsAllowed: offer.alertsAllowed && policy.alerts,
+      alertsAllowed:
+        offer.alertsAllowed &&
+        policy.alerts &&
+        offer.observedAt + Math.min(3600, policy.displayTtlSeconds) * 1000 > Date.now(),
       historyAllowed: offer.historyAllowed && policy.history,
       validUntil: Math.min(offer.validUntil, offer.observedAt + policy.displayTtlSeconds * 1000),
     };
@@ -93,6 +101,27 @@ export async function offers(productId?: string): Promise<Offer[]> {
 export async function findProduct(id: string) {
   return (await postgres().query('SELECT data FROM atlas.products WHERE id=$1 OR slug=$1', [id]))
     .rows[0]?.data as Product | undefined;
+}
+export async function reusableListing(url: string) {
+  const identity = canonicalRetailUrl(url);
+  const row = (
+    await postgres().query(
+      "SELECT product_id,last_success FROM atlas.listings WHERE store=$1 AND (external_id=$2 OR ($4 AND split_part(url,'?',1)=$3)) AND match_state='accepted' ORDER BY last_success DESC LIMIT 1",
+      [
+        identity.store,
+        identity.externalId,
+        identity.url.split('?')[0],
+        identity.store === 'Flipkart' && identity.externalId.startsWith('ITM'),
+      ],
+    )
+  ).rows[0];
+  if (
+    !row ||
+    Number(row.last_success) <
+      Date.now() - Math.min(3600, livePolicy(identity.store).displayTtlSeconds) * 1000
+  )
+    return null;
+  return { productId: row.product_id as string, observations: 0, cached: true };
 }
 export async function history(id: string, days = 30): Promise<Offer[]> {
   return (
@@ -268,13 +297,20 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
       imageUrl: scraped.imageUrl || undefined,
       sourceKind: 'live',
     };
-    if (productId === id)
+    if (productId === id && (!prior || scraped.observedAt >= Number(prior.last_success)))
       await c.query(
         'INSERT INTO atlas.products VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
         [productId, id, product, Date.now()],
       );
+    const tracked =
+      (
+        await c.query(
+          "SELECT 1 FROM atlas.rules WHERE product_id=$1 AND (data->>'enabled')::boolean LIMIT 1",
+          [productId],
+        )
+      ).rows.length > 0;
     await c.query(
-      'INSERT INTO atlas.listings(id,product_id,store,external_id,url,evidence,next_check,last_success) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET evidence=excluded.evidence,last_success=excluded.last_success,failures=0,next_check=excluded.next_check',
+      'INSERT INTO atlas.listings(id,product_id,store,external_id,url,evidence,next_check,last_success) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET evidence=excluded.evidence,last_success=excluded.last_success,failures=0,next_check=excluded.next_check WHERE excluded.last_success >= atlas.listings.last_success',
       [
         id,
         productId,
@@ -288,12 +324,21 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
           condition: scraped.condition,
           imageUrl: scraped.imageUrl,
         },
-        Date.now() + Number(process.env.CATALOG_INTERVAL_MINUTES || 1440) * 60000,
-        Date.now(),
+        Date.now() +
+          Number(
+            tracked
+              ? process.env.COLLECTION_INTERVAL_MINUTES || 60
+              : process.env.CATALOG_INTERVAL_MINUTES || 1440,
+          ) *
+            60000,
+        scraped.observedAt,
       ],
     );
     if (scraped.itemPrice === null) {
-      await c.query('DELETE FROM atlas.current_offers WHERE listing_id=$1', [id]);
+      await c.query('DELETE FROM atlas.current_offers WHERE listing_id=$1 AND observed_at<=$2', [
+        id,
+        scraped.observedAt,
+      ]);
       return { productId, observations: 0 };
     }
     const offer: Offer = {
@@ -558,7 +603,7 @@ export async function collect(runKey = `live-${Math.floor(Date.now() / 60000)}`)
       [runKey, now],
     );
     const due = await c.query(
-      "SELECT l.id,l.url,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean) AS tracked FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE l.next_check<=$1 AND s.paused=0 ORDER BY tracked DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
+      "SELECT l.id,l.url,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean) AS tracked FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE l.next_check<=$1 AND s.paused=0 AND l.match_state='accepted' AND NOT EXISTS(SELECT 1 FROM atlas.jobs j WHERE j.payload->>'listingId'=l.id AND j.state IN ('pending','running')) ORDER BY tracked DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
       [now],
     );
     for (const l of due.rows) {
@@ -636,6 +681,7 @@ export async function reviewMatch(
 }
 export async function maintenance() {
   return tx(async (c) => {
+    await c.query('DELETE FROM atlas.search_cache WHERE expires_at<$1', [Date.now() - 86400000]);
     for (const store of ['Amazon', 'Flipkart'] as const) {
       const policy = livePolicy(store);
       const cutoff =

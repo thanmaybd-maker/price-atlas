@@ -1,5 +1,5 @@
 export type Store = 'Amazon' | 'Flipkart';
-export type Category = 'phones' | 'laptops' | 'tablets' | 'audio' | 'monitors';
+export type Category = 'phones' | 'laptops' | 'tablets' | 'audio' | 'monitors' | 'other';
 export interface Product {
   id: string;
   slug: string;

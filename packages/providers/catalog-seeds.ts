@@ -1,0 +1,22 @@
+// Starting URLs only. Names, variants, availability and prices come from parsed pages.
+export const catalogSeeds = [
+  'https://www.flipkart.com/samsung-24-inch-quad-hd-ips-panel-height-adjustable-stand-inbuilt-speakers-monitor-ls24a600ucwxxl/p/itma969a0641804b',
+  'https://www.amazon.in/dp/B09XS7JWHH',
+  'https://www.flipkart.com/sony-wh-1000xm5-wireless-noise-cancellation-ai-reduction-bluetooth/p/itm7f07dcc8df256',
+  'https://www.amazon.in/dp/B0DLHFM2XL',
+  'https://www.flipkart.com/apple-macbook-air-m2-16-gb-256-gb-ssd-macos-sequoia-mc7x4hn-a/p/itm85610764432a1',
+  'https://www.amazon.in/dp/B0DXQH1DBS',
+  'https://www.flipkart.com/apple-iphone-16-black-128-gb/p/itmb07d67f995271',
+  'https://www.amazon.in/dp/B0DGJ7X1DX',
+  'https://www.flipkart.com/apple-ipad-air-m2-128-gb-rom-11-0-inch-wi-fi-5g-blue/p/itmc145452a9d0a1',
+  'https://www.amazon.in/dp/B0CHXCR9CX',
+  'https://www.flipkart.com/samsung-s24-5g-onyx-black-256-gb/p/itm0456c01739016',
+  'https://www.amazon.in/dp/B0CR44MHBD',
+  'https://www.flipkart.com/sony-wf-c700n-lightest-tws-anc-20hr-battery-in-ear-10-min-quick-charge-multi-point-bluetooth-headset/p/itm0cd6a3c79152a',
+  'https://www.amazon.in/dp/B0DHL6GDHQ',
+  'https://www.flipkart.com/google-pixel-9-wintergreen-256-gb/p/itmcead5185c21a8',
+  'https://www.amazon.in/dp/B0DZ78F2CT',
+  'https://www.flipkart.com/apple-airpods-pro-2nd-generation-magsafe-case-usb-c-bluetooth/p/itm60c8f5a308352',
+  'https://www.amazon.in/dp/B0DZDDQ429',
+  'https://www.amazon.in/dp/B0CZ3ZPD8B',
+];
