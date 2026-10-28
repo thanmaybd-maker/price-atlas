@@ -95,10 +95,22 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
   if (!claimed) return lookupStatus(q, scope);
   const data: LookupData = { productIds: [], candidates: [], sources: [] };
   let credits = 0;
+  const sourceCredits = new Map<Store, number>();
   const maximumCredits = Math.max(0, Math.min(10, Number(process.env.LOOKUP_MAX_CREDITS || 4)));
-  const allowPaid = (cost: number) => {
+  const allowPaid = (store: Store, cost: number) => {
+    // Keep broad searches useful without spending on empty JavaScript-only
+    // search pages. Selecting a retailer explicitly enables its paid fallback.
+    if (
+      !url &&
+      scope === 'all' &&
+      cost > 0 &&
+      (!['Amazon', 'Flipkart'].includes(store) ||
+        (sourceCredits.get(store) || 0) + cost > Math.ceil(maximumCredits / 2))
+    )
+      return false;
     if (credits + cost > maximumCredits || !Number.isFinite(maximumCredits)) return false;
     credits += cost;
+    sourceCredits.set(store, (sourceCredits.get(store) || 0) + cost);
     return true;
   };
   const deadline = Date.now() + 45000;
@@ -113,7 +125,7 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
     const scraped = await fetchProductWithBudget(
       destination,
       Math.min(10000, deadline - Date.now() - 1000),
-      allowPaid,
+      (cost) => allowPaid(canonicalRetailUrl(destination).store, cost),
     );
     const imported = await importScraped(scraped, `lookup-${randomUUID()}`);
     return imported.productId;
@@ -163,10 +175,14 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
                   throw e;
               }
             }
-            if (!candidates.length && scraperConfig().transport !== 'direct') {
+            if (
+              !candidates.length &&
+              scraperConfig().transport !== 'direct' &&
+              (scope !== 'all' || ['Amazon', 'Flipkart'].includes(store))
+            ) {
               method = scraperConfig().transport;
               const config = { ...scraperConfig(), timeoutMs: 8000 };
-              if (!allowPaid(scraperCreditCost(config)))
+              if (!allowPaid(store, scraperCreditCost(config)))
                 throw new ScrapeError('lookup_budget', 'Lookup paid allowance reached.');
               await reserveSource(store, config);
               candidates = parseSearchHtml(await scrapeSearchHtml(q, store, config), store);

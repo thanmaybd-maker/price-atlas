@@ -17,7 +17,12 @@ export function PriceChart({
   const [table, setTable] = useState(false);
   const [hover, setHover] = useState<Offer | null>(null);
   const valid = observations.filter((o) => o.historyAllowed && o.stock && total(o, basis) !== null);
-  if (!valid.length) return <div className="empty-chart">No recorded checks in this period.</div>;
+  if (!valid.length)
+    return (
+      <div className="empty-chart">
+        No {basis === 'item' ? 'item' : 'delivered'} prices with confirmed stock in this period.
+      </div>
+    );
   const values = valid.map((o) => total(o, basis)!);
   const min = Math.min(...values, ...(target ? [target] : [])) * 0.97;
   const max = Math.max(...values) * 1.02;

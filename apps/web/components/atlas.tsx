@@ -1504,6 +1504,10 @@ export default function Atlas({
     const itemRank = rank(po, Date.now(), 'item');
     const rule = session.rules.find((r) => r.productId === p.id);
     const visibleHistory = history.filter((o) => o.observedAt >= Date.now() - range * 86400000);
+    const historyPrices = visibleHistory
+      .filter((o) => o.historyAllowed && o.stock)
+      .map((o) => total(o, rule?.basis || 'delivered'))
+      .filter((value): value is number => value !== null);
     return (
       <section className="page-width detail-page">
         <div className="breadcrumbs">
@@ -1768,9 +1772,7 @@ export default function Atlas({
             <div>
               <span className="tiny-label">Lowest in shown checks</span>
               <strong>
-                {visibleHistory.length
-                  ? money(Math.min(...visibleHistory.map((o) => total(o) ?? Infinity)))
-                  : 'No checks'}
+                {historyPrices.length ? money(Math.min(...historyPrices)) : 'No comparable checks'}
               </strong>
             </div>
             <div>
@@ -2357,7 +2359,7 @@ function SearchBox({
     <form className={`search-box ${hero ? 'hero-search' : ''}`} onSubmit={search}>
       <Search size={20} />
       <input
-        aria-label="Search products or paste an supported retailer product URL to track"
+        aria-label="Search products or paste a retailer link"
         placeholder="Search any product or paste a retailer URL"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
