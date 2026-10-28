@@ -31,6 +31,8 @@
     "check:cloud-isolation": "tsx scripts/check-cloud-isolation.ts",
     "telegram:setup": "tsx scripts/setup-telegram.ts",
     "catalog:import": "tsx scripts/import-catalog.ts",
+    "catalog:expand": "tsx scripts/expand-catalog.ts",
+    "catalog:snapshot": "tsx scripts/export-catalog-snapshot.ts",
     "alerts:test": "tsx scripts/simulate-price-drop.ts",
     "worker:once": "tsx scripts/worker-once.ts"
   },
@@ -48,6 +50,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "resend": "6.32.0",
+    "undici": "8.12.3",
     "zod": "4.6.5"
   },
   "devDependencies": {

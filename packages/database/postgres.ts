@@ -256,7 +256,11 @@ export async function report(userId: string | null, productId: string, reason: s
   }, userId || undefined);
   return id;
 }
-export async function importScraped(scraped: ScrapedProduct, runKey: string) {
+export async function importScraped(
+  scraped: ScrapedProduct,
+  runKey: string,
+  options: { catalogIntervalMinutes?: number } = {},
+) {
   const id = listingKey(scraped);
   const policy = livePolicy(scraped.store);
   const result = await tx(async (c) => {
@@ -326,8 +330,16 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
           [productId],
         )
       ).rows.length > 0;
+    const catalogInterval = Number(
+      prior?.catalog_interval_minutes ||
+        options.catalogIntervalMinutes ||
+        process.env.CATALOG_INTERVAL_MINUTES ||
+        1440,
+    );
+    if (!Number.isSafeInteger(catalogInterval) || catalogInterval < 60)
+      throw new Error('Invalid catalog interval');
     await c.query(
-      'INSERT INTO atlas.listings(id,product_id,store,external_id,url,evidence,next_check,last_success) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET evidence=excluded.evidence,last_success=excluded.last_success,failures=0,next_check=excluded.next_check WHERE excluded.last_success >= atlas.listings.last_success',
+      'INSERT INTO atlas.listings(id,product_id,store,external_id,url,evidence,next_check,last_success,catalog_interval_minutes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET evidence=excluded.evidence,last_success=excluded.last_success,failures=0,next_check=excluded.next_check WHERE excluded.last_success >= atlas.listings.last_success',
       [
         id,
         productId,
@@ -342,13 +354,9 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
           imageUrl: scraped.imageUrl,
         },
         Date.now() +
-          Number(
-            tracked
-              ? process.env.COLLECTION_INTERVAL_MINUTES || 60
-              : process.env.CATALOG_INTERVAL_MINUTES || 1440,
-          ) *
-            60000,
+          Number(tracked ? process.env.COLLECTION_INTERVAL_MINUTES || 60 : catalogInterval) * 60000,
         scraped.observedAt,
+        catalogInterval,
       ],
     );
     if (scraped.itemPrice === null) {
@@ -620,7 +628,7 @@ export async function collect(runKey = `live-${Math.floor(Date.now() / 60000)}`)
       [runKey, now],
     );
     const due = await c.query(
-      "SELECT l.id,l.url,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean) AS tracked FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE l.next_check<=$1 AND s.paused=0 AND l.match_state='accepted' AND NOT EXISTS(SELECT 1 FROM atlas.jobs j WHERE j.payload->>'listingId'=l.id AND j.state IN ('pending','running')) ORDER BY tracked DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
+      "SELECT l.id,l.url,l.catalog_interval_minutes,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean) AS tracked FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE l.next_check<=$1 AND s.paused=0 AND l.match_state='accepted' AND NOT EXISTS(SELECT 1 FROM atlas.jobs j WHERE j.payload->>'listingId'=l.id AND j.state IN ('pending','running')) ORDER BY tracked DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
       [now],
     );
     for (const l of due.rows) {
@@ -633,7 +641,7 @@ export async function collect(runKey = `live-${Math.floor(Date.now() / 60000)}`)
           Number(
             l.tracked
               ? process.env.COLLECTION_INTERVAL_MINUTES || 60
-              : process.env.CATALOG_INTERVAL_MINUTES || 1440,
+              : l.catalog_interval_minutes || process.env.CATALOG_INTERVAL_MINUTES || 1440,
           ) *
             60000,
         l.id,
