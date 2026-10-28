@@ -83,3 +83,20 @@ it('matches words, punctuation and spaced storage without requiring a literal fu
   ).toBe(false);
   expect(() => lookupIdentity('https://127.0.0.1/private')).toThrow();
 });
+it('uses verified size attributes for search and keeps different volumes and numeric specifications separate', () => {
+  const serum = {
+    name: 'Minimalist 10% Niacinamide Face Serum',
+    brand: 'Minimalist',
+    subtitle: '',
+    attributes: { Size: '30 ml' },
+  };
+  expect(matchesQuery(serum, 'Minimalist Niacinamide 30ml')).toBe(true);
+  expect(matchesQuery(serum, 'Minimalist Niacinamide 60ml')).toBe(false);
+  expect(
+    matchesQuery(
+      { ...serum, attributes: { Size: '30 millilitres' } },
+      'Minimalist Niacinamide 30ml',
+    ),
+  ).toBe(true);
+  expect(matchesQuery({ name: 'Phone 160 GB', brand: '', subtitle: '' }, '16')).toBe(false);
+});

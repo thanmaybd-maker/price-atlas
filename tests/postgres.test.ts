@@ -754,6 +754,12 @@ it('discovers a custom product, imports verified details, and reuses shared sear
     expect(cached?.cached).toBe(true);
     expect(cached?.products).toHaveLength(2);
     expect(fetcher).toHaveBeenCalledTimes(14);
+    const network = vi.fn().mockRejectedValue(new Error('Network should not be needed'));
+    const recorded = await discoverProducts('QZ9 Acme mixer', 'all', { beforeNetwork: network });
+    expect(recorded?.products).toHaveLength(2);
+    expect(recorded?.message).toContain('recorded catalog');
+    expect(network).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(14);
     expect(
       (
         await db.query('SELECT credits FROM atlas.collection_budget WHERE day=$1', [
