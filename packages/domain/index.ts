@@ -8,7 +8,22 @@ export const STORE_NAMES = [
   'B&H',
 ] as const;
 export type Store = (typeof STORE_NAMES)[number];
-export type Category = 'phones' | 'laptops' | 'tablets' | 'audio' | 'monitors' | 'other';
+export type Category =
+  | 'phones'
+  | 'laptops'
+  | 'tablets'
+  | 'audio'
+  | 'monitors'
+  | 'beauty'
+  | 'personal-care'
+  | 'home-kitchen'
+  | 'appliances'
+  | 'accessories'
+  | 'fashion'
+  | 'books'
+  | 'stationery'
+  | 'services'
+  | 'other';
 export interface Product {
   id: string;
   slug: string;

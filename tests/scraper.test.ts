@@ -50,10 +50,10 @@ describe('retailer parsing without inventing price or availability', () => {
         'amazon basics Type C to Type C Braided 60W Fast Charging Data Usb Cable, Laptop, Smartphone',
         {},
       ),
-    ).toBe('other');
+    ).toBe('accessories');
     expect(categoryFor('Apple AirPods Pro with MagSafe Charging Case', {})).toBe('audio');
     expect(categoryFor('Samsung Monitor with Height Adjustable Stand', {})).toBe('monitors');
-    expect(categoryFor('Logitech M331 Wireless Mouse for PC/Mac/Laptop', {})).toBe('other');
+    expect(categoryFor('Logitech M331 Wireless Mouse for PC/Mac/Laptop', {})).toBe('accessories');
   });
   it('discovers only validated same-retailer product destinations', () => {
     const parsed = parseProductHtml(

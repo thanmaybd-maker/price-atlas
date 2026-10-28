@@ -29,6 +29,14 @@ import {
   Activity,
   CheckCheck,
   Menu,
+  Sparkles,
+  Droplets,
+  House,
+  Plug,
+  Mouse,
+  Shirt,
+  BookOpen,
+  Pencil,
 } from 'lucide-react';
 import {
   money,
@@ -97,6 +105,15 @@ const categories: { id: Category; name: string; icon: typeof Smartphone }[] = [
   { id: 'audio', name: 'Audio', icon: Headphones },
   { id: 'tablets', name: 'Tablets', icon: Tablet },
   { id: 'monitors', name: 'Monitors', icon: Monitor },
+  { id: 'beauty', name: 'Beauty & cosmetics', icon: Sparkles },
+  { id: 'personal-care', name: 'Skin & hair care', icon: Droplets },
+  { id: 'home-kitchen', name: 'Home & kitchen', icon: House },
+  { id: 'appliances', name: 'Appliances', icon: Plug },
+  { id: 'accessories', name: 'Computer accessories', icon: Mouse },
+  { id: 'fashion', name: 'Fashion', icon: Shirt },
+  { id: 'books', name: 'Books', icon: BookOpen },
+  { id: 'stationery', name: 'Stationery', icon: Pencil },
+  { id: 'services', name: 'Warranty & services', icon: ShieldCheck },
   { id: 'other', name: 'Other products', icon: LayoutGrid },
 ];
 const empty: Session = { user: null, watches: [], rules: [], notifications: [] };
@@ -860,15 +877,21 @@ export default function Atlas({
                 </p>
                 {lookup.query === searchText && lookup.candidates.length > 0 && (
                   <details>
-                    <summary>More retailer results — choose a product to check</summary>
+                    <summary>Discovery links · live prices unverified</summary>
                     <ul>
                       {lookup.candidates.map((c) => (
                         <li key={c.url}>
-                          <Link href={`/search?q=${encodeURIComponent(c.url)}`}>{c.title}</Link> ·{' '}
-                          {c.store}
+                          <Link href={`/search?q=${encodeURIComponent(c.url)}`}>
+                            Verify details: {c.title}
+                          </Link>{' '}
+                          · {c.store}
                         </li>
                       ))}
                     </ul>
+                    <p className="fine-print">
+                      Selecting a product verifies its direct URL. A paid fallback may use up to 10
+                      credits if free fetching fails.
+                    </p>
                   </details>
                 )}
               </section>

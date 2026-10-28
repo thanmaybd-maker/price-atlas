@@ -9,13 +9,7 @@ import {
   reusableListing,
 } from '../database/postgres';
 import { matchesQuery, normalizeQuery } from '../domain/search';
-import {
-  canonicalRetailUrl,
-  scraperConfig,
-  scrapeSearchHtml,
-  ScrapeError,
-  scraperCreditCost,
-} from '../providers/scraper';
+import { canonicalRetailUrl, scrapeSearchHtml, ScrapeError } from '../providers/scraper';
 import { parseSearchHtml, duckDuckGoProducts, type SearchCandidate } from '../providers/search';
 import { livePolicy } from '../providers/live';
 import { reserveSource, fetchProductWithBudget } from './index';
@@ -95,22 +89,15 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
   if (!claimed) return lookupStatus(q, scope);
   const data: LookupData = { productIds: [], candidates: [], sources: [] };
   let credits = 0;
-  const sourceCredits = new Map<Store, number>();
-  const maximumCredits = Math.max(0, Math.min(10, Number(process.env.LOOKUP_MAX_CREDITS || 4)));
-  const allowPaid = (store: Store, cost: number) => {
-    // Keep broad searches useful without spending on empty JavaScript-only
-    // search pages. Selecting a retailer explicitly enables its paid fallback.
-    if (
-      !url &&
-      scope === 'all' &&
-      cost > 0 &&
-      (!['Amazon', 'Flipkart'].includes(store) ||
-        (sourceCredits.get(store) || 0) + cost > Math.ceil(maximumCredits / 2))
-    )
-      return false;
+  const maximumCredits = url
+    ? Math.max(0, Math.min(10, Number(process.env.LOOKUP_MAX_CREDITS || 10)))
+    : 0;
+  const allowPaid = (cost: number) => {
+    // Names and broad searches are always free. A direct supported URL is an
+    // explicit request to verify that one listing, within the shared budgets.
+    if (!url && cost > 0) return false;
     if (credits + cost > maximumCredits || !Number.isFinite(maximumCredits)) return false;
     credits += cost;
-    sourceCredits.set(store, (sourceCredits.get(store) || 0) + cost);
     return true;
   };
   const deadline = Date.now() + 45000;
@@ -125,7 +112,7 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
     const scraped = await fetchProductWithBudget(
       destination,
       Math.min(10000, deadline - Date.now() - 1000),
-      (cost) => allowPaid(canonicalRetailUrl(destination).store, cost),
+      allowPaid,
     );
     const imported = await importScraped(scraped, `lookup-${randomUUID()}`);
     return imported.productId;
@@ -174,18 +161,6 @@ export async function discoverProducts(value: string, scope: Store | 'all' = 'al
                 )
                   throw e;
               }
-            }
-            if (
-              !candidates.length &&
-              scraperConfig().transport !== 'direct' &&
-              (scope !== 'all' || ['Amazon', 'Flipkart'].includes(store))
-            ) {
-              method = scraperConfig().transport;
-              const config = { ...scraperConfig(), timeoutMs: 8000 };
-              if (!allowPaid(store, scraperCreditCost(config)))
-                throw new ScrapeError('lookup_budget', 'Lookup paid allowance reached.');
-              await reserveSource(store, config);
-              candidates = parseSearchHtml(await scrapeSearchHtml(q, store, config), store);
             }
             const relevant = candidates.filter((c) =>
               matchesQuery({ name: c.title, brand: '', subtitle: '' }, q),

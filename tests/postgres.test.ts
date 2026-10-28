@@ -6,6 +6,7 @@ import type { Pool } from 'pg';
 import * as store from '../packages/database/postgres';
 import { demoPolicy } from '../packages/providers/index';
 import { livePolicy } from '../packages/providers/live';
+import { credentialFingerprint } from '../packages/jobs/provider-pool';
 import { deliverTestAlerts } from '../packages/notifications/test-alerts';
 import { parseProductHtml } from '../packages/providers/scraper';
 import { discoverProducts } from '../packages/jobs/discovery';
@@ -81,6 +82,12 @@ beforeAll(async () => {
   await db.exec(
     await readFile(
       new URL('../packages/database/migrations/007_retailers.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/008_provider_keys.sql', import.meta.url),
       'utf8',
     ),
   );
@@ -624,7 +631,9 @@ it('reserves premium credits across sources and defers jobs without counting a r
         listingId,
       ])
     ).rows[0];
+    process.env.SCRAPER_REQUESTS_PER_DAY = '1';
     await runCollectionJob('credit-deferred');
+    delete process.env.SCRAPER_REQUESTS_PER_DAY;
     expect(
       (
         await db.query(
@@ -654,6 +663,7 @@ it('reserves premium credits across sources and defers jobs without counting a r
     delete process.env.SCRAPER_CREDITS_PER_DAY;
     delete process.env.SCRAPER_CREDITS_PER_MONTH;
     delete process.env.SCRAPER_DIRECT_FIRST;
+    delete process.env.SCRAPER_REQUESTS_PER_DAY;
   }
 });
 it('backs off a terminal blocked listing for a day instead of scraping it every minute', async () => {
@@ -716,7 +726,7 @@ it('discovers a custom product, imports verified details, and reuses shared sear
     const result = await discoverProducts('Acme QZ9 mixer');
     expect(result?.state).toBe('complete');
     expect(result?.products).toHaveLength(2);
-    expect(result?.products.every((p) => p?.category === 'other')).toBe(true);
+    expect(result?.products.every((p) => p?.category === 'appliances')).toBe(true);
     expect(result?.offers.every((o) => o.itemPrice > 0)).toBe(true);
     expect(fetcher).toHaveBeenCalledTimes(14);
     const cached = await discoverProducts('  ACME qz9 Mixer  ');
@@ -779,7 +789,7 @@ it('stores an international original-currency product without creating INR histo
   expect(await store.offers(imported.productId)).toHaveLength(0);
   expect(await store.history(imported.productId)).toHaveLength(0);
 });
-it('reserves broad lookup credits for verifying primary retailers instead of empty new-store search pages', async () => {
+it('never spends paid credits during an ordinary product-name search', async () => {
   await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
   const policies = process.env.SOURCE_POLICIES_JSON;
   const key = process.env.SCRAPINGBEE_API_KEY;
@@ -813,16 +823,100 @@ it('reserves broad lookup credits for verifying primary retailers instead of emp
   });
   try {
     const result = await discoverProducts('Acme ZX8 mixer');
-    expect(result?.products).toHaveLength(2);
-    expect(paid).toHaveLength(4);
-    expect(paid.every((url) => ['www.amazon.in', 'www.flipkart.com'].includes(url.hostname))).toBe(
-      true,
-    );
+    expect(result?.products).toHaveLength(0);
+    expect(paid).toHaveLength(0);
   } finally {
     fetcher.mockRestore();
     process.env.SOURCE_POLICIES_JSON = policies;
     delete process.env.SCRAPER_PROVIDER;
     if (key) process.env.SCRAPINGBEE_API_KEY = key;
     else delete process.env.SCRAPINGBEE_API_KEY;
+  }
+});
+it('fails over an exhausted account and skips it on subsequent requests without persisting API keys', async () => {
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  const saved = { ...process.env };
+  process.env.SCRAPER_PROVIDER = 'scrapingbee';
+  process.env.SCRAPER_DIRECT_FIRST = 'false';
+  process.env.SCRAPINGBEE_API_KEY = 'fixture-primary-exhausted';
+  process.env.SCRAPINGBEE_FALLBACK_API_KEYS = 'fixture-backup-active';
+  const auth: string[] = [];
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, options) => {
+    const header = new Headers(options?.headers).get('Authorization') || '';
+    auth.push(header);
+    return header === 'Bearer fixture-primary-exhausted'
+      ? new Response('', { status: 402 })
+      : new Response(html());
+  });
+  try {
+    await expect(
+      fetchProductWithBudget('https://www.amazon.in/dp/B000000093'),
+    ).resolves.toMatchObject({ itemPrice: 2500000 });
+    expect(auth).toEqual(['Bearer fixture-primary-exhausted', 'Bearer fixture-backup-active']);
+    const state = (
+      await db.query('SELECT * FROM atlas.provider_keys WHERE fingerprint=$1', [
+        credentialFingerprint('fixture-primary-exhausted'),
+      ])
+    ).rows[0];
+    expect(state.disabled).toBe(true);
+    expect(JSON.stringify(state)).not.toContain('fixture-primary');
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    auth.length = 0;
+    await fetchProductWithBudget('https://www.amazon.in/dp/B000000093');
+    expect(auth).toEqual(['Bearer fixture-backup-active']);
+  } finally {
+    fetcher.mockRestore();
+    for (const key of [
+      'SCRAPER_PROVIDER',
+      'SCRAPER_DIRECT_FIRST',
+      'SCRAPINGBEE_API_KEY',
+      'SCRAPINGBEE_FALLBACK_API_KEYS',
+    ]) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+it('fails over a temporary provider outage but does not rotate accounts for a retailer CAPTCHA', async () => {
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  const saved = { ...process.env };
+  process.env.SCRAPER_PROVIDER = 'scrapingbee';
+  process.env.SCRAPER_DIRECT_FIRST = 'false';
+  process.env.SCRAPINGBEE_API_KEY = 'fixture-temporary';
+  process.env.SCRAPINGBEE_FALLBACK_API_KEYS = 'fixture-temporary-backup';
+  let calls = 0;
+  const fetcher = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async () =>
+      ++calls === 1 ? new Response('', { status: 503 }) : new Response(html()),
+    );
+  try {
+    await fetchProductWithBudget('https://www.amazon.in/dp/B000000094');
+    expect(calls).toBe(2);
+    const state = (
+      await db.query('SELECT disabled,retry_after FROM atlas.provider_keys WHERE fingerprint=$1', [
+        credentialFingerprint('fixture-temporary'),
+      ])
+    ).rows[0];
+    expect(state.disabled).toBe(false);
+    expect(Number(state.retry_after)).toBeGreaterThan(Date.now());
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    fetcher.mockResolvedValue(new Response('<title>Robot Check</title>'));
+    fetcher.mockClear();
+    await expect(
+      fetchProductWithBudget('https://www.amazon.in/dp/B000000094'),
+    ).rejects.toMatchObject({ code: 'blocked' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  } finally {
+    fetcher.mockRestore();
+    for (const key of [
+      'SCRAPER_PROVIDER',
+      'SCRAPER_DIRECT_FIRST',
+      'SCRAPINGBEE_API_KEY',
+      'SCRAPINGBEE_FALLBACK_API_KEYS',
+    ]) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
   }
 });
