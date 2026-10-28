@@ -22,6 +22,8 @@ New history starts with successful observations; the application cannot reconstr
 
 Each lookup accepts `store: 'all'` or one supported retailer. Store-specific query caches are separate. `LOOKUP_MAX_CREDITS` defaults to four paid credits shared by all source attempts within one public lookup; free requests remain allowed. The overall daily and monthly transactional limits still apply. At most two relevant candidate product pages per store are attempted within a lookup time budget.
 
+Broad all-store name searches reserve paid fallback for Amazon and Flipkart, with each receiving at most half the allowance (rounded up). The other sources use free paths during a broad search. Explicitly selecting another retailer or submitting its direct product URL enables its paid fallback within the same four-credit cap. This prevents empty search pages from exhausting credits needed to verify product details.
+
 ## Collection budget and hosting
 
 `SCRAPER_REQUESTS_PER_DAY` defaults to 1,000 across public imports and scheduled collection, including free requests, enforced transactionally in PostgreSQL. Each source defaults to twelve requests per minute. Migration `005_credit_budget` adds worst-case paid-credit reservations shared across workers and imports: `SCRAPER_CREDITS_PER_DAY=100`, `SCRAPER_CREDITS_PER_MONTH=300`, and `SCRAPER_MAX_CREDITS=10` by default. Calendar limits use UTC and are independent of provider subscription renewal dates. They account for app reservations since migration, not historical provider usage. A zero credit limit stops paid requests while permitting direct fetching. Inspect provider balance with `pnpm check:readiness`. Migration `006_live_search` adds the shared search cache.

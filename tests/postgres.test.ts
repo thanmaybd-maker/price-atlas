@@ -779,3 +779,50 @@ it('stores an international original-currency product without creating INR histo
   expect(await store.offers(imported.productId)).toHaveLength(0);
   expect(await store.history(imported.productId)).toHaveLength(0);
 });
+it('reserves broad lookup credits for verifying primary retailers instead of empty new-store search pages', async () => {
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  const policies = process.env.SOURCE_POLICIES_JSON;
+  const key = process.env.SCRAPINGBEE_API_KEY;
+  process.env.SOURCE_POLICIES_JSON = JSON.stringify({
+    Amazon: { ...livePolicy('Amazon'), requestsPerMinute: 12 },
+  });
+  process.env.SCRAPER_PROVIDER = 'scrapingbee';
+  process.env.SCRAPINGBEE_API_KEY = 'isolated-fixture';
+  const paid: URL[] = [];
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'html.duckduckgo.com') return new Response('<title>No results</title>');
+    if (url.hostname !== 'app.scrapingbee.com') return new Response('Blocked', { status: 403 });
+    const target = new URL(url.searchParams.get('url')!);
+    paid.push(target);
+    if (target.hostname === 'www.amazon.in' && target.pathname === '/s')
+      return new Response(
+        '<div data-component-type="s-search-result" data-asin="B000000092"><h2>Acme ZX8 Kitchen Mixer</h2></div>',
+      );
+    if (target.hostname === 'www.flipkart.com' && target.pathname === '/search')
+      return new Response(
+        '<a href="/acme-zx8/p/itm999?pid=HOM000000092" title="Acme ZX8 Kitchen Mixer"></a>',
+      );
+    if (target.hostname === 'www.amazon.in')
+      return new Response(
+        '<span id="productTitle">Acme ZX8 Kitchen Mixer</span><span class="a-price"><span class="a-offscreen">₹5,000</span></span><input id="add-to-cart-button">',
+      );
+    return new Response(
+      '<h1>Acme ZX8 Kitchen Mixer</h1><div class="Nx9bqj">₹5,200</div><button>Add to cart</button>',
+    );
+  });
+  try {
+    const result = await discoverProducts('Acme ZX8 mixer');
+    expect(result?.products).toHaveLength(2);
+    expect(paid).toHaveLength(4);
+    expect(paid.every((url) => ['www.amazon.in', 'www.flipkart.com'].includes(url.hostname))).toBe(
+      true,
+    );
+  } finally {
+    fetcher.mockRestore();
+    process.env.SOURCE_POLICIES_JSON = policies;
+    delete process.env.SCRAPER_PROVIDER;
+    if (key) process.env.SCRAPINGBEE_API_KEY = key;
+    else delete process.env.SCRAPINGBEE_API_KEY;
+  }
+});
