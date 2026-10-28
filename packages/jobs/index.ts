@@ -15,6 +15,7 @@ import { ResendNotifications, type NotificationProvider } from '../notifications
 import type { Store } from '../domain/index';
 import { deliverTelegram } from '../notifications/telegram';
 import { deliverTestAlerts } from '../notifications/test-alerts';
+import { availableCredentials, recordCredentialFailure } from './provider-pool';
 export class SourceLimitError extends ScrapeError {}
 export async function reserveSource(store: Store, config: ScraperConfig = scraperConfig()) {
   const policy = livePolicy(store);
@@ -85,9 +86,10 @@ export async function fetchProductWithBudget(
   url: string,
   timeoutMs?: number,
   allowPaid?: (cost: number) => boolean,
+  overrides: Partial<ScraperConfig> = {},
 ) {
   const { store } = canonicalRetailUrl(url);
-  const configured = { ...scraperConfig(), ...(timeoutMs ? { timeoutMs } : {}) };
+  const configured = { ...scraperConfig(), ...(timeoutMs ? { timeoutMs } : {}), ...overrides };
   if (configured.transport !== 'direct' && process.env.SCRAPER_DIRECT_FIRST !== 'false') {
     await reserveSource(store, { transport: 'direct' });
     try {
@@ -96,13 +98,50 @@ export async function fetchProductWithBudget(
       if (!(error instanceof ScrapeError)) throw error;
     }
   }
-  if (allowPaid && !allowPaid(scraperCreditCost(configured)))
+  const cost = scraperCreditCost(configured);
+  if (configured.transport !== 'direct' && allowPaid && !allowPaid(cost))
     throw new SourceLimitError(
       'lookup_budget',
       'The paid allowance for this lookup has been reached. Try a direct product link.',
     );
-  await reserveSource(store, configured);
-  return scrapeProduct(url, configured);
+  if (configured.transport !== 'scrapingbee') {
+    await reserveSource(store, configured);
+    return scrapeProduct(url, configured);
+  }
+  const keys = await availableCredentials(configured.apiKey);
+  const deadline = Date.now() + Math.min(30000, (timeoutMs || 15000) * 2);
+  let spent = 0,
+    temporaryFailures = 0,
+    first = true;
+  for (const apiKey of keys) {
+    if (spent + cost > 10 || Date.now() > deadline - 1000) break;
+    if (!first && allowPaid && !allowPaid(cost)) break;
+    first = false;
+    const attempt = {
+      ...configured,
+      apiKey,
+      timeoutMs: Math.min(configured.timeoutMs || 15000, deadline - Date.now(), 15000),
+    };
+    await reserveSource(store, attempt);
+    spent += cost;
+    try {
+      return await scrapeProduct(url, attempt);
+    } catch (error) {
+      if (!(error instanceof ScrapeError)) throw error;
+      const permanent = ['provider_credits', 'provider_auth'].includes(error.code);
+      const temporary =
+        error.code === 'network' ||
+        error.code === 'provider_unavailable' ||
+        error.code === 'provider_rate_limited';
+      if (!permanent && !temporary) throw error;
+      await recordCredentialFailure(apiKey, error.code);
+      if (temporary && ++temporaryFailures >= 2) throw error;
+    }
+  }
+  throw new ScrapeError(
+    'provider_pool_unavailable',
+    'Paid verification is temporarily unavailable. Saved products and free fetching remain available.',
+  );
 }
 export async function runCollectionJob(id: string) {
   const claimed = await postgres().query(
@@ -113,7 +152,10 @@ export async function runCollectionJob(id: string) {
   if (!job) return;
   try {
     const result = await importScraped(
-      await fetchProductWithBudget(job.payload.url),
+      await fetchProductWithBudget(job.payload.url, undefined, undefined, {
+        transport: 'direct',
+        timeoutMs: 6000,
+      }),
       job.payload.runKey,
     );
     await tx(async (c) => {

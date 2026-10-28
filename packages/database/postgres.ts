@@ -11,6 +11,7 @@ import {
   type Rule,
 } from '../domain/index';
 import { retailers } from '../domain/retailers';
+import { isIsbn13 } from '../domain/isbn';
 import {
   canonicalRetailUrl,
   listingKey,
@@ -262,13 +263,23 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
     // Serialize same-listing imports so simultaneous browser submissions dedupe.
     await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [id]);
     const prior = (await c.query('SELECT * FROM atlas.listings WHERE id=$1', [id])).rows[0];
-    const category = categoryFor(scraped.title, scraped.attributes);
+    const sourceAttributes = { ...scraped.attributes };
+    if (isIsbn13(scraped.externalId)) {
+      sourceAttributes.ISBN = scraped.externalId;
+      sourceAttributes.GTIN ||= scraped.externalId;
+    }
+    const category = categoryFor(scraped.title, sourceAttributes);
     const attributes = {
-      ...normalizedAttributes(scraped.attributes),
+      ...normalizedAttributes(sourceAttributes),
       Condition: scraped.condition,
     };
     let productId: string = prior?.product_id || id;
-    if (!prior && policy.matching && scraped.condition === 'new') {
+    if (
+      !prior &&
+      policy.matching &&
+      scraped.condition === 'new' &&
+      compareAttributes(category, attributes, attributes).decision === 'accepted'
+    ) {
       // Serialize candidate selection so concurrent store imports cannot split one variant.
       await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`match:${category}`]);
       const candidates = (
@@ -324,7 +335,7 @@ export async function importScraped(scraped: ScrapedProduct, runKey: string) {
         scraped.externalId,
         scraped.url,
         {
-          attributes: scraped.attributes,
+          attributes: sourceAttributes,
           title: scraped.title,
           parserVersion: scraped.parserVersion,
           condition: scraped.condition,

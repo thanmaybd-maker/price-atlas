@@ -6,6 +6,15 @@ export const categoryRegistry: Record<Category, string[]> = {
   audio: ['Brand', 'Model Number', 'Color', 'Connectivity'],
   monitors: ['Brand', 'Model Number', 'Display', 'Resolution', 'Refresh Rate'],
   other: ['Brand', 'GTIN', 'Condition', 'Pack', 'Size', 'Color'],
+  beauty: ['Brand', 'GTIN', 'Shade', 'Size', 'Condition'],
+  'personal-care': ['Brand', 'GTIN', 'Size', 'Pack', 'Condition'],
+  'home-kitchen': ['Brand', 'GTIN', 'Size', 'Pack', 'Color', 'Condition'],
+  appliances: ['Brand', 'Model Number', 'Color', 'Condition'],
+  accessories: ['Brand', 'Model Number', 'Color', 'Connectivity', 'Condition'],
+  fashion: ['Brand', 'GTIN', 'Color', 'Size', 'Pack', 'Condition'],
+  books: ['GTIN', 'Edition', 'Language', 'Binding', 'Condition'],
+  stationery: ['Brand', 'Model Number', 'Pack', 'Color', 'Condition'],
+  services: ['Brand', 'GTIN', 'Condition'],
 };
 const aliases: Record<string, string> = {
   'brand name': 'Brand',
@@ -66,27 +75,85 @@ export function compareAttributes(
   );
 }
 export function categoryFor(title: string, attributes: Record<string, string>): Category {
-  const deviceAt = title.search(
-    /\b(?:headphones?|earbuds?|earphones?|headset|airpods|laptop|notebook|macbook|tablet|ipad|monitor|smartphone|iphone|pixel|galaxy tab|pad\s+\d)\b/i,
-  );
-  const accessoryAt = title.search(
-    /\b(?:mouse|keyboard|webcam|printer|router|power bank|cable|charger|adapter)\b/i,
-  );
-  if (accessoryAt >= 0 && (deviceAt < 0 || accessoryAt < deviceAt)) return 'other';
   if (/\b(?:extended warranty|warranty plan|insurance|protection plan)\b/i.test(title))
-    return 'other';
+    return 'services';
+  // Compatibility and bundle text describes secondary products. Classify the
+  // main item first: an iPhone that works with AirPods is still a phone, and a
+  // tablet bundled with a keyboard is still a tablet.
+  const primary = title.split(/\b(?:with|for|compatible|works|in box|including)\b|[|;]/i)[0];
   if (
-    /\b(?:charging|data|usb|hdmi|type[- ]?c)\s+(?:[\w-]+\s+){0,4}cable\b|\b(?:screen protector|tempered glass|replacement ear(?:pads| cushions)|protective (?:case|cover)|laptop (?:stand|sleeve)|phone (?:case|cover|holder)|power adapter)\b/i.test(
+    /\b(?:mouse|keyboard|webcam|printer|router|power bank|cable|charger|adapter|case|cover|screen protector|tempered glass|earpads|sleeve|phone holder)\b/i.test(
+      primary,
+    )
+  )
+    return 'accessories';
+  const devices: [Category, RegExp][] = [
+    ['laptops', /\b(?:laptop|notebook|macbook)\b/i],
+    [
+      'tablets',
+      /\b(?:tablet|ipad|galaxy tab|(?:motorola|redmi|oneplus|xiaomi) pad|lenovo tab|pad\s+\d+)\b/i,
+    ],
+    [
+      'audio',
+      /\b(?:headphones?|earbuds?|ear\s?buds?|earphones?|headset|airpods|airdopes|galaxy buds|(?:wh|wf)-[a-z0-9-]+)\b/i,
+    ],
+    ['monitors', /\bmonitor\b/i],
+    [
+      'phones',
+      /\b(?:smartphone|iphone|pixel\s?\d+\w*|mobile phone|galaxy\s+(?!tab|buds|watch)|oneplus\s+(?!pad|buds)|redmi\s+(?!pad)|motorola\s+(?!pad))\b/i,
+    ],
+  ];
+  const matches = devices
+    .map(([category, pattern]) => ({ category, index: primary.search(pattern) }))
+    .filter((m) => m.index >= 0)
+    .sort((a, b) => a.index - b.index);
+  if (matches[0]) return matches[0].category;
+  // Some retailer titles put the noun after a bundle description.
+  if (/\b(?:gaming tablet|tablet)\b/i.test(title) && /\b(?:ram|rom|wi-fi)\b/i.test(title))
+    return 'tablets';
+  if (/\bmonitor\b/i.test(title) && /\b(?:ips|panel|inch|resolution|hz)\b/i.test(title))
+    return 'monitors';
+  if (
+    /\b(?:lipstick|lip gloss|lip tint|lip liner|foundation|concealer|mascara|eyeliner|eyeshadow|blush|makeup|cosmetics|nail polish|nail lacquer|kajal|compact powder)\b/i.test(
       title,
     )
   )
-    return 'other';
-  const text = title.toLowerCase();
-  if (/headphone|earbud|earphone|headset|airpods|airdopes|\b(?:wh|wf)-[a-z0-9-]+\b/.test(text))
-    return 'audio';
-  if (/laptop|notebook|macbook/.test(text)) return 'laptops';
-  if (/tablet|ipad|galaxy tab/.test(text)) return 'tablets';
-  if (/monitor/.test(text)) return 'monitors';
-  if (/phone|pixel|iphone|galaxy|oneplus|redmi|mobile/.test(text)) return 'phones';
+    return 'beauty';
+  if (
+    /\b(?:cream|moisturi[sz]er|sunscreen|cleanser|face wash|facewash|serum|shampoo|conditioner|hair oil|body wash|lotion|skin care|skincare|hair care|lip balm|perfume|fragrance|deodorant|toothpaste)\b/i.test(
+      title,
+    )
+  )
+    return 'personal-care';
+  if (
+    /\b(?:kettle|cooktop|cook top|induction|dry iron|steam iron|iron press|mixer|grinder|blender|toaster|refrigerator|washing machine|air conditioner|air fryer|microwave|vacuum cleaner)\b/i.test(
+      title,
+    )
+  )
+    return 'appliances';
+  if (
+    /\b(?:water bottle|flask|cookware|cooker|tandoor|barbeque|griller|dinner set|pan|utensil|kitchen|bedsheet|pillow|curtain|furniture)\b/i.test(
+      title,
+    )
+  )
+    return 'home-kitchen';
+  if (
+    /\b(?:t[ -]?shirt|shirt|kurta|saree|sari|dress|jeans|trousers|shoes|sneakers|sandals|handbag|clothing|apparel)\b/i.test(
+      title,
+    )
+  )
+    return 'fashion';
+  if (
+    /\b(?:calculator|notebook paper|ball ?pen|fountain pen|pencil|stationery|marker pen)\b/i.test(
+      title,
+    )
+  )
+    return 'stationery';
+  if (
+    /\b(?:book|novel|paperback|hardcover|hardback)\b/i.test(title) ||
+    Object.keys(attributes).some((k) => /^(?:ISBN(?:[- ]?1[03])?|Author|Publisher)$/i.test(k)) ||
+    /^97[89]\d{10}$/.test(attributes.GTIN || '')
+  )
+    return 'books';
   return 'other';
 }

@@ -699,7 +699,7 @@ export function scraperConfig(): ScraperConfig {
 export function scraperCreditCost(config = scraperConfig()) {
   if (config.transport !== 'scrapingbee') return 0;
   const cost = config.premiumProxy ? (config.renderJs ? 25 : 10) : config.renderJs ? 5 : 1;
-  const maximum = config.maxCredits ?? 10;
+  const maximum = Math.min(10, config.maxCredits ?? 10);
   if (!Number.isSafeInteger(maximum) || maximum < 1 || cost > maximum)
     throw new ScrapeError('configuration', 'Scraper settings exceed SCRAPER_MAX_CREDITS.');
   return cost;
@@ -826,6 +826,14 @@ async function retailerHtml(
       throw new ScrapeError(
         response.status === 402 ? 'provider_credits' : 'provider_auth',
         'Collection provider credits or authentication need attention.',
+      );
+    }
+    if (config.transport === 'scrapingbee' && (response.status === 429 || response.status >= 500)) {
+      await response.body?.cancel();
+      throw new ScrapeError(
+        response.status === 429 ? 'provider_rate_limited' : 'provider_unavailable',
+        'The collection provider is temporarily unavailable.',
+        true,
       );
     }
     return boundedHtml(response);
