@@ -24,6 +24,12 @@ Use the live site, with browser developer tools open. Recorded prices retain the
 
 ## Limits and presentation readiness
 
+- On a product, select **Item price** when shipping is unknown; compare it with **Delivered total**, which omits unknown totals. The target line appears only on its own price basis.
+- **Export history CSV** should retain source URLs, real UTC times, the selected period/basis and `Unknown` shipping. **Copy history view link** should restore `basis` and `days` in a new tab. This export contains product evidence, not private notification recipients.
+- **Show recorded results** skips the lotus while lookup continues. **Pause animation** stops the home ring. With WebGL disabled, search remains usable and the ring shows readable fallback copy; blocked browser storage must not crash the page.
+- `/this-page-does-not-exist`, `/category/no-such-category` and `/api/v1/health/extra` must return 404. A known product still renders. The animated petal count is presentation progress, not a count of independently verified retailer requests.
+- The automated release UI scenarios can run against the live build with `TEST_URL=<URL> PLAYWRIGHT_CHANNEL=msedge pnpm exec playwright test tests/e2e/readiness.spec.ts --project=chromium` (set environment variables using your shell's syntax). The discovery-skip scenario holds a factual recorded response for deterministic timing; actual live API checks are separate.
+
 - Hard ceilings: 1,000 source requests/day, 100 paid credits/day, 300/month, 10 per explicit verification. Environment settings may lower these ceilings.
 - Name search, additional discovery and scheduled collection use no paid credits. Paid balance exhaustion leaves recorded results and free discovery usable.
 - `GET /api/v1/catalog/status` reports actual saved products, verified expansion parents and the next retry time. The 2,500-product target is not a completed count. Retailer blocks, request budgets and hosting availability affect completion.

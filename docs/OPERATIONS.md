@@ -1,49 +1,40 @@
-# Local operations
+# Operations: live and local demo
 
-## Database and processes
+Production uses Vercel for the web, Supabase PostgreSQL/Auth for accounts and retained observations, Upstash for rate limiting/shared cache, and a Render worker. `APP_MODE=demo` uses local SQLite and synthetic observations. These backends are separate; a successful demo does not establish live notification delivery.
 
-Use one persistent SQLite file shared by web and worker. `ATLAS_DB_PATH` overrides the path discovered from `pnpm-workspace.yaml`. WAL mode, foreign keys, a five-second busy timeout, and `BEGIN IMMEDIATE` transactions are enabled. This single-node local design is not a distributed production architecture.
+## Before a presentation
 
-The worker collects sixteen observations per minute unless a demo source is paused. Run keys are minute buckets, so two workers/retries in one minute cannot duplicate the logical batch. A transaction inserts observations, advances only newer current projections, evaluates rules, and dispatches in-app entries. A crash rolls back an incomplete transaction. There is no external email side effect.
+1. Run `pnpm check:readiness`, `pnpm test`, `pnpm typecheck` and `pnpm build`. Keep private operational output out of public screenshots.
+2. Set `TEST_URL=https://price-atlas-ashen.vercel.app` using your shell's environment-variable syntax and run `pnpm test:live-api`. Follow the [teacher checklist](./TEACHER-TEST-CHECKLIST.md), including your own Google consent and Telegram Start flow.
+3. Check the worker's last successful tick. The hourly GitHub workflow wakes Render; free hosting and schedules can be delayed. Web health and provider credit balance do not establish fresh product checks.
+4. Run `pnpm catalog:snapshot` for a private recorded-catalog snapshot under ignored `data/`. Original observation times are retained. This is supplementary evidence, not a live feed or full database backup.
+5. Inspect `/api/v1/catalog/status`. Do not claim 2,500 verified products until its actual count supports that claim. Blocked sources retain retry windows rather than being hammered during a demo.
 
-Stop a foreground process with Ctrl+C. Restarting either process does not erase the database. Stop development before running `pnpm build`/`pnpm start` so `.next` is not being written by two build processes.
+Stop an owned local server before building into its `.next` directory, then restart it. Do not terminate unrelated processes. Production mutations enforce the configured `APP_ORIGIN`.
 
-## Operator API
+## Collection and cost
 
-Set a long random `ADMIN_TOKEN` in the web process environment. Never commit it. Send it only to the local application's `X-Admin-Token` header. Do not put it in a URL or NEXT_PUBLIC variable.
+Name discovery and scheduled collection use free requests only. Search results nominate URLs; primary product pages verify prices. Shared ceilings are 1,000 source requests/day, 100 paid credits/day, 300/month and ten per explicit product verification. Configuration may lower these limits. Provider balance does not override the application budget.
 
-- `POST /api/v1/admin/collect` runs the current minute's demo batch idempotently.
-- `POST /api/v1/admin/provider` with `{store:"Amazon",paused:true,reason:"Testing source outage"}` pauses synthetic collection and writes an audit entry.
-- Resume with `paused:false`. Existing prices expire naturally; pausing does not falsify their timestamps.
-- `GET /api/v1/admin` reports aggregate demo counts, provider pause state, and the latest twenty collection runs. It contains no account identities or secrets.
+PostgreSQL retains leases, retry windows, budgets and expansion cursors. Bulk unwatched products have a slower cadence; enabled targets have priority. Display freshness is 24 hours; alert freshness is one hour. Unknown shipping qualifies only for an item-price comparison. Missing identity, stock uncertainty and source blocks remain explicit.
 
-## Backup and recovery
+Visible browser tabs poll recorded offers at most once per minute without downloading product metadata again. Hidden tabs stop polling and slow requests do not overlap. Telegram polls faster while a connection link is pending. Browser reads do not scrape retailers.
 
-```sh
-pnpm backup data/backups/before-change.sqlite
-pnpm backup:check data/backups/before-change.sqlite
-```
+## Accounts and alerts
 
-Backup uses SQLite `VACUUM INTO` for a consistent snapshot even while WAL is active. The destination must not already exist. A backup includes private demo sessions and user data; keep it local and out of source control.
+Google sign-in uses Supabase. Live operator access requires an allowlisted account and MFA (`aal2`). The local demo's `ADMIN_TOKEN` is not a production bypass. Keep service keys and bot/provider tokens server-side, out of Git, screenshots, logs and `NEXT_PUBLIC_*` variables.
 
-To inspect an older state safely, stop both application processes, preserve the current database and any WAL/SHM companions in a separate directory, copy the backup to a **new** path, set `ATLAS_DB_PATH` to that path, and start the web process without the worker. Inspect account state and pending notifications before deciding whether to restart collection. Do not restore over an active database. Restore verification in this delivery checked snapshot integrity, not a production RPO/RTO exercise.
+Telegram and in-app notifications are the no-domain channels. Email is disabled until a sender domain is verified and `EMAIL_DELIVERY_ENABLED` is enabled. An API key alone cannot make sandbox email reach arbitrary evaluators.
 
-Production restore requires tombstones, source-retention reconciliation and external delivery reconciliation that are not implemented in this demo. Never use this local backup procedure as a claim of production disaster recovery readiness.
+Users connect their own Telegram chat in Settings, open the private short-lived link and press Start. `/stop`, disconnect and account preferences control subsequent delivery. Send tests only to an authorized recipient. `pnpm alerts:test` is an operator-only simulated test, clearly labeled, for a verified account; it must not create fabricated live history. A queued/accepted message is not proof of receipt.
 
-## Troubleshooting
+## Recovery and diagnostics
 
-- **No fresh offers:** start `pnpm worker`. Do not extend validity timestamps by hand.
-- **Cannot save:** inspect session state and browser origin. Requests from another origin are intentionally rejected. Use the same `127.0.0.1` hostname throughout, or configure `APP_ORIGIN` for a proxy.
-- **Port occupied:** keep the existing process if it belongs to this app, or choose another port and matching origin. Do not terminate unrelated processes.
-- **Profile disappeared:** signing out or deleting cookies loses access to that demo identity. Production identity recovery is not implemented.
-- **Worker and web disagree:** ensure both use the same absolute `ATLAS_DB_PATH`.
-- **Live mode error:** deliberate fail-closed behavior. Implement and validate actual production repositories/providers before enabling live mode.
+- Use the MFA-protected Operations view for collection runs, quarantine, paused providers and failed job/delivery review. Honor source retry windows.
+- For stale offers, check worker ticks, budgets, source blocks and schedules. Do not extend timestamps or import listing-page prices.
+- For save failures, inspect the session, origin and response. Blocked browser storage loses local preferences, not server account data.
+- Keep backups private. A production restore must reconcile retention expiry, account-deletion tombstones and delivery deduplication before work resumes.
 
-## Source-capability inventory
+`pnpm backup <new-file.sqlite>` and `pnpm backup:check <file.sqlite>` are **SQLite demo tools only**, not Supabase backups. Inspect restored demo copies at a new `ATLAS_DB_PATH` with collection stopped. A live PostgreSQL restore/reconciliation drill remains a follow-up; application tests do not establish production disaster recovery readiness.
 
-| Source         | Current implementation      | History        | Alerts            | Live resolution | Purchases      |
-| -------------- | --------------------------- | -------------- | ----------------- | --------------- | -------------- |
-| Amazon label   | Synthetic fixture generator | Synthetic only | Local in-app only | Unconfigured    | No destination |
-| Flipkart label | Synthetic fixture generator | Synthetic only | Local in-app only | Unconfigured    | No destination |
-
-The store names identify simulated source contexts. They do not imply retailer approval or a connection.
+See [status](./STATUS.md), [catalog expansion](./CATALOG-EXPANSION.md) and the [15-perspective audit](./PROJECT-AUDIT.md).

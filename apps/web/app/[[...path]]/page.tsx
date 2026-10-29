@@ -1,5 +1,6 @@
 import { catalog, offers, history, findProduct } from '@database/runtime';
 import Atlas from '@/components/atlas';
+import { notFound } from 'next/navigation';
 export const dynamic = 'force-dynamic';
 export default async function Page({ params }: { params: Promise<{ path?: string[] }> }) {
   const { path = [] } = await params;
@@ -9,6 +10,7 @@ export default async function Page({ params }: { params: Promise<{ path?: string
     path[0] === 'p' ? findProduct(path[1]) : Promise.resolve(undefined),
   ]);
   const observations = product ? await history(product.id, 90) : [];
+  if (path[0] === 'p' && !product) notFound();
   return (
     <Atlas
       route={path}

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { visiblePoll } from '../lib/visible-poll';
 type Status = { configured: boolean; connected: boolean };
 export function TelegramSettings() {
   const [status, setStatus] = useState<Status | null>(null),
@@ -15,20 +16,23 @@ export function TelegramSettings() {
   useEffect(() => {
     let disposed = false;
     const refresh = () =>
-      void request()
+      request()
         .then((data) => {
-          if (!disposed) setStatus(data);
+          if (!disposed) {
+            setStatus(data);
+            setError('');
+          }
         })
         .catch((e) => {
           if (!disposed) setError(e.message);
         });
-    refresh();
-    const timer = setInterval(refresh, 15000);
+    void refresh();
+    const stop = visiblePoll(refresh, link && !status?.connected ? 15000 : 60000);
     return () => {
       disposed = true;
-      clearInterval(timer);
+      stop();
     };
-  }, []);
+  }, [link, status?.connected]);
   async function connect() {
     setBusy(true);
     setError('');

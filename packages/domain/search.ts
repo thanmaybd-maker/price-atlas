@@ -1,10 +1,15 @@
 import type { Product } from './index';
+import { isIsbn13 } from './isbn';
 export const bundleMismatch = (title: string, query: string) =>
   /\b(?:bundle|combo|kit)\b/i.test(title) && !/\b(?:bundle|combo|kit|set|pack)\b/i.test(query);
 export const normalizeQuery = (value: string) =>
   value
     .normalize('NFKC')
     .toLowerCase()
+    .replace(/\b97[89](?:[\s-]*\d){10}\b/g, (isbn) => {
+      const digits = isbn.replace(/[\s-]/g, '');
+      return isIsbn13(digits) ? digits : isbn;
+    })
     .replace(
       /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+edition\b/g,
       (_, word) =>
@@ -19,6 +24,7 @@ export const normalizeQuery = (value: string) =>
       word.replace(/[ -]/g, ''),
     )
     .replace(/\b(fx|wh|wf|sm|rtx|gtx|mx|dx|dhx|iphone|pixel)[\s-]+(?=\d)/g, '$1')
+    .replace(/\b(fx\d+[a-z]+)\s+plus\b/g, '$1plus')
     .replace(/cancell?ing|cancellation/g, 'cancel')
     .replace(/\b(headphones|earphones|earbuds|calculators)\b/g, (word) => word.slice(0, -1))
     .replace(/(\d)\s+(gb|tb|ml|kg|g|oz|inch|cm|mah|w|l)\b/g, '$1$2')
@@ -64,9 +70,5 @@ export function matchesQuery(
       (word) =>
         Boolean(word) && !['buy', 'price', 'best', 'online', 'india', 'electric'].includes(word),
     )
-    .every((word) =>
-      /^\d+(?:gb|tb|ml|kg|g|oz|inch|cm|mah|w|l)?$/.test(word)
-        ? tokens.has(word)
-        : haystack.includes(word),
-    );
+    .every((word) => (/\d/.test(word) ? tokens.has(word) : haystack.includes(word)));
 }

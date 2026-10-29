@@ -568,7 +568,7 @@ h2 {
 }
 .v2-cell .dt {
   font: 400 12px var(--v2-mono);
-  opacity: 0.75;
+  opacity: 1;
 }
 .v2-cell .lo {
   font: 500 13px var(--v2-mono);
@@ -589,7 +589,7 @@ h2 {
 }
 .v2-cell.empty {
   filter: saturate(0.25);
-  opacity: 0.7;
+  opacity: 1;
 }
 .v2-cell.drop {
   box-shadow:
@@ -736,7 +736,101 @@ h2 {
     font-size: 9.5px;
   }
 }
+/* ---------- hero ring: three turning rings of price tags ---------- */
+.v2-ring {
+  position: relative;
+  height: 540px;
+  border-radius: 28px;
+  overflow: hidden;
+  background: var(--sea-paper);
+  box-shadow:
+    0 2px 4px var(--v2-shade),
+    0 40px 70px -36px var(--v2-shade);
+  touch-action: pan-y;
+  cursor: grab;
+}
+.v2-ring:active {
+  cursor: grabbing;
+}
+.v2-ring canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.v2-ring-load {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  grid-auto-flow: column;
+  gap: 0.18em;
+  background: var(--v2-white);
+  font: 500 28px var(--v2-head);
+  letter-spacing: 0.2em;
+  color: var(--v2-ink);
+  transition: opacity 0.3s var(--v2-ease);
+  z-index: 2;
+}
+.v2-ring.ready .v2-ring-load {
+  opacity: 0;
+  pointer-events: none;
+}
+.v2-ring-load span {
+  animation: v2-blur 1.5s calc(var(--i) / 5 * 1s) alternate infinite;
+}
+.v2-ring-copy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.9s var(--v2-ease) 0.5s;
+}
+.v2-ring.ready .v2-ring-copy {
+  opacity: 1;
+}
+.v2-ring-word {
+  margin: 0;
+  font: 800 clamp(56px, 8vw, 112px) / 1 var(--v2-head);
+  letter-spacing: -0.045em;
+  color: var(--v2-ink);
+  white-space: nowrap;
+}
+.v2-ring-word span span {
+  display: inline-block;
+  animation: v2-unblur 0.6s var(--v2-ease) both;
+  animation-delay: calc(var(--i) * 0.05s);
+}
+.v2-ring-hint {
+  margin: 0;
+  font: 400 15px var(--v2-mono);
+  color: var(--v2-muted);
+}
+@keyframes v2-blur {
+  to {
+    filter: blur(5px);
+  }
+}
+@keyframes v2-unblur {
+  from {
+    filter: blur(8px);
+    opacity: 0;
+    transform: translateY(0.12em);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .v2-ring-load span,
+  .v2-ring-word span span {
+    animation: none;
+  }
   .v2-cloud,
   .offer-row,
   .v2-cell,
@@ -749,4 +843,24 @@ h2 {
 }
 .step-number {
   color: var(--v2-muted);
+}
+.variant-chips > span,
+.status-pill,
+.stock-label {
+  color: var(--v2-ink);
+}
+.v2-ring-pause {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  padding: 7px 12px;
+  border: 1px solid var(--v2-line);
+  border-radius: 20px;
+  background: var(--v2-white);
+  color: var(--v2-ink);
+  font-size: 12px;
+}
+.v2-ring.paused .v2-ring-word span span {
+  animation: none;
 }

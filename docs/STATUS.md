@@ -1,5 +1,17 @@
 # Current status
 
+## 29 October functionality and evaluator review
+
+The [15-perspective audit](./PROJECT-AUDIT.md) records strengths, defects, unnecessary additions and prioritized follow-ups. This release includes Claude's light ring hero, retains the lotus/neutral chips, adds ring pause and an immediate search-animation skip, and fixes product-page text contrast. History has independent item/delivered selection, CSV evidence download and shareable range/basis links. Unknown shipping remains unknown in both charts and CSV.
+
+Model-prefix search errors and valid ISBN punctuation are covered by regression tests. Invalid page/category addresses and API suffix aliases return 404. Storage-denied browsers degrade safely. Visible tabs refresh recorded offers at most once a minute without reloading catalog metadata; hidden tabs pause and slow requests do not overlap. Health checks use a cheap database probe.
+
+Verification: 160 unit/integration tests, TypeScript checking and production build pass. The new five-browser-scenario suite covers live-mode animation skip with a held factual response, neutral chips/mobile accessibility, invalid routes, no-WebGL/storage denial, and history CSV/sharing/basis. Automated accessibility checks do not establish complete manual accessibility compliance. Live API smoke passed ten checks without creating accounts or sending messages. Readiness reported 423 products in 15 categories, 236 fresh eligible offers, zero paid credits for the current collection day, enabled Google login and healthy Telegram webhook configuration. Counts and freshness change over time.
+
+Outstanding: 2,500 verified products, a completed human Google consent/save/reload test, authorized Telegram receipt and a production PostgreSQL restore drill. Retailer blocks, shipping serviceability and free-host availability remain external limits. No extra paid API was added. Current procedures are in [operations](./OPERATIONS.md).
+
+## Existing functionality and constraints
+
 Telegram and in-app alerts are the selected no-domain channels. Email is explicitly unavailable by default (`EMAIL_DELIVERY_ENABLED=false`); the Settings control is disabled and the API rejects email opt-in until an operator verifies a sender and enables it. Disabling email delivery does not disable eligible in-app or Telegram alerts.
 
 The latest functional release centralizes ten retailers, adding Reliance Digital, Myntra and AJIO. A free primary-page request verified and imported a Reliance Digital iPhone 16 listing; this does not confirm delivery to a specific pincode. Structured Product/Book data, bounded framework JSON and canonical meta fallbacks retain explicit partial states. Pack sizes, binding, edition, model, capacity, memory, shade and condition participate in conservative matching. Cross-border offers, including international stores quoting INR, cannot win domestic rankings or trigger domestic alerts. No fixed customs percentage or exchange-rate estimate is invented.

@@ -16,6 +16,7 @@ import { discoverProducts, lookupStatus } from '../../../../../../packages/jobs/
 import { catalogExpansionStatus } from '../../../../../../packages/jobs/catalog-expansion';
 import { categoryLabels } from '../../../../../../packages/domain/categories';
 import { matchesQuery } from '../../../../../../packages/domain/search';
+import { knownApiPath } from '../../../../../../packages/domain/routes';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import {
   verifyUnsubscribe,
@@ -53,6 +54,7 @@ async function handler(req: NextRequest) {
       headers: { 'Cache-Control': 'no-store', 'X-Request-ID': requestId },
     });
   try {
+    if (!knownApiPath(path)) return json({ error: 'API endpoint not found.', requestId }, 404);
     user = await account(token);
     if (req.method !== 'GET') {
       const origin = req.headers.get('origin');
@@ -114,7 +116,9 @@ async function handler(req: NextRequest) {
         return json({
           status: 'ok',
           mode: data.isLive() ? 'live' : 'demo',
-          database: Boolean(await data.admin()),
+          database: data.isLive()
+            ? Boolean((await postgres().query('SELECT 1')).rowCount)
+            : Boolean(await data.admin()),
         });
       if (path[0] === 'session')
         return json({
@@ -122,6 +126,18 @@ async function handler(req: NextRequest) {
           delivery: { emailAvailable: emailDeliveryEnabled() },
           ...(user ? await data.personal(user.id) : { watches: [], rules: [], notifications: [] }),
         });
+      if (path[0] === 'offers') {
+        const id = z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .parse(req.nextUrl.searchParams.get('productId') ?? undefined);
+        return json({
+          offers: await data.offers(id || undefined),
+          mode: data.isLive() ? 'live' : 'demo',
+        });
+      }
       if (path[0] === 'search' || path[0] === 'suggestions') {
         const query = (req.nextUrl.searchParams.get('q') || '').toLowerCase();
         const category = req.nextUrl.searchParams.get('category');

@@ -63,6 +63,8 @@ GitHub Actions checks the existing Render worker hourly and waits for a successf
 
 ## Code map
 
+See the [15-perspective audit](docs/PROJECT-AUDIT.md) for completed optional features, known limitations and prioritized follow-ups. Product history supports item/delivered views, shareable periods and CSV evidence with real timestamps. The verified catalog is still below its 2,500-product target; live counts are available at `/api/v1/catalog/status`.
+
 | Location                   | Responsibility                                                       |
 | -------------------------- | -------------------------------------------------------------------- |
 | `apps/web`                 | Next.js pages, verified auth, JSON APIs and signed webhooks          |
