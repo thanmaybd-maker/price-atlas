@@ -1,0 +1,1711 @@
+/* "Every category." sticky-note board from the design canvas (Categories.dc.html), scoped under .cs. */
+.cs {
+  --board: oklch(95.7% 0.013 82);
+  --ink: oklch(21% 0.011 81);
+  --muted: oklch(46% 0.017 64);
+  --white: oklch(100% 0 0);
+  --glint: oklch(100% 0 0 / 0.9);
+  --shade: oklch(30% 0.04 70 / 0.28);
+  --tape: oklch(94% 0.03 95 / 0.72);
+  --n-yellow: oklch(93% 0.13 100);
+  --n-pink: oklch(82% 0.11 355);
+  --n-blue: oklch(87% 0.06 225);
+  --n-mint: oklch(88% 0.08 160);
+  --n-lilac: oklch(86% 0.06 290);
+  --n-peach: oklch(88% 0.08 60);
+  --n-lime: oklch(90% 0.14 125);
+  --n-cream: oklch(96% 0.03 90);
+  --n-sky: oklch(91% 0.05 235);
+  --n-rose: oklch(87% 0.06 15);
+  --n-kraft: oklch(76% 0.07 70);
+  --n-lav: oklch(88% 0.07 300);
+  --a-blue: oklch(50% 0.15 245);
+  --a-violet: oklch(50% 0.25 290);
+  --a-violet-2: oklch(80% 0.1 295);
+  --a-pink: oklch(56% 0.225 2);
+  --a-green: oklch(50% 0.13 160);
+  --a-green-2: oklch(42% 0.11 162);
+  --a-red: oklch(55% 0.19 25);
+  --a-orange: oklch(70% 0.15 55);
+  --a-mag: oklch(45% 0.18 350);
+  --a-steel: oklch(80% 0.01 250);
+  --a-lcd: oklch(86% 0.06 120);
+  --a-teal: oklch(62% 0.1 190);
+  --sh-1: oklch(45% 0.17 20);
+  --sh-2: oklch(55% 0.19 10);
+  --sh-3: oklch(62% 0.14 35);
+  --sh-4: oklch(38% 0.12 15);
+  --sh-5: oklch(66% 0.12 50);
+  --f-head: 'Schibsted Grotesk', ui-sans-serif, sans-serif;
+  --f-body: 'Instrument Sans', ui-sans-serif, sans-serif;
+  --f-mono: 'DM Mono', ui-monospace, monospace;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.cs,
+.cs {
+  overflow-x: clip;
+}
+.cs {
+  margin: 0;
+  background: var(--board);
+  color: var(--ink);
+  font-family: var(--f-body);
+  -webkit-font-smoothing: antialiased;
+}
+.cs :focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.cs a {
+  color: var(--ink);
+}
+.cs .wrap {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding-inline: 24px;
+  box-sizing: border-box;
+}
+.cs .nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 68px;
+  border-bottom: 1px solid oklch(85% 0.02 80);
+}
+.cs .mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  font: 700 20px var(--f-head);
+  letter-spacing: -0.03em;
+}
+.cs .back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid oklch(85% 0.02 80);
+  background: var(--white);
+  text-decoration: none;
+  font: 500 15px var(--f-body);
+}
+.cs .hd {
+  padding-block: 56px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.cs h1 {
+  font: 700 clamp(46px, 6vw, 88px)/0.98 var(--f-head);
+  letter-spacing: -0.045em;
+  margin: 0;
+}
+.cs .hd p {
+  margin: 14px 0 0;
+  font-size: 18px;
+  color: var(--muted);
+  max-width: 34em;
+  line-height: 1.55;
+}
+.cs .filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cs .filter button {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  font: 600 14px var(--f-body);
+  cursor: pointer;
+  transition:
+    background-color 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+.cs .filter button.on {
+  background: var(--ink);
+  color: var(--board);
+}
+.cs .board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 36px 22px;
+  padding-bottom: 110px;
+}
+.cs .note {
+  position: relative;
+  background: var(--tint);
+  padding: 18px 16px 16px;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow:
+    0 1px 0 var(--shade),
+    0 22px 26px -18px var(--shade);
+  transition:
+    transform 0.45s var(--spring),
+    box-shadow 0.3s var(--ease);
+  animation: land-cs 0.6s var(--spring) both;
+}
+.cs .note::before {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  width: 76px;
+  height: 22px;
+  margin-left: -38px;
+  background: var(--tape);
+  transform: rotate(-3deg);
+}
+.cs .note::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(225deg, var(--board) 45%, oklch(0% 0 0 / 0.08) 50%, transparent 56%);
+}
+.cs .note:hover {
+  transform: rotate(0deg) translateY(-8px) scale(1.02) !important;
+  box-shadow:
+    0 1px 0 var(--shade),
+    0 34px 36px -20px var(--shade);
+  z-index: 2;
+}
+.cs .note.r1 {
+  transform: rotate(-2deg);
+}
+.cs .note.r2 {
+  transform: rotate(1.6deg);
+}
+.cs .note.r3 {
+  transform: rotate(-1deg);
+}
+.cs .note.r4 {
+  transform: rotate(2.2deg);
+}
+.cs .note.gone {
+  display: none;
+}
+@keyframes land-cs {
+  from {
+    opacity: 0;
+    transform: translateY(-40px) rotate(8deg);
+  }
+}
+.cs .stage {
+  height: 156px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1.5px dashed oklch(0% 0 0 / 0.18);
+  margin: 0 -4px 4px;
+  padding-bottom: 6px;
+}
+.cs .stage > * {
+  transform: scale(0.86);
+}
+.cs .note h2 {
+  margin: 0;
+  font: 700 21px/1.08 var(--f-head);
+  letter-spacing: -0.03em;
+}
+.cs .note p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.cs .note h3 {
+  margin: 6px 0 0;
+  font: 600 12.5px var(--f-body);
+  color: var(--muted);
+}
+.cs .mm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cs .mm span {
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: 600 12.5px var(--f-body);
+}
+.cs .exs {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+}
+.cs .exs a {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid oklch(0% 0 0 / 0.14);
+  text-decoration: none;
+  font: 600 14px var(--f-body);
+  transition: padding-left 0.25s var(--ease);
+}
+.cs .exs a:hover {
+  padding-left: 6px;
+}
+.cs .exs a span {
+  font: 400 12px var(--f-mono);
+  opacity: 0.7;
+}
+.cs .c-yellow {
+  --tint: var(--n-yellow);
+}
+.cs .c-pink {
+  --tint: var(--n-pink);
+}
+.cs .c-blue {
+  --tint: var(--n-blue);
+}
+.cs .c-mint {
+  --tint: var(--n-mint);
+}
+.cs .c-lilac {
+  --tint: var(--n-lilac);
+}
+.cs .c-peach {
+  --tint: var(--n-peach);
+}
+.cs .c-lime {
+  --tint: var(--n-lime);
+}
+.cs .c-cream {
+  --tint: var(--n-cream);
+}
+.cs .c-sky {
+  --tint: var(--n-sky);
+}
+.cs .c-rose {
+  --tint: var(--n-rose);
+}
+.cs .c-kraft {
+  --tint: var(--n-kraft);
+}
+.cs .c-lav {
+  --tint: var(--n-lav);
+}
+.cs .tiers {
+  display: flex;
+  gap: 8px;
+}
+.cs .tiers span {
+  position: relative;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: 500 14px var(--f-mono);
+  background: var(--white);
+}
+.cs .tiers span.on {
+  background: var(--a-blue);
+  border-color: var(--a-blue);
+  color: var(--white);
+  animation: ring-cs 1.6s var(--ease) infinite;
+}
+@keyframes ring-cs {
+  0% {
+    box-shadow: 0 0 0 0 var(--a-blue);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+  }
+}
+.cs .tiers span.x {
+  opacity: 0.6;
+}
+.cs .tiers span.x::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  height: 2px;
+  background: var(--a-red);
+  transform-origin: left;
+  animation: strike-cs 2.4s var(--ease) infinite;
+}
+.cs .tiers span.x:last-child::after {
+  animation-delay: 0.3s;
+}
+@keyframes strike-cs {
+  0%,
+  15% {
+    transform: scaleX(0);
+  }
+  45%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+.cs .phone {
+  width: 58px;
+  height: 110px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: var(--white);
+  position: relative;
+  overflow: hidden;
+  margin-right: 14px;
+}
+.cs .phone i {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 8px;
+  height: 70%;
+  background: var(--a-blue);
+  border-radius: 4px;
+  transform-origin: bottom;
+  animation: fillp-cs 2.4s var(--ease) infinite;
+}
+@keyframes fillp-cs {
+  0% {
+    transform: scaleY(0.08);
+  }
+  55%,
+  100% {
+    transform: scaleY(0.5);
+  }
+}
+.cs .chip {
+  width: 200px;
+  height: 130px;
+}
+.cs .chip .die {
+  fill: var(--white);
+  stroke: var(--ink);
+  stroke-width: 3;
+}
+.cs .chip text {
+  font: 500 24px var(--f-mono);
+  fill: var(--a-blue);
+}
+.cs .chip .tr {
+  fill: none;
+  stroke: var(--a-violet);
+  stroke-width: 3;
+  stroke-dasharray: 6 10;
+  animation: flow-cs 1s linear infinite;
+}
+@keyframes flow-cs {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+.cs .tab {
+  position: relative;
+  width: 180px;
+  height: 120px;
+}
+.cs .tab .scr {
+  position: absolute;
+  left: 20px;
+  top: 4px;
+  width: 140px;
+  height: 92px;
+  border-radius: 12px;
+  border: 3px solid var(--ink);
+  background: var(--white);
+}
+.cs .tab .scr::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 6px;
+  background: var(--a-teal);
+  opacity: 0.5;
+}
+.cs .tab .kb {
+  position: absolute;
+  left: 12px;
+  top: 100px;
+  width: 156px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--ink);
+  animation: snap-cs 2.4s var(--spring) infinite;
+}
+@keyframes snap-cs {
+  0%,
+  20% {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  45%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+.cs .spk {
+  position: relative;
+  width: 200px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+}
+.cs .spk .cone {
+  width: 34px;
+  height: 60px;
+  background: var(--a-violet);
+  clip-path: polygon(0 30%, 40% 30%, 100% 0, 100% 100%, 40% 70%, 0 70%);
+}
+.cs .spk .rg {
+  position: absolute;
+  left: 30px;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: 50%;
+  border: 3px solid var(--a-violet);
+  opacity: 0;
+  animation: sound-cs 2s var(--ease) infinite;
+}
+.cs .spk .rg:nth-child(3) {
+  animation-delay: 0.5s;
+}
+.cs .spk .rg:nth-child(4) {
+  animation-delay: 1s;
+}
+@keyframes sound-cs {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+.cs .wave {
+  position: absolute;
+  right: 0;
+  bottom: 6px;
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  height: 50px;
+  width: 110px;
+}
+.cs .wave i {
+  flex: 1;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--a-violet);
+  transform-origin: bottom;
+  animation: wv-cs 1.1s var(--ease) infinite alternate;
+}
+.cs .wave i:nth-child(n + 9) {
+  background: var(--a-violet-2);
+}
+.cs .wave i:nth-child(3n) {
+  animation-duration: 0.8s;
+}
+.cs .wave i:nth-child(4n + 1) {
+  animation-duration: 1.4s;
+  animation-delay: -0.3s;
+}
+.cs .wave i:nth-child(5n + 2) {
+  animation-duration: 0.95s;
+  animation-delay: -0.6s;
+}
+@keyframes wv-cs {
+  from {
+    transform: scaleY(0.2);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.cs .mon {
+  position: relative;
+  width: 200px;
+  height: 120px;
+}
+.cs .mon .scr {
+  position: absolute;
+  left: 10px;
+  top: 0;
+  width: 180px;
+  height: 86px;
+  border: 3px solid var(--ink);
+  border-radius: 6px;
+  background: var(--white);
+}
+.cs .mon .ruler {
+  position: absolute;
+  left: 10px;
+  top: 102px;
+  width: 180px;
+  height: 3px;
+  background: var(--a-blue);
+  transform-origin: left;
+  animation: drw-cs 2.4s var(--ease) infinite;
+}
+.cs .mon .ruler::before,
+.cs .mon .ruler::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  width: 3px;
+  height: 15px;
+  background: var(--a-blue);
+}
+.cs .mon .ruler::before {
+  left: 0;
+}
+.cs .mon .ruler::after {
+  right: 0;
+}
+.cs .mon span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 32px;
+  text-align: center;
+  font: 500 18px var(--f-mono);
+  color: var(--a-blue);
+}
+@keyframes drw-cs {
+  0%,
+  10% {
+    transform: scaleX(0);
+  }
+  55%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+.cs .lip {
+  position: relative;
+  width: 200px;
+  height: 150px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 24px;
+}
+.cs .tube {
+  position: relative;
+  width: 46px;
+  height: 140px;
+}
+.cs .tube .base {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 46px;
+  height: 70px;
+  border-radius: 6px;
+  background: var(--ink);
+}
+.cs .tube .ring {
+  position: absolute;
+  bottom: 70px;
+  left: -2px;
+  width: 50px;
+  height: 10px;
+  border-radius: 3px;
+  background: oklch(78% 0.1 80);
+}
+.cs .tube .bullet {
+  position: absolute;
+  bottom: 72px;
+  left: 7px;
+  width: 32px;
+  height: 60px;
+  border-radius: 16px 16px 4px 4px;
+  clip-path: polygon(0 30%, 100% 0, 100% 100%, 0 100%);
+  background: var(--sh-2);
+  transform-origin: bottom;
+  animation:
+    twist-cs 3.2s var(--spring) infinite,
+    shade-cs 6.4s steps(1) infinite;
+}
+@keyframes twist-cs {
+  0%,
+  12% {
+    transform: translateY(46px);
+  }
+  40%,
+  80% {
+    transform: none;
+  }
+  100% {
+    transform: translateY(46px);
+  }
+}
+@keyframes shade-cs {
+  0% {
+    background: var(--sh-2);
+  }
+  25% {
+    background: var(--sh-1);
+  }
+  50% {
+    background: var(--sh-3);
+  }
+  75% {
+    background: var(--sh-4);
+  }
+}
+.cs .dots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 6px;
+}
+.cs .dots i {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid var(--white);
+  box-shadow: 2px 2px 0 var(--ink);
+  animation: bob-cs 2s ease-in-out infinite alternate;
+}
+.cs .dots i:nth-child(2) {
+  animation-delay: 0.3s;
+}
+.cs .dots i:nth-child(3) {
+  animation-delay: 0.6s;
+}
+.cs .dots i:nth-child(4) {
+  animation-delay: 0.9s;
+}
+@keyframes bob-cs {
+  to {
+    transform: translateX(5px);
+  }
+}
+.cs .shp {
+  position: relative;
+  width: 200px;
+  height: 150px;
+}
+.cs .shp .bt {
+  position: absolute;
+  left: 70px;
+  bottom: 6px;
+  width: 60px;
+  height: 104px;
+  border: 3px solid var(--ink);
+  border-radius: 18px 18px 14px 14px;
+  background: var(--a-teal);
+  transform-origin: bottom;
+  animation: squeeze-cs 2.4s var(--ease) infinite;
+}
+.cs .shp .bt::after {
+  content: '250 ml';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40px;
+  text-align: center;
+  font: 500 12px var(--f-mono);
+  color: var(--white);
+}
+.cs .shp .cap {
+  position: absolute;
+  left: 86px;
+  bottom: 110px;
+  width: 28px;
+  height: 18px;
+  background: var(--ink);
+  border-radius: 4px 4px 0 0;
+  animation: squeezec-cs 2.4s var(--ease) infinite;
+}
+.cs .shp .bb {
+  position: absolute;
+  left: 94px;
+  bottom: 128px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--a-teal);
+  background: var(--white);
+  opacity: 0;
+  animation: bub-cs 2.4s ease-out infinite;
+}
+.cs .shp .bb:nth-of-type(4) {
+  animation-delay: 0.3s;
+  left: 104px;
+}
+.cs .shp .bb:nth-of-type(5) {
+  animation-delay: 0.6s;
+  left: 86px;
+}
+@keyframes squeeze-cs {
+  0%,
+  40%,
+  100% {
+    transform: none;
+  }
+  55% {
+    transform: scale(0.82, 1.04);
+  }
+}
+@keyframes squeezec-cs {
+  0%,
+  40%,
+  100% {
+    transform: none;
+  }
+  55% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes bub-cs {
+  0%,
+  45% {
+    opacity: 0;
+    transform: translateY(0) scale(0.4);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-40px) scale(1.2);
+  }
+}
+.cs .bed {
+  position: relative;
+  width: 210px;
+  height: 150px;
+}
+.cs .bed .sheet {
+  position: absolute;
+  left: 20px;
+  bottom: 10px;
+  width: 170px;
+  height: 60px;
+  background: var(--a-blue);
+  border-radius: 6px;
+  opacity: 0.85;
+  transform-origin: left;
+  animation: fold-cs 3.4s var(--spring) infinite;
+}
+.cs .bed .sheet::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 20px;
+  height: 2px;
+  background: var(--white);
+  opacity: 0.6;
+  box-shadow: 0 18px 0 var(--white);
+}
+.cs .bed .pil {
+  position: absolute;
+  bottom: 72px;
+  width: 78px;
+  height: 42px;
+  border-radius: 20px;
+  background: var(--white);
+  border: 3px solid var(--ink);
+  animation: squish-cs 1.6s var(--spring) infinite;
+}
+.cs .bed .pil.a {
+  left: 26px;
+}
+.cs .bed .pil.b {
+  left: 108px;
+  animation-delay: 0.4s;
+}
+@keyframes fold-cs {
+  0%,
+  20% {
+    transform: scaleX(1);
+  }
+  45%,
+  70% {
+    transform: scaleX(0.5);
+  }
+  90%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+@keyframes squish-cs {
+  0%,
+  100% {
+    transform: none;
+  }
+  30% {
+    transform: translateY(-14px) scale(0.96, 1.06);
+  }
+  50% {
+    transform: scale(1.08, 0.88);
+  }
+}
+.cs .kit {
+  position: relative;
+  width: 210px;
+  height: 150px;
+}
+.cs .kit .pan {
+  position: absolute;
+  left: 20px;
+  bottom: 24px;
+  width: 90px;
+  height: 16px;
+  background: var(--ink);
+  border-radius: 0 0 40px 40px;
+}
+.cs .kit .pan::after {
+  content: '';
+  position: absolute;
+  left: 86px;
+  top: 2px;
+  width: 60px;
+  height: 8px;
+  background: var(--ink);
+  border-radius: 4px;
+  transform: rotate(-6deg);
+}
+.cs .kit .egg {
+  position: absolute;
+  left: 42px;
+  bottom: 40px;
+  width: 46px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 2px solid oklch(80% 0.02 80);
+  animation: toss-cs 2s cubic-bezier(0.3, 0, 0.4, 1) infinite;
+}
+.cs .kit .egg::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 3px;
+  width: 14px;
+  height: 12px;
+  border-radius: 50%;
+  background: oklch(80% 0.17 85);
+}
+@keyframes toss-cs {
+  0%,
+  100% {
+    transform: none;
+  }
+  45% {
+    transform: translateY(-70px) rotate(180deg);
+  }
+}
+.cs .kit .pot {
+  position: absolute;
+  right: 14px;
+  bottom: 20px;
+  width: 62px;
+  height: 46px;
+  background: var(--a-steel);
+  border: 3px solid var(--ink);
+  border-radius: 4px 4px 12px 12px;
+}
+.cs .kit .lid {
+  position: absolute;
+  right: 10px;
+  bottom: 68px;
+  width: 70px;
+  height: 10px;
+  background: var(--ink);
+  border-radius: 6px 6px 2px 2px;
+  animation: rattle-cs 0.5s ease-in-out infinite;
+}
+.cs .kit .lid::after {
+  content: '';
+  position: absolute;
+  left: 28px;
+  top: -8px;
+  width: 14px;
+  height: 8px;
+  background: var(--ink);
+  border-radius: 4px 4px 0 0;
+}
+@keyframes rattle-cs {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateY(-4px) rotate(-3deg);
+  }
+  75% {
+    transform: translateY(-2px) rotate(3deg);
+  }
+}
+.cs .kit .spat {
+  position: absolute;
+  left: 120px;
+  bottom: 70px;
+  width: 8px;
+  height: 60px;
+  background: oklch(60% 0.08 60);
+  border-radius: 4px;
+  transform-origin: bottom;
+  animation: swing-cs 2s ease-in-out infinite;
+}
+.cs .kit .spat::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: -18px;
+  width: 24px;
+  height: 22px;
+  background: var(--ink);
+  border-radius: 4px;
+}
+@keyframes swing-cs {
+  0%,
+  100% {
+    transform: rotate(-14deg);
+  }
+  50% {
+    transform: rotate(14deg);
+  }
+}
+.cs .ket {
+  position: relative;
+  width: 150px;
+  height: 140px;
+}
+.cs .ket .bd {
+  position: absolute;
+  left: 30px;
+  bottom: 6px;
+  width: 84px;
+  height: 70px;
+  border-radius: 16px 16px 12px 12px;
+  background: var(--a-orange);
+  border: 3px solid var(--ink);
+}
+.cs .ket .bd::before {
+  content: '';
+  position: absolute;
+  right: -26px;
+  top: 12px;
+  width: 22px;
+  height: 32px;
+  border: 3px solid var(--ink);
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+}
+.cs .ket .bd::after {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: 8px;
+  width: 20px;
+  height: 7px;
+  background: var(--ink);
+  border-radius: 4px;
+  transform: rotate(-30deg);
+}
+.cs .ket .pf {
+  position: absolute;
+  left: 10px;
+  bottom: 80px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--white);
+  opacity: 0;
+  animation: steam-cs 2.2s ease-out infinite;
+}
+.cs .ket .pf:nth-child(3) {
+  animation-delay: 0.7s;
+}
+.cs .ket .pf:nth-child(4) {
+  animation-delay: 1.4s;
+}
+@keyframes steam-cs {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-12px, -56px) scale(1.6);
+    opacity: 0;
+  }
+}
+.cs .mouse {
+  position: relative;
+  width: 130px;
+  height: 140px;
+}
+.cs .mouse .ms {
+  position: absolute;
+  left: 38px;
+  top: 16px;
+  width: 54px;
+  height: 88px;
+  border: 3px solid var(--ink);
+  border-radius: 28px;
+  background: var(--white);
+}
+.cs .mouse .ms::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 32px;
+  background: var(--ink);
+}
+.cs .mouse .rp {
+  position: absolute;
+  left: 42px;
+  top: 20px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid var(--a-pink);
+  opacity: 0;
+  animation: rip-cs 1.6s var(--ease) infinite;
+}
+@keyframes rip-cs {
+  0% {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.cs .rack {
+  position: relative;
+  width: 220px;
+  height: 150px;
+}
+.cs .rack .rail {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 14px;
+  height: 5px;
+  background: var(--ink);
+  border-radius: 3px;
+}
+.cs .hang {
+  position: absolute;
+  top: 16px;
+  width: 64px;
+  transform-origin: 50% 0;
+  animation: sway-cs 2.6s ease-in-out infinite;
+}
+.cs .hang.a {
+  left: 10px;
+}
+.cs .hang.b {
+  left: 78px;
+  animation-delay: 0.4s;
+}
+.cs .hang.c {
+  left: 146px;
+  animation-delay: 0.8s;
+}
+.cs .hang svg {
+  width: 64px;
+  height: 120px;
+  display: block;
+}
+.cs .hang .hk {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.cs .hang .tee {
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+@keyframes sway-cs {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(6deg);
+  }
+}
+.cs .book {
+  position: relative;
+  width: 170px;
+  height: 120px;
+  perspective: 600px;
+}
+.cs .book .cv {
+  position: absolute;
+  left: 85px;
+  top: 0;
+  width: 80px;
+  height: 114px;
+  background: var(--a-mag);
+  border-radius: 2px 8px 8px 2px;
+}
+.cs .book .cv.l {
+  left: 5px;
+  border-radius: 8px 2px 2px 8px;
+  background: var(--ink);
+}
+.cs .book .pg {
+  position: absolute;
+  left: 85px;
+  top: 4px;
+  width: 76px;
+  height: 106px;
+  background: var(--white);
+  border: 1px solid oklch(85% 0.01 245);
+  transform-origin: left;
+  animation: flip-cs 3s var(--ease) infinite;
+}
+.cs .book .pg:nth-of-type(4) {
+  animation-delay: 0.4s;
+}
+.cs .book .pg:nth-of-type(5) {
+  animation-delay: 0.8s;
+}
+@keyframes flip-cs {
+  0%,
+  20% {
+    transform: rotateY(0);
+  }
+  60%,
+  100% {
+    transform: rotateY(-180deg);
+  }
+}
+.cs .calc {
+  width: 150px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: var(--ink);
+  padding: 10px;
+}
+.cs .calc .lcd {
+  background: var(--a-lcd);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: 500 20px var(--f-mono);
+  color: var(--ink);
+  box-shadow: inset 0 3px 6px oklch(30% 0.05 120 / 0.3);
+}
+.cs .calc .lcd span {
+  display: inline-block;
+  white-space: nowrap;
+  clip-path: inset(0 100% 0 0);
+  animation: type-cs 3s steps(8) infinite;
+}
+@keyframes type-cs {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+  60%,
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.cs .calc .keys {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+.cs .calc .keys i {
+  height: 12px;
+  border-radius: 3px;
+  background: oklch(40% 0.01 250);
+}
+.cs .calc .keys i:nth-child(5n) {
+  animation: press-cs 1.2s steps(1) infinite;
+  background: oklch(60% 0.01 250);
+}
+@keyframes press-cs {
+  50% {
+    background: var(--a-orange);
+  }
+}
+.cs .shield {
+  width: 100px;
+  height: 116px;
+}
+.cs .shield .sh {
+  fill: var(--n-mint);
+  stroke: var(--a-green-2);
+  stroke-width: 4;
+}
+.cs .shield .ck {
+  fill: none;
+  stroke: var(--a-green-2);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 70;
+  animation: ck-cs 2.4s var(--ease) infinite;
+}
+@keyframes ck-cs {
+  0%,
+  15% {
+    stroke-dashoffset: 70;
+  }
+  50%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+.cs .boxd {
+  position: relative;
+  width: 140px;
+  height: 130px;
+}
+.cs .boxd .bx {
+  position: absolute;
+  left: 20px;
+  bottom: 0;
+  width: 100px;
+  height: 72px;
+  background: var(--a-orange);
+  border: 3px solid var(--ink);
+  border-radius: 4px;
+}
+.cs .boxd .lb {
+  position: absolute;
+  left: 10px;
+  top: 30px;
+  width: 120px;
+  height: 22px;
+  background: var(--n-yellow);
+  border: 3px solid var(--ink);
+  border-radius: 4px;
+  transform-origin: 10% 100%;
+  animation: lidup-cs 2.4s var(--spring) infinite;
+}
+@keyframes lidup-cs {
+  0%,
+  30% {
+    transform: none;
+  }
+  55%,
+  85% {
+    transform: rotate(-24deg) translateY(-10px);
+  }
+  100% {
+    transform: none;
+  }
+}
+.cs .ph2w {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.cs .ph2 {
+  position: relative;
+  width: 70px;
+  height: 128px;
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  background: var(--white);
+  overflow: hidden;
+}
+.cs .ph2::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: 5px;
+  width: 16px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+.cs .ph2 .nf {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 16px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--a-green);
+  animation: notif-cs 3.2s var(--spring) infinite;
+}
+.cs .ph2 .nf::after {
+  content: '−₹95';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 500 11px var(--f-mono);
+  color: var(--white);
+}
+@keyframes notif-cs {
+  0%,
+  10% {
+    transform: translateY(-44px);
+  }
+  25%,
+  75% {
+    transform: none;
+  }
+  90%,
+  100% {
+    transform: translateY(-44px);
+  }
+}
+.cs .ph2 .gr {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 12px;
+  height: 60px;
+  display: flex;
+  align-items: end;
+  gap: 5px;
+}
+.cs .ph2 .gr i {
+  flex: 1;
+  background: var(--a-blue);
+  border-radius: 3px 3px 0 0;
+  transform-origin: bottom;
+  animation: grb-cs 3.2s var(--ease) infinite;
+}
+.cs .ph2 .gr i:nth-child(1) {
+  height: 90%;
+}
+.cs .ph2 .gr i:nth-child(2) {
+  height: 70%;
+  animation-delay: 0.1s;
+}
+.cs .ph2 .gr i:nth-child(3) {
+  height: 80%;
+  animation-delay: 0.2s;
+}
+.cs .ph2 .gr i:nth-child(4) {
+  height: 45%;
+  animation-delay: 0.3s;
+  background: var(--a-green);
+}
+@keyframes grb-cs {
+  0%,
+  15% {
+    transform: scaleY(0.1);
+  }
+  45%,
+  100% {
+    transform: none;
+  }
+}
+.cs .bell {
+  width: 44px;
+  height: 44px;
+  fill: var(--n-yellow);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  transform-origin: 50% 10%;
+  animation: ringb-cs 3.2s ease-in-out infinite;
+}
+@keyframes ringb-cs {
+  0%,
+  22%,
+  40%,
+  100% {
+    transform: none;
+  }
+  26% {
+    transform: rotate(16deg);
+  }
+  30% {
+    transform: rotate(-14deg);
+  }
+  34% {
+    transform: rotate(10deg);
+  }
+  37% {
+    transform: rotate(-6deg);
+  }
+}
+.cs .lap {
+  position: relative;
+  width: 200px;
+  height: 140px;
+  perspective: 500px;
+}
+.cs .lap .lid {
+  position: absolute;
+  left: 30px;
+  bottom: 22px;
+  width: 140px;
+  height: 92px;
+  border: 3px solid var(--ink);
+  border-radius: 8px 8px 2px 2px;
+  background: var(--ink);
+  transform-origin: 50% 100%;
+  animation: lidopen-cs 3.4s var(--spring) infinite;
+}
+.cs .lap .lid::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--n-lilac), var(--n-sky));
+  animation: scron-cs 3.4s steps(1) infinite;
+}
+@keyframes lidopen-cs {
+  0%,
+  10% {
+    transform: rotateX(-86deg);
+  }
+  40%,
+  85% {
+    transform: rotateX(-6deg);
+  }
+  100% {
+    transform: rotateX(-86deg);
+  }
+}
+@keyframes scron-cs {
+  0%,
+  38% {
+    opacity: 0;
+  }
+  40%,
+  86% {
+    opacity: 1;
+  }
+  87%,
+  100% {
+    opacity: 0;
+  }
+}
+.cs .lap .base {
+  position: absolute;
+  left: 14px;
+  bottom: 8px;
+  width: 172px;
+  height: 14px;
+  background: var(--a-steel);
+  border: 3px solid var(--ink);
+  border-radius: 2px 2px 10px 10px;
+}
+.cs .tb2w {
+  width: 170px;
+  height: 150px;
+  display: grid;
+  place-items: center;
+}
+.cs .tb2 {
+  width: 84px;
+  height: 116px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: var(--white);
+  padding: 9px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  align-content: start;
+  animation: rot-cs 3.6s var(--spring) infinite;
+}
+.cs .tb2 i {
+  height: 16px;
+  border-radius: 4px;
+  background: var(--a-teal);
+  opacity: 0.75;
+}
+.cs .tb2 i:nth-child(2n) {
+  background: var(--a-blue);
+}
+.cs .tb2 i:nth-child(3n) {
+  background: var(--a-orange);
+}
+@keyframes rot-cs {
+  0%,
+  20% {
+    transform: none;
+  }
+  45%,
+  75% {
+    transform: rotate(90deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+.cs .ess {
+  position: relative;
+  width: 210px;
+  height: 150px;
+}
+.cs .ess .tw {
+  position: absolute;
+  left: 16px;
+  width: 84px;
+  height: 18px;
+  border-radius: 6px;
+  border: 2.5px solid var(--ink);
+}
+.cs .ess .tw.a {
+  bottom: 8px;
+  background: var(--a-blue);
+}
+.cs .ess .tw.b {
+  bottom: 28px;
+  background: var(--n-yellow);
+}
+.cs .ess .tw.c {
+  bottom: 48px;
+  background: var(--n-pink);
+  animation: towel-cs 3s var(--spring) infinite;
+}
+@keyframes towel-cs {
+  0%,
+  15% {
+    transform: translate(-60px, -40px) rotate(-20deg);
+    opacity: 0;
+  }
+  40%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+.cs .ess .pil {
+  position: absolute;
+  left: 12px;
+  bottom: 70px;
+  width: 92px;
+  height: 40px;
+  border-radius: 20px;
+  background: var(--white);
+  border: 2.5px solid var(--ink);
+  animation: squish-cs 2s var(--spring) infinite;
+}
+.cs .ess .sp {
+  position: absolute;
+  right: 56px;
+  bottom: 8px;
+  width: 38px;
+  height: 62px;
+  border-radius: 10px 10px 8px 8px;
+  background: var(--a-teal);
+  border: 2.5px solid var(--ink);
+  animation: bobv-cs 2.4s ease-in-out infinite alternate;
+}
+.cs .ess .sp::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: -14px;
+  width: 14px;
+  height: 12px;
+  background: var(--ink);
+  border-radius: 3px 3px 0 0;
+}
+@keyframes bobv-cs {
+  to {
+    transform: translateY(-6px);
+  }
+}
+.cs .ess .cd {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  width: 30px;
+  height: 46px;
+  border-radius: 4px;
+  background: var(--n-cream);
+  border: 2.5px solid var(--ink);
+}
+.cs .ess .fl {
+  position: absolute;
+  right: 20px;
+  bottom: 56px;
+  width: 14px;
+  height: 22px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: var(--a-orange);
+  box-shadow: 0 0 14px 4px oklch(85% 0.15 80 / 0.7);
+  transform-origin: 50% 100%;
+  animation: flick-cs 0.35s ease-in-out infinite alternate;
+}
+@keyframes flick-cs {
+  from {
+    transform: scale(1, 1) rotate(-3deg);
+  }
+  to {
+    transform: scale(0.9, 1.1) rotate(3deg);
+  }
+}
+.cs .foot {
+  padding: 0 0 56px;
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (max-width: 1200px) {
+  .cs .board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 860px) {
+  .cs .board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 620px) {
+  .cs .board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cs .note {
+    min-height: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs *,
+  .cs *::before,
+  .cs *::after {
+    animation: none !important;
+    transition-duration: 0s !important;
+  }
+}
+.cs {
+  background: var(--board);
+  padding: 24px 0 64px;
+}
+.cs .note h2 a {
+  color: inherit;
+  text-decoration: none;
+}
+.cs .note h2 a:hover {
+  text-decoration: underline;
+}
+.cs .note .cnt {
+  font:
+    500 13px 'DM Mono',
+    ui-monospace,
+    monospace;
+  color: var(--muted);
+  margin: 6px 0 0;
+}
