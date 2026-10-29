@@ -2,6 +2,8 @@
 
 ## 29 October functionality and evaluator review
 
+Follow-up after Claude's Home/Categories expansion: the tide chart now applies domestic INR, new-condition, accepted, in-stock, history-permitted and non-future observation guards before calculating daily lows. Alert previews say “recorded”, do not imply confirmed message delivery, and disclose that shipping depends on the saved target's basis. Cross-border category copy preserves the source currency rather than promising USD. The expanded suite passes 162 unit/integration tests. The deployed Home/Categories release passed all five release browser scenarios and ten live API checks before this follow-up.
+
 The [15-perspective audit](./PROJECT-AUDIT.md) records strengths, defects, unnecessary additions and prioritized follow-ups. This release includes Claude's light ring hero, retains the lotus/neutral chips, adds ring pause and an immediate search-animation skip, and fixes product-page text contrast. History has independent item/delivered selection, CSV evidence download and shareable range/basis links. Unknown shipping remains unknown in both charts and CSV.
 
 Model-prefix search errors and valid ISBN punctuation are covered by regression tests. Invalid page/category addresses and API suffix aliases return 404. Storage-denied browsers degrade safely. Visible tabs refresh recorded offers at most once a minute without reloading catalog metadata; hidden tabs pause and slow requests do not overlap. Health checks use a cheap database probe.

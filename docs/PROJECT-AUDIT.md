@@ -24,6 +24,8 @@ The strongest project claim is **honest, variant-aware comparison with recorded 
 
 ## Useful optional work completed
 
+The later Home/Categories interface was also reviewed: its tide calculation now shares the domestic/new-condition restrictions, rejects future observations and preserves India day boundaries. Alert preview wording no longer equates a recorded in-app event with confirmed delivery or assumes every target includes shipping. These safeguards have focused regression tests.
+
 - History CSV for the selected product, period and basis, with source URL and original UTC observation time.
 - Shareable `basis=item|delivered` and `days=7|30|90` history views.
 - Independent history basis, ring pause, immediate lotus skip, safe storage and visibility-aware polling.
