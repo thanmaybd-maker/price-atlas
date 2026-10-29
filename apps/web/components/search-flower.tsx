@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react';
-import { canWebGL, cssColor, loadThree, reducedMotion } from './three-loader';
+import { canWebGL, cssColor, loadModel, loadThree, reducedMotion } from './three-loader';
 
 type Tone = '' | 'seen' | 'ok' | 'bad' | 'warn' | 'win';
 type Step = { title: string; detail: string; tone: Tone };
@@ -46,8 +46,8 @@ export function SearchFlower({
     if (!F || !cv || !canWebGL()) return;
     let stop = () => {};
     let cancelled = false;
-    loadThree()
-      .then((T: any) => {
+    Promise.all([loadThree(), loadModel('/models/flower.glb')])
+      .then(([T, gltf]: any[]) => {
         if (cancelled) return;
         const reduce = reducedMotion();
         const r = new T.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
@@ -68,6 +68,17 @@ export function SearchFlower({
             }),
           ),
         );
+        // a dark floor in the reflection gives polished metal something to contrast against
+        const floor = new T.Mesh(
+          new T.PlaneGeometry(24, 24),
+          new T.MeshBasicMaterial({
+            color: new T.Color(...cssColor(F, '--v2-ink')),
+            side: T.DoubleSide,
+          }),
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -6.5;
+        env.add(floor);
         [
           [-6, 5, -2, 5],
           [5, 6, 3, 4],
@@ -84,7 +95,7 @@ export function SearchFlower({
         const cam = new T.PerspectiveCamera(30, 1, 0.1, 100);
         const camFrom = new T.Vector3(0, 4.4, 9.4);
         const camTop = new T.Vector3(0, 3.1, 0.02);
-        const look = new T.Vector3(0, 0.75, 0);
+        const look = new T.Vector3(0, 0.05, 0);
         cam.position.copy(camFrom);
         cam.lookAt(look);
         const C = (n: string) => new T.Color(...cssColor(F, n));
@@ -94,75 +105,37 @@ export function SearchFlower({
         scene.add(dl);
         const root = new T.Group();
         root.position.y = 0.35;
+        root.scale.setScalar(0.86);
         scene.add(root);
-        const steel = new T.MeshStandardMaterial({
-          color: 0xe9ecf0,
-          metalness: 1,
-          roughness: 0.22,
+        // The assembly was modelled in Blender (carbon-fibre plate, stem, hub, gear, stamens, core);
+        // the two petal templates are cloned per lookup step and hinged at their origin.
+        // Each lookup removes its templates; keep the cached scene reusable.
+        const model = gltf.scene.clone(true);
+        const node = (n: string) => model.getObjectByName(n);
+        const tplOuter = node('PetalOuter');
+        const tplInner = node('PetalInner');
+        [tplOuter, tplInner].forEach((t: any) => t && t.parent && t.parent.remove(t));
+        root.add(model);
+        const hub = node('Hub') || new T.Group();
+        const gear = node('Gear') || new T.Group();
+        const coreMesh: any = node('Core');
+        const coreM =
+          coreMesh?.material || new T.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff });
+        coreM.color = C('--v2-green');
+        coreM.emissive = C('--v2-green');
+        coreM.emissiveIntensity = 0.25;
+        model.traverse((o: any) => {
+          if (!o.isMesh) return;
+          const m = o.material;
+          // carbon reads as carbon only when the weave stays dark under a thin clear coat
+          if (/^Carbon/.test(m.name)) {
+            m.roughness = 0.38;
+            m.envMapIntensity = 0.35;
+          } else if (m.name === 'Panel') {
+            m.roughness = 0.28;
+            m.envMapIntensity = 0.45;
+          } else m.envMapIntensity = 1.0;
         });
-        const dark = new T.MeshStandardMaterial({ color: 0xa3abb5, metalness: 1, roughness: 0.32 });
-        const add = (m: any, y: number) => {
-          m.position.y = y;
-          root.add(m);
-          return m;
-        };
-        add(new T.Mesh(new T.CylinderGeometry(0.85, 0.95, 0.1, 64), steel), -1.35);
-        add(new T.Mesh(new T.CylinderGeometry(0.07, 0.1, 2.1, 20), dark), -0.3);
-        const hub = add(new T.Mesh(new T.CylinderGeometry(0.5, 0.6, 0.3, 56), steel), 0.78);
-        const gear = add(new T.Group(), 0.78);
-        const tor = new T.Mesh(new T.TorusGeometry(0.76, 0.045, 12, 80), dark);
-        tor.rotation.x = Math.PI / 2;
-        gear.add(tor);
-        const tooth = new T.BoxGeometry(0.09, 0.12, 0.1);
-        for (let j = 0; j < 30; j++) {
-          const a = (j / 30) * Math.PI * 2;
-          const th = new T.Mesh(tooth, dark);
-          th.position.set(Math.cos(a) * 0.83, 0, Math.sin(a) * 0.83);
-          th.rotation.y = -a;
-          gear.add(th);
-        }
-        add(
-          new T.Mesh(
-            new T.SphereGeometry(0.38, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2),
-            new T.MeshPhysicalMaterial({
-              color: 0xffffff,
-              transmission: 0.95,
-              roughness: 0.05,
-              thickness: 0.6,
-              ior: 1.5,
-              clearcoat: 1,
-            }),
-          ),
-          0.93,
-        );
-        const coreM = new T.MeshStandardMaterial({
-          color: C('--v2-green'),
-          emissive: C('--v2-green'),
-          emissiveIntensity: 0.25,
-          roughness: 0.3,
-        });
-        add(new T.Mesh(new T.SphereGeometry(0.15, 32, 16), coreM), 1.0);
-        const shape = new T.Shape();
-        shape.moveTo(0, 0);
-        shape.bezierCurveTo(0.42, 0.22, 0.5, 1.1, 0, 1.75);
-        shape.bezierCurveTo(-0.5, 1.1, -0.42, 0.22, 0, 0);
-        const mk = (len: number) => {
-          const g = new T.ExtrudeGeometry(shape, {
-            depth: 0.035,
-            bevelEnabled: true,
-            bevelThickness: 0.018,
-            bevelSize: 0.02,
-            bevelSegments: 2,
-            curveSegments: 28,
-          });
-          g.translate(0, 0, -0.017);
-          g.scale(len, len, 1);
-          g.rotateX(-Math.PI / 2);
-          g.rotateY(-Math.PI / 2);
-          return g;
-        };
-        const gOuter = mk(1);
-        const gInner = mk(0.74);
         const TONE: Record<string, any> = {
           '': C('--v2-petal'),
           seen: C('--v2-sky'),
@@ -181,22 +154,21 @@ export function SearchFlower({
           const hinge = new T.Group();
           hinge.position.x = inner ? 0.3 : 0.46;
           pivot.add(hinge);
-          const mat = new T.MeshPhysicalMaterial({
-            color: TONE[''].clone(),
-            metalness: 0,
-            roughness: 0.35,
-            transmission: 0,
-            thickness: 0.35,
-            ior: 1.4,
-            clearcoat: 1,
-            side: T.DoubleSide,
-            envMapIntensity: 0.8,
+          const petal = (inner ? tplInner : tplOuter).clone(true);
+          petal.position.set(0, 0, 0);
+          let mat: any = null;
+          petal.traverse((o: any) => {
+            if (o.isMesh && o.material?.name === 'Panel') {
+              o.material = o.material.clone();
+              o.material.color = TONE[''].clone();
+              mat = o.material;
+            }
           });
-          hinge.add(new T.Mesh(inner ? gInner : gOuter, mat));
+          hinge.add(petal);
           hinge.scale.setScalar(0.001);
           return {
             hinge,
-            mat,
+            mat: mat || new T.MeshStandardMaterial(),
             s: 0.001,
             sv: 0,
             sT: 0.001,
@@ -292,6 +264,7 @@ export function SearchFlower({
           raf = requestAnimationFrame(draw);
         };
         raf = requestAnimationFrame(draw);
+        F.dataset.ready = 'true';
         stop = () => {
           cancelAnimationFrame(raf);
           ro.disconnect();
