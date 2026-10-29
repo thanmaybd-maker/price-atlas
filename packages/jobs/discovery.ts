@@ -8,7 +8,8 @@ import {
   importScraped,
   reusableListing,
 } from '../database/postgres';
-import { matchesQuery, normalizeQuery, bundleMismatch } from '../domain/search';
+import { matchesQuery, normalizeQuery } from '../domain/search';
+import { discoveryConflict } from '../domain/discovery-guard';
 import { canonicalRetailUrl, scrapeSearchHtml, ScrapeError } from '../providers/scraper';
 import {
   parseSearchHtml,
@@ -54,7 +55,7 @@ export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
     q,
     url,
     key: createHash('sha256')
-      .update(`retailers-v4:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
+      .update(`retailers-v5:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
       .digest('hex'),
   };
 }
@@ -171,6 +172,7 @@ export async function discoverProducts(
           stores.map(async (store) => {
             let candidates: SearchCandidate[] = [],
               method = 'direct';
+            let blocked = false;
             try {
               if (!livePolicy(store).search)
                 throw new ScrapeError('disabled', 'Search is disabled for this retailer.');
@@ -180,6 +182,7 @@ export async function discoverProducts(
                   candidates = parseSearchHtml(await scrapeSearchHtml(q, store), store);
                 }
               } catch (e) {
+                blocked = e instanceof ScrapeError && e.code === 'blocked';
                 if (
                   e instanceof ScrapeError &&
                   ['daily_budget', 'monthly_budget', 'paused', 'rate_limited'].includes(e.code)
@@ -192,6 +195,7 @@ export async function discoverProducts(
                   await reserveSource(store, { transport: 'direct' });
                   candidates = await duckDuckGoProducts(q, store);
                 } catch (e) {
+                  blocked ||= e instanceof ScrapeError && e.code === 'blocked';
                   if (
                     e instanceof ScrapeError &&
                     ['daily_budget', 'monthly_budget', 'paused', 'rate_limited'].includes(e.code)
@@ -208,7 +212,7 @@ export async function discoverProducts(
                 .split(' ')
                 .filter((w) => w.length > 2 && !['the', 'and', 'for', 'buy', 'price'].includes(w));
               const relevant = candidates
-                .filter((c) => !bundleMismatch(c.title, q))
+                .filter((c) => !discoveryConflict(c.title, q))
                 .map((c) => ({
                   c,
                   score:
@@ -255,9 +259,11 @@ export async function discoverProducts(
                   ? 'complete'
                   : failure instanceof ScrapeError
                     ? failure.code
-                    : candidates.length
-                      ? 'candidates_only'
-                      : 'no_results',
+                    : blocked && !relevant.length
+                      ? 'blocked'
+                      : relevant.length
+                        ? 'candidates_only'
+                        : 'no_results',
               });
             } catch (error) {
               data.sources.push({
@@ -277,6 +283,14 @@ export async function discoverProducts(
         : 'Product details could not be verified. Try the direct retailer product URL.';
   }
   data.productIds = [...new Set(data.productIds)];
+  if (url && !data.sources.length) {
+    const { store } = canonicalRetailUrl(url);
+    data.sources.push({
+      store,
+      method: 'product-page',
+      status: data.productIds.length ? 'complete' : 'unavailable',
+    });
+  }
   if (!data.productIds.length && !data.message)
     data.message = data.sources.some((s) => s.status === 'rate_limited')
       ? 'The stores are busy. Please try again in a minute, or paste a direct product URL.'

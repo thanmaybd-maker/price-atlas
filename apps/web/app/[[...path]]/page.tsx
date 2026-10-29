@@ -2,6 +2,7 @@ import { history, findProduct, offers } from '@database/runtime';
 import { publicCatalog } from '@/lib/public-data';
 import Atlas from '@/components/atlas';
 import { notFound } from 'next/navigation';
+import { catalogCard } from '../../../../packages/domain/catalog-card';
 export const dynamic = 'force-dynamic';
 export default async function Page({ params }: { params: Promise<{ path?: string[] }> }) {
   const { path = [] } = await params;
@@ -20,7 +21,9 @@ export default async function Page({ params }: { params: Promise<{ path?: string
       initialProducts={
         product && !snapshot.products.some((p) => p.id === product.id)
           ? [product, ...snapshot.products]
-          : snapshot.products
+          : path.length === 0
+            ? snapshot.products.map(catalogCard)
+            : snapshot.products
       }
       initialOffers={
         product

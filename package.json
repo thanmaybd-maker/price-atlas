@@ -17,6 +17,8 @@
     "test:api": "node scripts/smoke-api.mjs",
     "backup": "tsx scripts/backup.ts",
     "backup:check": "tsx scripts/check-backup.ts",
+    "backup:restore-drill": "tsx scripts/restore-drill.ts",
+    "check:firecrawl": "tsx scripts/check-firecrawl.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "migrate": "tsx scripts/migrate.ts",

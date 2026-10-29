@@ -17,6 +17,7 @@ import { discoverProducts, lookupStatus } from '../../../../../../packages/jobs/
 import { catalogExpansionStatus } from '../../../../../../packages/jobs/catalog-expansion';
 import { categoryLabels } from '../../../../../../packages/domain/categories';
 import { matchesQuery } from '../../../../../../packages/domain/search';
+import { retailers } from '../../../../../../packages/domain/retailers';
 import { knownApiPath } from '../../../../../../packages/domain/routes';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import {
@@ -123,6 +124,7 @@ async function handler(req: NextRequest) {
         const expansion = await catalogExpansionStatus();
         return json({
           mode: 'live',
+          checkedAt: Date.now(),
           products: counts.reduce((sum, row) => sum + row.count, 0),
           categories: Object.entries(categoryLabels).map(([id, name]) => ({
             id,
@@ -181,6 +183,19 @@ async function handler(req: NextRequest) {
         let products = snapshot.products.filter(
           (p) => (!category || p.category === category) && matchesQuery(p, query),
         );
+        if (path[0] === 'suggestions') {
+          if (req.nextUrl.searchParams.get('domestic') === '1')
+            products = products.filter(
+              (p) =>
+                !p.attributes['Source currency'] &&
+                !retailers[p.attributes.Retailer as (typeof STORE_NAMES)[number]]?.international,
+            );
+          return json({
+            products: products.slice(0, 24),
+            total: products.length,
+            mode: data.isLive() ? 'live' : 'demo',
+          });
+        }
         const all = snapshot.offers;
         if (sort === 'price-asc')
           products.sort(

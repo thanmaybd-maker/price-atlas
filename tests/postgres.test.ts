@@ -9,7 +9,11 @@ import type { Pool } from 'pg';
 import * as store from '../packages/database/postgres';
 import { demoPolicy } from '../packages/providers/index';
 import { livePolicy } from '../packages/providers/live';
-import { credentialFingerprint } from '../packages/jobs/provider-pool';
+import {
+  credentialFingerprint,
+  availableCredentials,
+  providerCredentials,
+} from '../packages/jobs/provider-pool';
 import {
   startCatalogExpansion,
   runCatalogExpansionStep,
@@ -1085,4 +1089,81 @@ it('loads a bounded public history batch with retained timestamps and supports a
   for (const observations of Object.values(featured.history))
     for (const observation of observations)
       expect(observation.observedAt).toBeLessThanOrEqual(Date.now());
+});
+
+it('Firecrawl fails over exhausted keys, keeps the working account and enforces one shared lookup allowance', async () => {
+  const saved = { ...process.env };
+  const fields = [
+    'SCRAPER_PROVIDER',
+    'SCRAPER_DIRECT_FIRST',
+    'FIRECRAWL_API_KEY',
+    'FIRECRAWL_FALLBACK_API_KEYS',
+    'SCRAPINGBEE_FALLBACK_API_KEYS',
+    'SCRAPER_CREDITS_PER_DAY',
+    'SCRAPER_CREDITS_PER_MONTH',
+  ];
+  Object.assign(process.env, {
+    SCRAPER_PROVIDER: 'firecrawl',
+    SCRAPER_DIRECT_FIRST: 'false',
+    FIRECRAWL_API_KEY: 'fixture-fc-exhausted',
+    FIRECRAWL_FALLBACK_API_KEYS: 'fixture-fc-active',
+    SCRAPINGBEE_FALLBACK_API_KEYS: 'fixture-bee-never-use',
+    SCRAPER_CREDITS_PER_DAY: '100',
+    SCRAPER_CREDITS_PER_MONTH: '300',
+  });
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  const headers: string[] = [];
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const auth = new Headers(init?.headers).get('Authorization') || '';
+    headers.push(auth);
+    return auth === 'Bearer fixture-fc-exhausted'
+      ? new Response('', { status: 402 })
+      : Response.json({ success: true, data: { rawHtml: html() } });
+  });
+  try {
+    expect(providerCredentials(process.env.FIRECRAWL_API_KEY, 'firecrawl')).toEqual([
+      'fixture-fc-exhausted',
+      'fixture-fc-active',
+    ]);
+    const day = new Date().toISOString().slice(0, 10);
+    const before = Number(
+      (await db.query('SELECT credits FROM atlas.collection_budget WHERE day=$1', [day])).rows[0]
+        ?.credits || 0,
+    );
+    await expect(
+      fetchProductWithBudget('https://www.amazon.in/dp/B000000098'),
+    ).resolves.toMatchObject({ itemPrice: 2500000 });
+    expect(headers).toEqual(['Bearer fixture-fc-exhausted', 'Bearer fixture-fc-active']);
+    const after = Number(
+      (await db.query('SELECT credits FROM atlas.collection_budget WHERE day=$1', [day])).rows[0]
+        .credits,
+    );
+    expect(after - before).toBe(2);
+    const state = (
+      await db.query('SELECT * FROM atlas.provider_keys WHERE fingerprint=$1', [
+        credentialFingerprint('fixture-fc-exhausted'),
+      ])
+    ).rows[0];
+    expect(state.disabled).toBe(false);
+    expect(Number(state.retry_after)).toBeGreaterThan(Date.now());
+    expect(JSON.stringify(state)).not.toContain('fixture-fc');
+    expect(await availableCredentials(process.env.FIRECRAWL_API_KEY, 'firecrawl')).toEqual([
+      'fixture-fc-active',
+    ]);
+    // A new source window; the two-attempt fixture limit remains enforced above.
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    headers.length = 0;
+    await fetchProductWithBudget('https://www.amazon.in/dp/B000000098');
+    expect(headers).toEqual(['Bearer fixture-fc-active']);
+    headers.length = 0;
+    await expect(
+      fetchProductWithBudget('https://www.amazon.in/dp/B000000098', 1000, () => false),
+    ).rejects.toMatchObject({ code: 'lookup_budget' });
+    expect(headers).toHaveLength(0);
+  } finally {
+    fetcher.mockRestore();
+    for (const key of fields)
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+  }
 });

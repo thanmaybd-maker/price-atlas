@@ -424,6 +424,8 @@ export async function importScraped(
       seller: scraped.seller,
       context: retailers[scraped.store].deliveryNote,
       purchaseUrl: scraped.url,
+      extractionMethod: scraped.attributes['Fetch method'],
+      parserVersion: scraped.parserVersion,
     };
     const current = (
       await c.query(
