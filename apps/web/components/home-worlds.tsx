@@ -809,11 +809,14 @@ function AlertsWorld({
               {name} {latest ? 'reached your target' : 'is at this price'} on{' '}
               {storeLabel(store || '')}.
               <small>
-                {latest ? 'sent ' + ago(latest.created_at) : 'example message, live price'}
+                {latest ? 'recorded ' + ago(latest.created_at) : 'example message, recorded price'}
               </small>
             </div>
             <div className="msg">
-              Delivery included. Bank offers were not counted.<small>price atlas</small>
+              {latest
+                ? 'Price basis follows your saved target. Delivery may be extra; verify at checkout.'
+                : 'This example uses a recorded delivered total. Bank offers were not counted.'}
+              <small>price atlas</small>
             </div>
             <div className="msg">
               The next alert comes only after it rises above your target and drops again.
