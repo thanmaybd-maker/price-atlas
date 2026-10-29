@@ -1,5 +1,6 @@
 import { total, type Offer } from './index';
 import { retailers } from './retailers';
+import { archiveEvidence } from './history-source';
 export function weeklyHistory(
   observations: Offer[],
   basis: 'delivered' | 'item',
@@ -42,6 +43,20 @@ export function weeklyHistory(
       high = samples.at(-1) || null;
     const change = low && previous !== null ? low.price - previous : null;
     previous = low?.price ?? null;
-    return { date: new Date(start), stores, low, high, change };
+    const archivePoints = observations.filter(
+      (o) =>
+        archiveEvidence(o) &&
+        o.observedAt >= start &&
+        o.observedAt < start + 86400000 &&
+        o.observedAt <= now &&
+        o.historyAllowed &&
+        o.accepted &&
+        o.stock &&
+        o.condition === 'new' &&
+        o.currency === 'INR' &&
+        !retailers[o.store].international &&
+        total(o, basis) !== null,
+    );
+    return { date: new Date(start), stores, low, high, change, archivePoints };
   });
 }

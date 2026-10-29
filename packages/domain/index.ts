@@ -54,6 +54,18 @@ export interface Offer {
   purchaseUrl?: string;
   extractionMethod?: string;
   parserVersion?: string;
+  source?: string;
+  evidence?: {
+    kind: 'archive';
+    extraction: string;
+    parserVersion: string;
+    originalUrl: string;
+    archiveUrl: string;
+    rawArchiveUrl: string;
+    captureTimestamp: string;
+    verifiedLiveByPriceAtlas: false;
+    matchedAttributes: string[];
+  };
 }
 export interface Rule {
   id: string;

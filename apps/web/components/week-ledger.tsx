@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { money, type Offer } from '@domain/index';
 import { weeklyHistory } from '../../../packages/domain/weekly-history';
+import { HistoryCitation } from './history-citation';
 
 const dayName = (d: Date) =>
   new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long' }).format(d);
@@ -125,6 +126,17 @@ export function WeekLedger({
                   <span>{money(s.price)}</span>
                 </div>
               ))}
+              {d.archivePoints.length > 0 && (
+                <details>
+                  <summary>Includes Internet Archive captures</summary>
+                  <p>Archived store pages; not live checks. Values apply to their capture dates.</p>
+                  {d.archivePoints.map((o) => (
+                    <p key={o.id}>
+                      <HistoryCitation offer={o} />
+                    </p>
+                  ))}
+                </details>
+              )}
             </>
           ) : (
             <div className="row sm">
