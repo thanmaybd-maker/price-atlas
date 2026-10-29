@@ -176,7 +176,8 @@ h2 {
   margin-top: 14px;
 }
 .v2-store {
-  --tint: var(--v2-glint);
+  /* one neutral chip for every store: selection is the only colour */
+  --tint: var(--v2-white);
   min-height: 34px;
   padding: 0 12px;
   border: 0;
@@ -200,30 +201,6 @@ h2 {
 .v2-store.on {
   outline-color: var(--v2-green);
   transform: translateY(-3px);
-}
-.s-all {
-  --tint: var(--v2-white);
-}
-.s-amazon {
-  --tint: var(--p-tue);
-}
-.s-flipkart {
-  --tint: var(--p-fri);
-}
-.s-meesho {
-  --tint: var(--p-sun);
-}
-.s-croma {
-  --tint: var(--p-thu);
-}
-.s-nykaa {
-  --tint: var(--p-mon);
-}
-.s-iherb {
-  --tint: var(--p-wed);
-}
-.s-bh {
-  --tint: var(--p-sat);
 }
 .v2-hint {
   margin: 14px 0 0;
