@@ -19,7 +19,11 @@ import {
 import { getSourceAdapter } from '../providers/index';
 import { livePolicy } from '../providers/live';
 import { rank, type Rule } from '../domain/index';
-import { ResendNotifications, type NotificationProvider } from '../notifications/index';
+import {
+  ResendNotifications,
+  emailDeliveryEnabled,
+  type NotificationProvider,
+} from '../notifications/index';
 import type { Store } from '../domain/index';
 import { deliverTelegram } from '../notifications/telegram';
 import { deliverTestAlerts } from '../notifications/test-alerts';
@@ -296,7 +300,7 @@ export async function deliverNotifications(
       );
       continue;
     }
-    if (!user.email_enabled) {
+    if (!user.email_enabled || !emailDeliveryEnabled()) {
       await postgres().query("UPDATE atlas.notifications SET email_state='disabled' WHERE id=$1", [
         n.id,
       ]);
