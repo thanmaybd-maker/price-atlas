@@ -45,7 +45,9 @@ export function RecentHistory({
       <ul>
         {items.map((item) => (
           <li key={item.href}>
-            <Link href={item.href}>{item.label}</Link>
+            <Link prefetch={false} href={item.href}>
+              {item.label}
+            </Link>
           </li>
         ))}
       </ul>
