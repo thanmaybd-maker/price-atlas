@@ -355,8 +355,8 @@ export function SearchFlower({
     push(
       found
         ? {
-            title: `Verified ${found} product${found === 1 ? '' : 's'}`,
-            detail: 'product pages parsed and matched',
+            title: `Found ${found} product${found === 1 ? '' : 's'}`,
+            detail: 'recorded product details are ready',
             tone: 'ok',
           }
         : { title: 'Nothing verified yet', detail: message, tone: 'bad' },
@@ -364,18 +364,23 @@ export function SearchFlower({
     const t = setTimeout(() => {
       if (found)
         push({
-          title: 'Ranked by delivered price',
-          detail: 'bank and exchange offers ignored',
+          title: 'Results ready',
+          detail: 'unknown shipping and unmatched variants stay separate',
           tone: 'win',
         });
       const end = () => {
         setFlash(true);
         setTimeout(() => doneRef.current(), 600);
       };
-      if (api.current) setTimeout(() => api.current?.finish(end), 700);
-      else setTimeout(end, 900);
+      if (api.current) api.current.finish(end);
+      else end();
     }, 500);
-    return () => clearTimeout(t);
+    // A WebGL context loss must never hide completed search results.
+    const fallback = setTimeout(() => doneRef.current(), 4500);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(fallback);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy]);
 

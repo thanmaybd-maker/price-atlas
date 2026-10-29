@@ -1,18 +1,16 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { money, total, type Offer } from '@domain/index';
+import { money, type Offer } from '@domain/index';
+import { weeklyHistory } from '../../../packages/domain/weekly-history';
 
-const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const storeName = (s: string) => (s === 'Amazon' ? 'Amazon.in' : s);
-
-type Day = {
-  date: Date;
-  stores: { store: string; price: number }[];
-  low: { store: string; price: number } | null;
-  high: { store: string; price: number } | null;
-  change: number | null;
-};
+const dayName = (d: Date) =>
+  new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long' }).format(d);
+const fmtDate = (d: Date) =>
+  new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    month: 'short',
+    day: 'numeric',
+  }).format(d);
 
 /**
  * Seven days of recorded prices as seven plastic compartments in a white tray.
@@ -27,38 +25,7 @@ export function WeekLedger({
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const days = useMemo<Day[]>(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const out: Day[] = [];
-    let prevLow: number | null = null;
-    for (let i = 6; i >= 0; i--) {
-      const start = new Date(today);
-      start.setDate(today.getDate() - i);
-      const end = start.getTime() + 86400000;
-      const best = new Map<string, number>();
-      observations
-        .filter(
-          (o) =>
-            o.historyAllowed && o.stock && o.observedAt >= start.getTime() && o.observedAt < end,
-        )
-        .forEach((o) => {
-          const v = total(o, basis);
-          if (v === null) return;
-          const s = storeName(o.store);
-          if (!best.has(s) || v < (best.get(s) as number)) best.set(s, v);
-        });
-      const stores = [...best.entries()]
-        .map(([store, price]) => ({ store, price }))
-        .sort((a, b) => a.price - b.price);
-      const low = stores[0] || null;
-      const high = stores.length ? stores[stores.length - 1] : null;
-      const change = low && prevLow !== null ? low.price - prevLow : null;
-      if (low) prevLow = low.price;
-      out.push({ date: start, stores, low, high, change });
-    }
-    return out;
-  }, [observations, basis]);
+  const days = useMemo(() => weeklyHistory(observations, basis), [observations, basis]);
   const lastWithData = days
     .map((d, i) => (d.low ? i : -1))
     .filter((i) => i >= 0)
@@ -69,8 +36,7 @@ export function WeekLedger({
     return (
       <section className="v2-week v2-week-wait" aria-label="Last seven days of recorded prices" />
     );
-  const prevName = sel > 0 ? WD[days[sel - 1].date.getDay()] : '';
-  const fmtDate = (x: Date) => `${MN[x.getMonth()]} ${x.getDate()}`;
+  const prevName = sel > 0 ? dayName(days[sel - 1].date) : '';
   return (
     <section className="v2-week" aria-label="Last seven days of recorded prices">
       <div className="v2-week-head">
@@ -85,7 +51,7 @@ export function WeekLedger({
           {days.map((day, i) => {
             const tone =
               day.change === null || day.change === 0 ? '' : day.change < 0 ? ' drop' : ' spike';
-            const name = WD[day.date.getDay()];
+            const name = dayName(day.date);
             return (
               <button
                 key={i}
@@ -120,7 +86,7 @@ export function WeekLedger({
           <div className="row">
             <span>Date:</span>
             <span>
-              {WD[d.date.getDay()]}, {fmtDate(d.date)}
+              {dayName(d.date)}, {fmtDate(d.date)}
             </span>
           </div>
           {d.low && d.high ? (
@@ -141,7 +107,7 @@ export function WeekLedger({
                 <span>Change:</span>
                 <span>
                   {d.change === null
-                    ? 'first recorded day'
+                    ? 'no previous-day comparison'
                     : d.change === 0
                       ? `none vs ${prevName}`
                       : `${d.change < 0 ? '−' : '+'}${money(Math.abs(d.change))} vs ${prevName}`}

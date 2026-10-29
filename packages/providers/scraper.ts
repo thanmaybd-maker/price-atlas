@@ -4,6 +4,8 @@ import { parseRetailUrl, type Store } from '../domain/index';
 import { retailers } from '../domain/retailers';
 import { structuredData, hasType } from './structured-data';
 import { nykaaFetch } from './nykaa-http';
+import { universalProduct } from './universal-extractor';
+import { variantAttributes } from '../domain/variant-guard';
 
 export class ScrapeError extends Error {
   constructor(
@@ -30,6 +32,7 @@ export type ScrapedProduct = {
   observedAt: number;
   parserVersion: string;
   relatedUrls?: string[];
+  status?: 'VERIFIED' | 'PARTIAL_UNVERIFIED';
 };
 export type ScraperConfig = {
   transport: 'direct' | 'scrapingbee' | 'brightdata';
@@ -78,7 +81,7 @@ function imageUrl(value?: string | null): string | null {
       !url.username &&
       !url.password &&
       !url.port &&
-      /(?:^|\.)(?:media-amazon\.com|ssl-images-amazon\.com|amazon\.in|flixcart\.com|flipkart\.com|meesho\.com|tatacroma\.com|croma\.com|nykaa\.com|iherb\.com|images-iherb\.com|bhphotovideo\.com|bhphoto\.com)$/.test(
+      /(?:^|\.)(?:media-amazon\.com|ssl-images-amazon\.com|amazon\.in|flixcart\.com|flipkart\.com|meesho\.com|tatacroma\.com|croma\.com|nykaa\.com|iherb\.com|images-iherb\.com|bhphotovideo\.com|bhphoto\.com|reliancedigital\.in|rilstatic\.com|myntra\.com|myntraassets\.com|ajio\.com|ajioimg\.com)$/.test(
         url.hostname,
       )
       ? url.href
@@ -127,19 +130,20 @@ function parseStructuredRetailer(
         const parent = state.productPage?.product;
         const selected =
           new URL(identity.url).searchParams.get('skuId') ||
-          String(parent?.selectedVariantId || '');
+          String(parent?.selectedVariantId || (!parent?.variants?.length ? parent?.id : '') || '');
         const parentId = new URL(identity.url).pathname.match(/\/p\/(\d+)/)?.[1];
         if (
           String(parent?.id) !== parentId ||
           !/^\d{3,12}$/.test(selected) ||
-          String(parent?.selectedVariantId) !== selected
+          (parent?.selectedVariantId && String(parent.selectedVariantId) !== selected)
         )
           continue;
         const variants = Array.isArray(parent.variants)
           ? parent.variants.filter((p: Record<string, any>) => String(p.childId) === selected)
           : [];
-        if (variants.length !== 1) continue;
-        nykaaVariant = variants[0];
+        if (variants.length !== 1 && !(selected === parentId && !parent?.variants?.length))
+          continue;
+        nykaaVariant = variants[0] || parent;
         identity.externalId = selected;
         const url = new URL(identity.url);
         url.searchParams.set('skuId', selected);
@@ -161,7 +165,12 @@ function parseStructuredRetailer(
   const requestedVariant =
     identity.store === 'Nykaa' && new URL(identity.url).searchParams.has('skuId');
   const products = structuredData($).filter((p) => {
-    if (!hasType(p, 'Product') || typeof p.name !== 'string' || p.name.length < 4) return false;
+    if (
+      (!hasType(p, 'Product') && !hasType(p, 'Book')) ||
+      typeof p.name !== 'string' ||
+      p.name.length < 4
+    )
+      return false;
     const offerList = [p.offers].flat().filter(Boolean);
     const sku = String(p.sku || '');
     const skuMatches = sku.toLowerCase() === identity.externalId.toLowerCase();
@@ -181,6 +190,10 @@ function parseStructuredRetailer(
       (og.length > 5 && og.toLowerCase().includes(title));
     return skuMatches || linked || nameMatches;
   });
+  if (!products.length) {
+    const fallback = universalProduct($, identity.url);
+    if (fallback) products.push(fallback);
+  }
   if (products.length !== 1)
     throw new ScrapeError('parser_changed', 'A unique primary product could not be verified.');
   const product = products[0];
@@ -216,14 +229,15 @@ function parseStructuredRetailer(
     : /(?:^|\/)(?:InStock|LimitedAvailability)$/.test(offer?.availability || '')
       ? true
       : null;
-  if (!amount && stock !== false)
+  if (!amount && stock !== false && product.offers)
     throw new ScrapeError('price_missing', 'No unambiguous current product price was found.');
   if (amount && !/^[A-Z]{3}$/.test(currency))
     throw new ScrapeError('price_missing', 'The source did not identify its price currency.');
   const statedCondition = offer?.itemCondition || product.itemCondition || '';
-  const condition =
-    /refurbished|renewed/i.test(product.name) ||
-    /(?:^|\/)RefurbishedCondition$/.test(statedCondition)
+  const condition = /open[ -]?box/i.test(product.name)
+    ? 'unknown'
+    : /refurbished|renewed/i.test(product.name) ||
+        /(?:^|\/)RefurbishedCondition$/.test(statedCondition)
       ? 'refurbished'
       : /\bused\b/i.test(product.name) || /(?:^|\/)UsedCondition$/.test(statedCondition)
         ? 'used'
@@ -245,6 +259,8 @@ function parseStructuredRetailer(
           : 'Not confirmed by source',
     'Checked at': new Date(observedAt).toISOString(),
   };
+  attributes['Verification status'] = amount ? 'VERIFIED' : 'PARTIAL_UNVERIFIED';
+  attributes['Fetch method'] = 'Direct/product HTML';
   const breadcrumbs = structuredData($)
     .filter((value) => hasType(value, 'BreadcrumbList'))
     .flatMap((value) => (Array.isArray(value.itemListElement) ? value.itemListElement : []))
@@ -263,11 +279,19 @@ function parseStructuredRetailer(
   }
   const brand = typeof product.brand === 'string' ? product.brand : product.brand?.name;
   if (typeof brand === 'string') attributes.Brand = clean(brand).slice(0, 100);
+  const authors = [product.author]
+    .flat()
+    .map((a) => (typeof a === 'string' ? a : a?.name))
+    .filter((a) => typeof a === 'string');
+  if (authors.length) attributes.Author = clean(authors.join(', ')).slice(0, 300);
   for (const [key, value] of Object.entries({
     Color: product.color,
     Size: product.size,
     'Model Number': product.mpn,
     GTIN: product.gtin13 || product.gtin14 || product.gtin12 || product.gtin,
+    ISBN: product.isbn,
+    Binding: product.bookFormat,
+    Edition: product.bookEdition,
     Condition: condition,
   })) {
     if (typeof value === 'string' && value.length < 200) attributes[key] = clean(value);
@@ -297,7 +321,7 @@ function parseStructuredRetailer(
       }
     } catch {}
   }
-  if (amount && currency !== 'INR') {
+  if (amount && (currency !== 'INR' || retailers[identity.store].international)) {
     attributes['Source price'] = new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency,
@@ -319,15 +343,16 @@ function parseStructuredRetailer(
     ...identity,
     title: clean(product.name),
     imageUrl: image,
-    itemPrice: currency === 'INR' ? amount : null,
+    itemPrice: currency === 'INR' && !retailers[identity.store].international ? amount : null,
     shipping,
     charges: 0,
     stock,
     condition,
     seller: typeof offer?.seller?.name === 'string' ? clean(offer.seller.name).slice(0, 500) : '',
-    attributes,
+    attributes: variantAttributes(clean(product.name), attributes),
     observedAt,
     parserVersion: 'structured-retail-v1',
+    status: amount ? 'VERIFIED' : 'PARTIAL_UNVERIFIED',
   };
 }
 export function parseProductHtml(
@@ -381,10 +406,7 @@ export function parseProductHtml(
       ? firstText($, ['#productTitle'])
       : firstText($, ['span[class*="VU-ZEz"]', 'span.B_NuCI', 'h1 span', 'h1']);
   if (!title || title.length < 3 || title.length > 1000)
-    throw new ScrapeError(
-      'parser_changed',
-      'A reliable product title was not found. No observation was saved.',
-    );
+    return parseStructuredRetailer($, identity, observedAt);
   // Only a Product object whose name matches the main heading may supply a
   // structured fallback. Never use AggregateOffer.lowPrice or related items.
   const structured: Record<string, any>[] = [];
@@ -421,7 +443,7 @@ export function parseProductHtml(
     if (Array.isArray(value)) for (const item of value) visit(item, depth + 1);
     else if (typeof value === 'object') {
       if (
-        value['@type'] === 'Product' &&
+        ['Product', 'Book'].includes(value['@type']) &&
         typeof value.name === 'string' &&
         (clean(title).toLowerCase().includes(clean(value.name).toLowerCase()) ||
           compatiblePrimaryName(value) ||
@@ -585,6 +607,8 @@ export function parseProductHtml(
     });
     const selectedColor = clean($('#variation_color_name .selection').first().text());
     if (selectedColor) attributes.Color = selectedColor;
+    const author = firstText($, ['#bylineInfo .author a.a-link-normal', '#bylineInfo .author']);
+    if (author) attributes.Author = author.slice(0, 300);
   }
   if (identity.store === 'Flipkart')
     for (const node of $('div').toArray()) {
@@ -620,6 +644,9 @@ export function parseProductHtml(
     }
   if (productData?.brand?.name && !attributes.Brand)
     attributes.Brand = String(productData.brand.name);
+  if (typeof productData?.isbn === 'string') attributes.ISBN = productData.isbn;
+  if (typeof productData?.bookFormat === 'string') attributes.Binding = productData.bookFormat;
+  if (typeof productData?.bookEdition === 'string') attributes.Edition = productData.bookEdition;
   if (
     typeof productData?.color === 'string' &&
     !attributes.Color &&
@@ -636,13 +663,15 @@ export function parseProductHtml(
     if (attributes[colorKey]?.toLowerCase().startsWith(sonyModel.toLowerCase() + ','))
       attributes[colorKey] = attributes[colorKey].slice(sonyModel.length + 1).trim();
   }
-  const condition = /renewed|refurbished/i.test(title)
-    ? 'refurbished'
-    : /\bused\b/i.test(title)
-      ? 'used'
-      : purchaseButtons || /\/NewCondition$/.test(offerData?.itemCondition || '')
-        ? 'new'
-        : 'unknown';
+  const condition = /open[ -]?box/i.test(title)
+    ? 'unknown'
+    : /renewed|refurbished/i.test(title)
+      ? 'refurbished'
+      : /\bused\b/i.test(title)
+        ? 'used'
+        : purchaseButtons || /\/NewCondition$/.test(offerData?.itemCondition || '')
+          ? 'new'
+          : 'unknown';
   if (
     identity.store === 'Flipkart' &&
     identity.externalId.startsWith('ITM') &&
@@ -661,7 +690,7 @@ export function parseProductHtml(
     stock,
     condition,
     seller: seller || 'Not supplied',
-    attributes,
+    attributes: variantAttributes(clean(title), attributes),
     observedAt,
     parserVersion: 'retailer-html-v2',
     relatedUrls: [
@@ -717,7 +746,10 @@ export function scraperCreditCost(config = scraperConfig()) {
     throw new ScrapeError('configuration', 'Scraper settings exceed SCRAPER_MAX_CREDITS.');
   return cost;
 }
-export async function boundedHtml(response: Response) {
+export async function boundedHtml(
+  response: Response,
+  contentTypes = /html|text\/plain|octet-stream/i,
+) {
   if (!response.ok) {
     await response.body?.cancel();
     throw new ScrapeError(
@@ -731,7 +763,7 @@ export async function boundedHtml(response: Response) {
     throw new ScrapeError('too_large', 'Retailer response exceeded the size limit.');
   }
   const type = response.headers.get('content-type') || '';
-  if (type && !/html|text\/plain|octet-stream/i.test(type)) {
+  if (type && !contentTypes.test(type)) {
     await response.body?.cancel();
     throw new ScrapeError('content_type', 'Expected a retailer HTML page.');
   }
@@ -883,6 +915,6 @@ export async function scrapeSearchHtml(
   return retailerHtml({ store, url: url.href }, config, fetcher);
 }
 export const listingKey = (product: Pick<ScrapedProduct, 'store' | 'externalId'>) =>
-  `${product.store === 'B&H' ? 'bhphoto' : product.store.toLowerCase()}-${product.externalId.toLowerCase()}`;
+  `${product.store === 'B&H' ? 'bhphoto' : product.store.toLowerCase().replace(/\s+/g, '-')}-${product.externalId.toLowerCase()}`;
 export const observationKey = (listingId: string, run: string) =>
   createHash('sha256').update(`${listingId}:${run}`).digest('hex');

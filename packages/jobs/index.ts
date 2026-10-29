@@ -1,3 +1,10 @@
+import {
+  boundedLimit,
+  MAX_TOTAL_REQUESTS_PER_DAY,
+  MAX_PAID_CREDITS_PER_DAY,
+  MAX_PAID_CREDITS_PER_MONTH,
+  MAX_PAID_CREDITS_PER_REQUEST,
+} from './credit-budget';
 import { Queue, Worker } from 'bullmq';
 import { postgres, tx, collect, importScraped, maintenance, offers } from '../database/postgres';
 import {
@@ -7,6 +14,7 @@ import {
   scraperConfig,
   scrapeProduct,
   type ScraperConfig,
+  type ScrapedProduct,
 } from '../providers/scraper';
 import { getSourceAdapter } from '../providers/index';
 import { livePolicy } from '../providers/live';
@@ -28,9 +36,12 @@ export async function reserveSource(store: Store, config: ScraperConfig = scrape
     throw new ScrapeError('disabled', 'Current price collection is disabled for this source.');
   await tx(async (c) => {
     const day = new Date().toISOString().slice(0, 10);
-    const limit = Number(process.env.SCRAPER_REQUESTS_PER_DAY || 1000);
-    const creditLimit = Number(process.env.SCRAPER_CREDITS_PER_DAY || 100);
-    const monthLimit = Number(process.env.SCRAPER_CREDITS_PER_MONTH || 300);
+    const limit = boundedLimit(process.env.SCRAPER_REQUESTS_PER_DAY, MAX_TOTAL_REQUESTS_PER_DAY);
+    const creditLimit = boundedLimit(process.env.SCRAPER_CREDITS_PER_DAY, MAX_PAID_CREDITS_PER_DAY);
+    const monthLimit = boundedLimit(
+      process.env.SCRAPER_CREDITS_PER_MONTH,
+      MAX_PAID_CREDITS_PER_MONTH,
+    );
     const cost = scraperCreditCost(config);
     if (![creditLimit, monthLimit].every((n) => Number.isSafeInteger(n) && n >= 0))
       throw new ScrapeError('configuration', 'Scraper credit limits must be nonnegative integers.');
@@ -95,20 +106,25 @@ export async function fetchProductWithBudget(
 ) {
   const { store } = canonicalRetailUrl(url);
   const configured = { ...scraperConfig(), ...(timeoutMs ? { timeoutMs } : {}), ...overrides };
+  let partial: ScrapedProduct | undefined;
   if (configured.transport !== 'direct' && process.env.SCRAPER_DIRECT_FIRST !== 'false') {
     await reserveSource(store, { transport: 'direct' });
     try {
-      return await scrapeProduct(url, { transport: 'direct', timeoutMs: 6000 });
+      const result = await scrapeProduct(url, { transport: 'direct', timeoutMs: 6000 });
+      if (result.status !== 'PARTIAL_UNVERIFIED') return result;
+      partial = result;
     } catch (error) {
       if (!(error instanceof ScrapeError)) throw error;
     }
   }
   const cost = scraperCreditCost(configured);
-  if (configured.transport !== 'direct' && allowPaid && !allowPaid(Math.max(1, cost)))
+  if (configured.transport !== 'direct' && allowPaid && !allowPaid(Math.max(1, cost))) {
+    if (partial) return partial;
     throw new SourceLimitError(
       'lookup_budget',
       'The paid allowance for this lookup has been reached. Try a direct product link.',
     );
+  }
   if (configured.transport !== 'scrapingbee') {
     await reserveSource(store, configured);
     return scrapeProduct(url, configured);
@@ -119,7 +135,7 @@ export async function fetchProductWithBudget(
     temporaryFailures = 0,
     first = true;
   for (const apiKey of keys) {
-    if (spent + cost > 10 || Date.now() > deadline - 1000) break;
+    if (spent + cost > MAX_PAID_CREDITS_PER_REQUEST || Date.now() > deadline - 1000) break;
     if (!first && allowPaid && !allowPaid(cost)) break;
     first = false;
     const attempt = {
@@ -140,11 +156,18 @@ export async function fetchProductWithBudget(
         error.code === 'network' ||
         error.code === 'provider_unavailable' ||
         error.code === 'provider_rate_limited';
-      if (!permanent && !temporary) throw error;
+      if (!permanent && !temporary) {
+        if (partial) return partial;
+        throw error;
+      }
       await recordCredentialFailure(apiKey, error.code);
-      if (temporary && ++temporaryFailures >= 2) throw error;
+      if (temporary && ++temporaryFailures >= 2) {
+        if (partial) return partial;
+        throw error;
+      }
     }
   }
+  if (partial) return partial;
   throw new ScrapeError(
     'provider_pool_unavailable',
     'Paid verification is temporarily unavailable. Saved products and free fetching remain available.',

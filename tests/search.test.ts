@@ -1,5 +1,5 @@
 import { it, expect, vi } from 'vitest';
-import { parseSearchHtml, duckDuckGoProducts } from '../packages/providers/search';
+import { parseSearchHtml, duckDuckGoProducts, bingProducts } from '../packages/providers/search';
 import { scrapeSearchHtml } from '../packages/providers/scraper';
 import { matchesQuery } from '../packages/domain/search';
 import { lookupIdentity } from '../packages/jobs/discovery';
@@ -49,6 +49,22 @@ it('validates web-search destinations before considering a free fallback', async
       ),
     );
   expect(await duckDuckGoProducts('Logitech mouse', 'Amazon', fetcher)).toHaveLength(1);
+});
+it('uses RSS only for discovery and validates every retailer destination', async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(
+        '<rss><channel><item><title>Casio FX-991CW</title><link>https://www.amazon.in/dp/B000000001</link><description>Price Rs 1</description></item><item><title>Fake Casio</title><link>https://evil.example/dp/B000000001</link></item></channel></rss>',
+        { headers: { 'content-type': 'application/rss+xml' } },
+      ),
+    );
+  const results = await bingProducts('Casio FX-991CW', 'Amazon', fetcher);
+  expect(results).toEqual([
+    { title: 'Casio FX-991CW', url: 'https://www.amazon.in/dp/B000000001', store: 'Amazon' },
+  ]);
+  expect(new URL(fetcher.mock.calls[0][0]).searchParams.get('format')).toBe('rss');
+  expect(results[0]).not.toHaveProperty('price');
 });
 it('matches words, punctuation and spaced storage without requiring a literal full-query substring', () => {
   expect(

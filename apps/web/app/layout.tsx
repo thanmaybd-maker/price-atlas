@@ -4,7 +4,7 @@ import './atlas-v2.css';
 export const metadata: Metadata = {
   title: 'PRICE ATLAS — Find your better price',
   description:
-    'Compare exact variants, explore recorded prices, and set your target. Synthetic demonstration environment.',
+    'Search products across Indian and international retailers, compare exact variants, explore recorded prices, and set price targets.',
   robots: { index: false, follow: false },
 };
 export default function Layout({ children }: { children: React.ReactNode }) {

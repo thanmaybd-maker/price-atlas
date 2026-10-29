@@ -3,6 +3,12 @@ export const normalizeQuery = (value: string) =>
   value
     .normalize('NFKC')
     .toLowerCase()
+    .replace(
+      /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+edition\b/g,
+      (_, word) =>
+        `${['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'].indexOf(word) + 1} edition`,
+    )
+    .replace(/\b(\d+)(?:st|nd|rd|th)\s+edition\b/g, '$1 edition')
     .replace(/\bmillilit(?:er|re)s?\b/g, 'ml')
     .replace(/\bkilograms?\b/g, 'kg')
     .replace(/\blit(?:er|re)s?\b/g, 'l')

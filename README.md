@@ -1,6 +1,6 @@
 # PRICE ATLAS
 
-Price Atlas supports Amazon.in, Flipkart, Meesho, Croma, Nykaa, iHerb and B&H product adapters, stores observed prices in PostgreSQL, and supports verified Supabase accounts, saved products, target rules, and email/Telegram alert delivery. The public web app is [price-atlas-ashen.vercel.app](https://price-atlas-ashen.vercel.app); its live API health and ten smoke checks are verified.
+Price Atlas supports Amazon.in, Flipkart, Meesho, Croma, Nykaa, Reliance Digital, Myntra, AJIO, iHerb and B&H through a shared retailer registry. It stores observed prices in PostgreSQL and supports verified Supabase accounts, saved products, target rules, and email/Telegram alert delivery. The public web app is [price-atlas-ashen.vercel.app](https://price-atlas-ashen.vercel.app). See the [teacher checklist](docs/TEACHER-TEST-CHECKLIST.md) for repeatable verification and external-service limitations.
 
 Start with [live scraper setup](docs/SCRAPING.md), [Telegram activation](docs/TELEGRAM.md), and [verification results](docs/LIVE-VERIFICATION.md). Public signup is supported. Retailer tracking enables 30-day observed history, alerts and exact matching by default; an explicit policy override can disable them. No historical prices are invented.
 
@@ -49,7 +49,7 @@ pnpm test:live-api
 pnpm telegram:setup
 ```
 
-144 tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens, Telegram linking/delivery, daily/monthly credit budgeting, custom-product discovery, shared query caching, exact store matching and isolated test alerts. Telegram setup checks the hosted secret before registering the webhook. `pnpm check:readiness` inspects the catalog, hosted API, authentication settings, collection ledger, ScrapingBee balance and Telegram configuration without sending messages.
+Automated tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens, Telegram linking/delivery, daily/monthly credit budgeting, custom-product discovery, shared query caching, exact store matching, pack/edition/condition separation, international INR isolation, India daily history, partial metadata and isolated test alerts. Telegram setup checks the hosted secret before registering the webhook. `pnpm check:readiness` inspects the catalog, hosted API, authentication settings, collection ledger, ScrapingBee balance and Telegram configuration without sending messages.
 
 `pnpm catalog:import` imports curated retailer URLs with source pacing. `pnpm alerts:test <your verified account email> <product ID> [telegram|email|both]` evaluates a simulated drop and uses a separate test delivery outbox. Messages are labelled TEST; real rules, prices and history stay untouched. Run this operator command locally.
 
