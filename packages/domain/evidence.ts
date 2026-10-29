@@ -1,5 +1,6 @@
 import { total, type Offer, type Product } from './index';
 import { retailers } from './retailers';
+import { archiveEvidence, historySourceLabel } from './history-source';
 export function historyEvidence(
   product: Product,
   observations: Offer[],
@@ -37,6 +38,7 @@ export function historyEvidence(
       'Stock',
       'Condition',
       'Source URL',
+      'Original retailer URL',
       'Extraction method',
       'Parser version',
       'Evidence type',
@@ -56,10 +58,11 @@ export function historyEvidence(
       price(total(o, basis)),
       o.stock ? 'In stock' : 'Not confirmed / unavailable',
       o.condition,
-      o.purchaseUrl || '',
-      o.extractionMethod || 'Not recorded',
-      o.parserVersion || 'Not recorded',
-      'Recorded observation; verify at checkout',
+      archiveEvidence(o)?.archiveUrl || o.purchaseUrl || '',
+      archiveEvidence(o)?.originalUrl || o.purchaseUrl || '',
+      archiveEvidence(o)?.extraction || o.extractionMethod || 'Not recorded',
+      archiveEvidence(o)?.parserVersion || o.parserVersion || 'Not recorded',
+      historySourceLabel(o),
     ]);
   return '\uFEFF' + data.map((row) => row.map(cell).join(',')).join('\r\n') + '\r\n';
 }
