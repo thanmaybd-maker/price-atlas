@@ -55,7 +55,7 @@ import { LiveLogin } from './live-login';
 import { Operations } from './operations';
 import { Mfa } from './mfa';
 import { TelegramSettings } from './telegram-settings';
-import { SeaHero } from './sea-hero';
+import { RingHero } from './ring-hero';
 import { SearchFlower } from './search-flower';
 import { WeekLedger } from './week-ledger';
 import { RecentHistory } from './recent-history';
@@ -694,7 +694,7 @@ export default function Atlas({
                 </p>
               </div>
               <div className="v2-art">
-                <SeaHero />
+                <RingHero />
               </div>
             </section>
             <section className="v2-cats page-width" aria-labelledby="v2-cats-title">
