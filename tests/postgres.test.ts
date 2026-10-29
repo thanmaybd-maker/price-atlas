@@ -56,7 +56,7 @@ beforeAll(async () => {
   const query = async (sql: string, params: unknown[] = []) => {
     const r = await db.query(
       sql,
-      params.map((v) => (v && typeof v === 'object' ? JSON.stringify(v) : v)),
+      params.map((v) => (v && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : v)),
     );
     return { rows: r.rows, rowCount: r.affectedRows ?? r.rows.length };
   };
@@ -1070,4 +1070,19 @@ it('persists new retailer metadata without turning a partial page into a price o
     'PARTIAL_UNVERIFIED',
   );
   expect(await store.offers(imported.productId)).toHaveLength(0);
+});
+
+it('loads a bounded public history batch with retained timestamps and supports a real-history overview', async () => {
+  const single = await store.history(productId, 30);
+  const batch = await store.historyOverview([productId], 30);
+  expect(batch.products.some((product) => product.id === productId)).toBe(true);
+  expect(batch.history[productId]).toEqual(
+    single.filter((observation) => observation.observedAt <= Date.now()),
+  );
+  const featured = await store.historyOverview([], 30);
+  expect(featured.products.length).toBeLessThanOrEqual(4);
+  expect(Object.keys(featured.history)).toEqual(featured.products.map((product) => product.id));
+  for (const observations of Object.values(featured.history))
+    for (const observation of observations)
+      expect(observation.observedAt).toBeLessThanOrEqual(Date.now());
 });

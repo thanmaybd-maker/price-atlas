@@ -3,6 +3,7 @@ import './globals.css';
 import './atlas-v2.css';
 import './home-sketch.css';
 import './categories-sketch.css';
+import './theme.css';
 export const metadata: Metadata = {
   title: 'PRICE ATLAS — Find your better price',
   description:
@@ -11,7 +12,15 @@ export const metadata: Metadata = {
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-IN" data-scroll-behavior="smooth">
+    <html lang="en-IN" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('atlas-theme')==='dark'?'dark':'light';document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t}catch{}",
+          }}
+        />
+      </head>
       <body>
         <a className="skip-link" href="#main-content">
           Skip to content

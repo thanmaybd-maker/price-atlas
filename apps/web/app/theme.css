@@ -1,0 +1,340 @@
+/* Shared appearance layer. Paper materials remain colored; their surfaces and inks
+   change together so the home worlds, category board and account pages agree. */
+:root {
+  --history-paper: var(--surface);
+}
+.history-tools {
+  padding: 24px;
+  max-width: 1180px;
+  margin: 0 auto;
+  color: var(--ink);
+}
+.history-tools label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 0 12px 12px 0;
+  max-width: 100%;
+}
+.history-tools select,
+.hs .pu select,
+.hs .pu input[type='search'] {
+  max-width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  min-width: 0;
+}
+.hs .pu input[type='search'],
+.hs .pu select {
+  width: 100%;
+  margin-bottom: 16px;
+}
+.hs .pu .note[role='status'] {
+  min-height: 1.6em;
+}
+.hs .pu .pin:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.hs .pu .form {
+  scroll-margin-top: 100px;
+}
+.tide-data {
+  padding: 18px;
+  overflow-x: auto;
+}
+.tide-data table {
+  width: 100%;
+  text-align: left;
+  border-collapse: collapse;
+}
+.tide-data td,
+.tide-data th {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.tide-data summary {
+  cursor: pointer;
+}
+.external-history {
+  padding: 20px;
+  max-width: 1180px;
+  margin: 16px auto;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.external-history summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.external-history input {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+}
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #151e1b;
+  --surface: #202d27;
+  --ink: #edf4ee;
+  --muted: #b1c3b7;
+  --line: #455b4d;
+  --green: #8ed8b4;
+  --green-dark: #acdcbc;
+  --soft: #2b4034;
+  --art: #28382e;
+  --v2-paper: #151e1b;
+  --v2-white: #202d27;
+  --v2-ink: #edf4ee;
+  --v2-ink-2: #d4e4d8;
+  --v2-muted: #b1c3b7;
+  --v2-line: #455b4d;
+  --v2-green: #8ed8b4;
+  --v2-green-deep: #acdcbc;
+  --v2-mint: #294d3b;
+  --v2-mint-2: #253e30;
+  --v2-bad: #ffb5a8;
+  --v2-bad-soft: #4c2c29;
+  --v2-warn: #e6d38d;
+  --sea-paper: #1b2a24;
+  --p-mon: #553535;
+  --p-tue: #53432f;
+  --p-wed: #4d492a;
+  --p-thu: #294939;
+  --p-fri: #2a454c;
+  --p-sat: #3d3b53;
+  --p-sun: #50374a;
+}
+[data-theme='dark'] .hs {
+  --va-paper: #151e1b;
+  --va-paper-2: #202d27;
+  --va-ink: #edf4ee;
+  --va-ink-2: #d4e4d8;
+  --va-muted: #b1c3b7;
+  --va-rule: #455b4d;
+  --va-rule-2: #536d5d;
+  --va-green: #8ed8b4;
+  --va-green-deep: #acdcbc;
+  --va-mint: #294d3b;
+  --va-frost: #26392e;
+  --va-light: #27362d;
+  --wa-paper: #1b2923;
+  --wa-paper-2: #24372d;
+  --wa-ink: #edf4ee;
+  --wa-ink-2: #d4e4d8;
+  --wa-muted: #b1c3b7;
+  --wa-rule: #455b4d;
+  --wa-ink-rule: #536d5d;
+  --wa-ink-muted: #b1c3b7;
+  --wa-white: #202d27;
+  --wa-cobalt: #b2c7ff;
+  --wa-ink-gate: #4c432a;
+  --st-paper: #19261f;
+  --st-ink: #edf4ee;
+  --st-muted: #b1c3b7;
+  --st-rule: #455b4d;
+  --st-white: #202d27;
+  --pu-kraft: #463d2f;
+  --pu-kraft-2: #352e25;
+  --pu-sheet: #252f28;
+  --pu-ink: #edf4ee;
+  --pu-muted: #bfcabf;
+  --pu-rule: #53604e;
+  --pu-fluo: #3e4c25;
+  --pu-tape: #78845c99;
+  --al-slate: #1b272a;
+  --al-sheet: #263438;
+  --al-ink: #edf2f4;
+  --al-muted: #b6c9cf;
+  --al-rule: #536b73;
+  --al-mag: #ffb2da;
+  --al-mag-wash: #ffb2da18;
+  --tide-ink-0: #f6bc9e;
+  --tide-ink-1: #e9d691;
+  --tide-ink-2: #a0ded9;
+  --tide-ink-3: #c8b8f4;
+  --do-paper: #19261f;
+  --do-ink: #edf4ee;
+  --do-muted: #b1c3b7;
+  --do-rule: #455b4d;
+  --do-green: #9fdfba;
+  --p-mon: #553535;
+  --p-tue: #53432f;
+  --p-wed: #4d492a;
+  --p-thu: #294939;
+  --p-fri: #2a454c;
+  --p-sat: #3d3b53;
+  --p-sun: #50374a;
+  --uv-paper: #292333;
+  --uv-paper-2: #352c41;
+  --uv-ink: #f1eaf8;
+  --uv-muted: #c6b8d3;
+  --uv-rule: #635572;
+  --uv-violet: #c5aaff;
+  --uv-violet-2: #dacaff;
+  --uv-soft: #483b5b;
+  --uv-lav: #332a40;
+  --uv-lav-ink: #f1eaf8;
+  --te-paper: #1d2830;
+  --te-paper-2: #26323c;
+  --te-ink: #edf2f7;
+  --te-ink-2: #d1dfeb;
+  --te-muted: #b4c6d8;
+  --te-rule: #4d6074;
+  --co-paper: #202820;
+  --co-ink: #edf4ee;
+  --co-rule: #455b4d;
+}
+[data-theme='dark'] .cs {
+  --board: #19261f;
+  --ink: #edf4ee;
+  --muted: #c2cfc6;
+  --white: #26372b;
+  --tape: #8a936b99;
+  --n-yellow: #4d4827;
+  --n-pink: #50323f;
+  --n-blue: #2d4350;
+  --n-mint: #2a4739;
+  --n-lilac: #423950;
+  --n-peach: #4e3d2e;
+  --n-lime: #3a4929;
+  --n-cream: #44422e;
+  --n-sky: #2d4451;
+  --n-rose: #50373a;
+  --n-kraft: #4c4030;
+  --n-lav: #46374e;
+  --a-blue: #a8d3f4;
+  --a-green: #a7dbbc;
+  --a-green-2: #b7e5c8;
+  --a-violet: #d1b9ff;
+  --a-mag: #ffb2da;
+}
+[data-theme='dark']
+  :is(
+    .site-header,
+    .settings-panel,
+    .utility-card,
+    .modal,
+    .product-card,
+    .history-panel,
+    .match-details,
+    .offers-table,
+    .comparison-table,
+    .results-toolbar,
+    .filters-panel,
+    .empty-state,
+    .recent-history,
+    .recent-history-panel
+  ) {
+  background-color: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+[data-theme='dark'] :is(input, select, textarea) {
+  background-color: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+[data-theme='dark'] :is(.primary, .search-submit) {
+  background: #87d0a9;
+  color: #15251b;
+}
+[data-theme='dark']
+  :is(.offer-row.winner, .variant-chips > span, .status-pill, .notice, .hs .do .rx) {
+  background-color: #2b4034;
+  color: #edf4ee;
+}
+[data-theme='dark'] .stock-label {
+  color: #b1e4c5 !important;
+}
+[data-theme='dark']
+  :is(.muted, .tiny-label, .fine-print, .history-note, .card-category, .source-strip) {
+  color: #b1c3b7;
+}
+[data-theme='dark'] .axis-label {
+  fill: #b1c3b7;
+  color: #b1c3b7;
+}
+[data-theme='dark'] .hs :is(.do .cell .dt, .do .cell .lo, .do .cell .chg, .al .al-key, .pu .note) {
+  color: inherit;
+  opacity: 1;
+}
+[data-theme='dark']
+  :is(.v2-store, .v2-store.on, .outline-button, .store-button, .range-control button) {
+  background-color: #202d27;
+  color: #edf4ee;
+  border-color: #536d5d;
+}
+[data-theme='dark'] .v2-store.on {
+  border-color: #9fdfba;
+}
+[data-theme='dark'] {
+  --v2-blue: #a8d3f4;
+}
+[data-theme='dark'] .hs {
+  --va-white-70: #26382eee;
+  --do-glint: #293a2f;
+}
+[data-theme='dark'] .hs :is(.plate, .seg2 > .on, .tk) {
+  background-color: #26382e;
+  color: #edf4ee;
+}
+[data-theme='dark'] .hs .tk .stub {
+  background-color: #2c4537;
+}
+[data-theme='dark'] .hs .cell .dt {
+  opacity: 1;
+  color: #edf4ee;
+}
+[data-theme='dark'] .hs .do .v0 {
+  --tint: var(--p-mon);
+}
+[data-theme='dark'] .hs .do .v1 {
+  --tint: var(--p-tue);
+}
+[data-theme='dark'] .hs .do .v2 {
+  --tint: var(--p-wed);
+}
+[data-theme='dark'] .hs .do .v3 {
+  --tint: var(--p-thu);
+}
+[data-theme='dark'] .hs .do .v4 {
+  --tint: var(--p-fri);
+}
+[data-theme='dark'] .hs .do .v5 {
+  --tint: var(--p-sat);
+}
+[data-theme='dark'] .hs .do .v6 {
+  --tint: var(--p-sun);
+}
+[data-theme='dark'] .card-category {
+  background: #202d27;
+  color: #d4e4d8;
+}
+[data-theme='dark'] .filter-chip.selected {
+  background: #365442;
+  color: #edf4ee;
+}
+[data-theme='dark'] .category-tab.selected {
+  color: #15251b;
+}
+[data-theme='dark'] .filters-panel .selected {
+  color: #15251b;
+}
+@media (max-width: 600px) {
+  .history-tools {
+    padding: 18px;
+  }
+  .appearance-toggle {
+    min-width: 32px;
+  }
+  .header-actions {
+    gap: 6px;
+  }
+}

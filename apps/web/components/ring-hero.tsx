@@ -34,7 +34,7 @@ const post = `
   }`;
 
 /** A price tag drawn on canvas: category, store, and a redacted price bar (no made-up numbers). */
-function tag(T: any, i: number, ink: string, accent: string) {
+function tag(T: any, i: number, ink: string, accent: string, paper: string, surface: string) {
   const store = STORE_NAMES[i % STORE_NAMES.length];
   const categories = retailers[store].categories.includes('all')
     ? Object.keys(categoryLabels)
@@ -50,9 +50,9 @@ function tag(T: any, i: number, ink: string, accent: string) {
   const x = c.getContext('2d') as CanvasRenderingContext2D;
   const r = 22;
   // paint the corners in the hero paper so the rounded tag edges don't show as black
-  x.fillStyle = '#efe6d2';
+  x.fillStyle = paper;
   x.fillRect(0, 0, w, h);
-  x.fillStyle = '#ffffff';
+  x.fillStyle = surface;
   x.beginPath();
   x.moveTo(r, 0);
   x.arcTo(w, 0, w, h, r);
@@ -65,7 +65,7 @@ function tag(T: any, i: number, ink: string, accent: string) {
   x.lineWidth = 3;
   x.stroke();
   // punched hole like a shop tag
-  x.fillStyle = '#efe6d2';
+  x.fillStyle = paper;
   x.beginPath();
   x.arc(w / 2, 34, 11, 0, Math.PI * 2);
   x.fill();
@@ -94,7 +94,7 @@ function tag(T: any, i: number, ink: string, accent: string) {
   return t;
 }
 
-export function RingHero() {
+export function RingHero({ theme = 'light' }: { theme?: 'light' | 'dark' }) {
   const frame = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [word, setWord] = useState(0);
@@ -134,7 +134,17 @@ export function RingHero() {
         cam.position.set(0, 0, 12.5);
         const ink = getComputedStyle(F).getPropertyValue('--v2-ink').trim() || '#1b2a25';
         const accent = getComputedStyle(F).getPropertyValue('--v2-green').trim() || '#1f7a55';
-        const textures = Array.from({ length: UNIQUE }, (_, i) => tag(T, i, ink, accent));
+        const style = getComputedStyle(F);
+        const textures = Array.from({ length: UNIQUE }, (_, i) =>
+          tag(
+            T,
+            i,
+            ink,
+            accent,
+            style.getPropertyValue('--sea-paper').trim(),
+            style.getPropertyValue('--v2-white').trim(),
+          ),
+        );
 
         const sum = (n: number) => (n * (n + 1)) / 2;
         const RINGS = 3;
@@ -309,7 +319,7 @@ export function RingHero() {
       cancelled = true;
       stop();
     };
-  }, [paused]);
+  }, [paused, theme]);
 
   const w = WORDS[word];
   return (

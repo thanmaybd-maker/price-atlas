@@ -148,6 +148,40 @@ export async function history(id: string, days = 30): Promise<Offer[]> {
       return p.history && o.observedAt > Date.now() - p.historyRetentionDays * 86400000;
     });
 }
+export async function historyOverview(selected: string[], days = 30) {
+  const now = Date.now();
+  const permitted = STORE_NAMES.filter(
+    (store) => !retailers[store].international && livePolicy(store).history,
+  );
+  const ids = selected.length
+    ? [...new Set(selected)].slice(0, 4)
+    : (
+        await postgres().query(
+          "SELECT product_id FROM atlas.observations WHERE observed_at>=$1 AND observed_at<=$2 AND expires_at>$2 AND (data->>'historyAllowed')::boolean AND (data->>'accepted')::boolean AND (data->>'stock')::boolean AND data->>'currency'='INR' AND data->>'condition'='new' AND data->>'store'=ANY($3::text[]) GROUP BY product_id ORDER BY count(DISTINCT floor((observed_at+19800000)/86400000)) DESC,max(observed_at) DESC LIMIT 4",
+          [now - days * 86400000, now, permitted],
+        )
+      ).rows.map((row) => row.product_id as string);
+  if (!ids.length) return { products: [] as Product[], history: {} as Record<string, Offer[]> };
+  const [products, observations] = await Promise.all([
+    postgres().query('SELECT data FROM atlas.products WHERE id=ANY($1::text[])', [ids]),
+    postgres().query(
+      "SELECT data FROM atlas.observations WHERE product_id=ANY($1::text[]) AND observed_at>=$2 AND observed_at<=$3 AND expires_at>$3 AND (data->>'historyAllowed')::boolean ORDER BY observed_at",
+      [ids, now - days * 86400000, now],
+    ),
+  ]);
+  const result: Record<string, Offer[]> = Object.fromEntries(ids.map((id) => [id, []]));
+  for (const { data: observation } of observations.rows) {
+    const policy = livePolicy(observation.store);
+    if (policy.history && observation.observedAt > now - policy.historyRetentionDays * 86400000)
+      result[observation.productId]?.push(observation);
+  }
+  return {
+    products: ids.flatMap((id) =>
+      products.rows.filter((row) => row.data.id === id).map((row) => row.data as Product),
+    ),
+    history: result,
+  };
+}
 export async function personal(userId: string) {
   return tx(
     async (c) => ({
@@ -179,7 +213,7 @@ export type RuleInput = Pick<
   Rule,
   'productId' | 'target' | 'store' | 'basis' | 'operator' | 'enabled'
 > & { id?: string };
-export async function saveRule(userId: string, input: RuleInput) {
+export async function saveRule(userId: string, input: RuleInput, deferEvaluation = false) {
   const rule = await tx(async (c) => {
     const old = input.id
       ? ((await c.query('SELECT data FROM atlas.rules WHERE id=$1 FOR UPDATE', [input.id])).rows[0]
@@ -214,7 +248,7 @@ export async function saveRule(userId: string, input: RuleInput) {
     );
     return rule;
   }, userId);
-  await evaluateProduct(rule.productId);
+  if (!deferEvaluation) await evaluateProduct(rule.productId);
   if (rule.enabled)
     await postgres().query(
       'UPDATE atlas.listings SET next_check=LEAST(next_check,$2) WHERE product_id=$1',

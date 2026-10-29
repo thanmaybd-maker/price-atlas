@@ -37,6 +37,8 @@ import {
   Shirt,
   BookOpen,
   Pencil,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import {
   money,
@@ -74,6 +76,10 @@ import type { SearchCandidate } from '../../../packages/providers/search';
 import { historyEvidence } from '../../../packages/domain/evidence';
 import { localState, sessionState } from '../lib/browser-storage';
 import { visiblePoll } from '../lib/visible-poll';
+import { fetchJson } from '../lib/fetch-json';
+import type { PinDraft } from './home-worlds';
+import { historyCoverage } from '../../../packages/domain/history-coverage';
+import { ExternalHistory } from './external-history';
 type User = {
   id: string;
   name: string;
@@ -136,14 +142,15 @@ const categories: { id: Category; name: string; icon: typeof Smartphone }[] = [
 ];
 const empty: Session = { user: null, watches: [], rules: [], notifications: [] };
 async function api(path: string, method = 'GET', body?: unknown, headers?: Record<string, string>) {
-  const res = await fetch(`/api/v1/${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...headers },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  const result = await res.json();
-  if (!res.ok) throw new Error(result.error || result.message || 'Something went wrong.');
-  return result;
+  return fetchJson(
+    `/api/v1/${path}`,
+    {
+      method,
+      headers: { 'Content-Type': 'application/json', ...headers },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    },
+    method === 'GET' ? 15000 : 30000,
+  );
 }
 function relative(at: number) {
   const mins = Math.floor((Date.now() - at) / 60000);
@@ -174,14 +181,11 @@ export default function Atlas({
   const [products, setProducts] = useState(initialProducts);
   const [offers, setOffers] = useState(initialOffers);
   const [session, setSession] = useState<Session>(empty);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [pinDraft, setPinDraft] = useState<PinDraft>();
   const [query, setQuery] = useState(params.get('q') || '');
   const [toast, setToast] = useState('');
   const [auth, setAuth] = useState(false);
-  const [targetProduct, setTargetProduct] = useState<Product | null>(null);
-  const [editRule, setEditRule] = useState<Rule | null>(null);
-  const [target, setTarget] = useState('');
-  const [scope, setScope] = useState('all');
-  const [basis, setBasis] = useState<'delivered' | 'item'>('delivered');
   const [busy, setBusy] = useState(false);
   const [lookup, setLookup] = useState<{
     query: string;
@@ -209,7 +213,6 @@ export default function Atlas({
   const [lookupVersion, setLookupVersion] = useState(0);
   const pending = useRef<(() => void) | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
-  const targetInput = useRef<HTMLInputElement>(null);
   const current = products.find((p) => p.slug === route[1] || p.id === route[1]);
   const category = page === 'category' ? route[1] : params.get('category') || '';
   const sort = params.get('sort') || 'recommended';
@@ -301,13 +304,26 @@ export default function Atlas({
         sessionState.removeItem('atlas-pending-intent');
         try {
           const intent = JSON.parse(raw);
-          if (intent.type === 'target') {
+          if (intent.type === 'pin' || intent.type === 'target') {
             const product = initialProducts.find((p) => p.id === intent.productId);
             if (product) {
-              setTargetProduct(product);
-              setTarget(intent.target);
-              setScope(intent.scope);
-              setBasis(intent.basis || 'delivered');
+              const draft = {
+                productId: product.id,
+                target: Math.round(Number(intent.target) * 100),
+                store: intent.scope || 'all',
+                basis: intent.basis || 'item',
+                id: intent.id,
+              } as PinDraft;
+              setPinDraft(draft);
+              router.push(`/?pin=${encodeURIComponent(product.id)}#targets`);
+              if (intent.type === 'pin')
+                await commitPin(
+                  product,
+                  Number(intent.target),
+                  draft.store!,
+                  draft.basis!,
+                  draft.id,
+                );
             }
           } else if (intent.type === 'import') {
             setQuery(intent.url);
@@ -329,7 +345,7 @@ export default function Atlas({
         if (Array.isArray(selected))
           setCompare(selected.filter((id) => initialProducts.some((p) => p.id === id)).slice(0, 4));
       } catch {}
-    document.documentElement.dataset.theme = localState.getItem('atlas-theme') || 'light';
+    changeTheme(localState.getItem('atlas-theme') === 'dark' ? 'dark' : 'light');
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -377,7 +393,7 @@ export default function Atlas({
     };
   }, [current?.id, session.user?.id]);
   useEffect(() => {
-    if (!(auth || targetProduct || reportProduct)) return;
+    if (!(auth || reportProduct)) return;
     const previous = document.activeElement as HTMLElement;
     const id = setTimeout(
       () => modalRef.current?.querySelector<HTMLElement>('input,button')?.focus(),
@@ -386,7 +402,7 @@ export default function Atlas({
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setAuth(false);
-        setTargetProduct(null);
+        sessionState.removeItem('atlas-pending-intent');
         setReportProduct(null);
         pending.current = null;
       }
@@ -415,9 +431,15 @@ export default function Atlas({
       document.body.style.overflow = old;
       previous?.focus();
     };
-  }, [auth, targetProduct, reportProduct]);
+  }, [auth, reportProduct]);
   function notify(message: string) {
     setToast(message);
+  }
+  function changeTheme(value: 'light' | 'dark') {
+    setTheme(value);
+    document.documentElement.dataset.theme = value;
+    document.documentElement.style.colorScheme = value;
+    localState.setItem('atlas-theme', value);
   }
   function requireUser(action: () => void) {
     if (session.user) action();
@@ -451,34 +473,83 @@ export default function Atlas({
           await api(saved(p.id) ? `watches/${p.id}` : 'watches', saved(p.id) ? 'DELETE' : 'POST', {
             productId: p.id,
           });
-          await refresh();
-          notify(saved(p.id) ? 'Removed from your shortlist.' : 'Saved to your shortlist.');
+          const wasSaved = saved(p.id);
+          setSession((prior) => ({
+            ...prior,
+            watches: wasSaved
+              ? prior.watches.filter((watch) => watch.product_id !== p.id)
+              : [...prior.watches, { id: p.id, product_id: p.id, collection: 'My shortlist' }],
+          }));
+          notify(wasSaved ? 'Removed from your shortlist.' : 'Saved to your shortlist.');
         }),
     );
   }
   function openTarget(p: Product, rule?: Rule) {
-    setEditRule(rule || null);
-    setTarget(
-      rule
-        ? String(rule.target / 100)
-        : String(
-            Math.floor(
-              ((rank(offers.filter((o) => o.productId === p.id)).lowest ?? p.basePrice) * 0.95) /
-                10000,
-            ) * 100,
-          ),
+    setPinDraft({
+      productId: p.id,
+      ...(rule ? { id: rule.id, target: rule.target, store: rule.store, basis: rule.basis } : {}),
+    });
+    router.push(
+      `/?pin=${encodeURIComponent(p.id)}${rule ? `&rule=${encodeURIComponent(rule.id)}` : ''}#targets`,
     );
-    setScope(rule?.store || 'all');
-    setBasis(rule?.basis || (demo ? 'delivered' : 'item'));
-    setTargetProduct(p);
   }
-  // the home page's "Pin a target" form hands its draft to the same confirm-and-save dialog
-  function pinTarget(p: Product, rupees: number, store: string, priceBasis: 'delivered' | 'item') {
-    setEditRule(null);
-    setTarget(String(rupees));
-    setScope(store);
-    setBasis(priceBasis);
-    setTargetProduct(p);
+  async function commitPin(
+    p: Product,
+    rupees: number,
+    store: string,
+    priceBasis: 'delivered' | 'item',
+    ruleId?: string,
+  ) {
+    const result = await api('rules', ruleId ? 'PATCH' : 'POST', {
+      ...(ruleId ? { id: ruleId } : {}),
+      productId: p.id,
+      target: Math.round(rupees * 100),
+      store,
+      basis: priceBasis,
+      operator: 'lte',
+      enabled: true,
+    });
+    setSession((prior) => ({
+      ...prior,
+      rules: [...prior.rules.filter((rule) => rule.id !== result.rule.id), result.rule],
+      watches: prior.watches.some((watch) => watch.product_id === p.id)
+        ? prior.watches
+        : [...prior.watches, { id: p.id, product_id: p.id, collection: 'My shortlist' }],
+    }));
+    sessionState.removeItem('atlas-pending-intent');
+    setPinDraft(undefined);
+    notify('Target pinned. Only fresh matching checks can trigger it.');
+  }
+  async function pinTarget(
+    p: Product,
+    rupees: number,
+    store: string,
+    priceBasis: 'delivered' | 'item',
+    ruleId?: string,
+  ) {
+    if (!Number.isFinite(rupees) || rupees < 1 || rupees > 100000000)
+      throw new Error('Enter a target between ₹1 and ₹10,00,00,000.');
+    if (!session.user) {
+      sessionState.setItem(
+        'atlas-pending-intent',
+        JSON.stringify({
+          type: 'pin',
+          productId: p.id,
+          target: rupees,
+          scope: store,
+          basis: priceBasis,
+          id: ruleId,
+        }),
+      );
+      pending.current = () =>
+        void commitPin(p, rupees, store, priceBasis, ruleId).catch((error) =>
+          notify(error.message),
+        );
+      setAuth(true);
+      return false;
+    }
+    await commitPin(p, rupees, store, priceBasis, ruleId);
+    return true;
   }
   function toggleCompare(id: string) {
     const next = compare.includes(id) ? compare.filter((v) => v !== id) : [...compare, id];
@@ -661,6 +732,13 @@ export default function Atlas({
             </Link>
           </nav>
           <div className="header-actions">
+            <button
+              className="icon-button appearance-toggle"
+              aria-label={theme === 'dark' ? 'Use Light theme' : 'Use Dark theme'}
+              onClick={() => changeTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
+            </button>
             <Link
               prefetch={false}
               className="icon-button notification-link"
@@ -735,7 +813,7 @@ export default function Atlas({
                 </p>
               </div>
               <div className="v2-art">
-                <RingHero />
+                <RingHero theme={theme} />
               </div>
             </section>
             <section className="v2-cats page-width" aria-labelledby="v2-cats-title">
@@ -763,6 +841,15 @@ export default function Atlas({
               emailAvailable={Boolean(session.delivery?.emailAvailable)}
               onSave={save}
               onPin={pinTarget}
+              initialTarget={
+                pinDraft ||
+                (params.get('pin')
+                  ? {
+                      productId: params.get('pin')!,
+                      ...session.rules.find((rule) => rule.id === params.get('rule')),
+                    }
+                  : undefined)
+              }
             />
             <section className="discovery-section page-width">
               <div className="section-heading">
@@ -1368,13 +1455,13 @@ export default function Atlas({
           </button>
         </div>
       )}
-      {(auth || targetProduct || reportProduct) && (
+      {(auth || reportProduct) && (
         <div
           className="modal-backdrop"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) {
               setAuth(false);
-              setTargetProduct(null);
+              sessionState.removeItem('atlas-pending-intent');
               setReportProduct(null);
               pending.current = null;
             }
@@ -1392,7 +1479,7 @@ export default function Atlas({
               aria-label="Close dialog"
               onClick={() => {
                 setAuth(false);
-                setTargetProduct(null);
+                sessionState.removeItem('atlas-pending-intent');
                 setReportProduct(null);
                 pending.current = null;
               }}
@@ -1452,111 +1539,6 @@ export default function Atlas({
                     after identity services are connected.
                   </p>
                 )}
-              </>
-            ) : targetProduct ? (
-              <>
-                <span className="modal-symbol">
-                  <Bell size={26} />
-                </span>
-                <p className="eyebrow">LET THE RIGHT PRICE FIND YOU</p>
-                <h2 id="modal-title">Name your price.</h2>
-                <p>
-                  {targetProduct.name} <span className="muted">· {targetProduct.subtitle}</span>
-                </p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!session.user) {
-                      if (!demo)
-                        sessionState.setItem(
-                          'atlas-pending-intent',
-                          JSON.stringify({
-                            type: 'target',
-                            productId: targetProduct.id,
-                            target,
-                            scope,
-                            basis,
-                          }),
-                        );
-                      pending.current = () =>
-                        notify('Your target is preserved. Choose Save target to finish.');
-                      setAuth(true);
-                      return;
-                    }
-                    void perform(async () => {
-                      await api('rules', editRule ? 'PATCH' : 'POST', {
-                        ...(editRule ? { id: editRule.id } : {}),
-                        productId: targetProduct.id,
-                        target: Math.round(Number(target) * 100),
-                        store: scope,
-                        basis,
-                        operator: 'lte',
-                        enabled: true,
-                      });
-                      await refresh();
-                      setTargetProduct(null);
-                      notify(
-                        demo
-                          ? 'Target saved. We’ll watch fresh matching demo offers.'
-                          : 'Target saved. Only eligible observations from alert-enabled sources can trigger it.',
-                      );
-                    });
-                  }}
-                >
-                  <label>
-                    Notify me at or below
-                    <div className="currency-input">
-                      <span>₹</span>
-                      <input
-                        ref={targetInput}
-                        value={target}
-                        type="number"
-                        min="1"
-                        max="100000000"
-                        step="1"
-                        required
-                        onChange={(e) => setTarget(e.target.value)}
-                      />
-                    </div>
-                  </label>
-                  <label>
-                    Source
-                    <select value={scope} onChange={(e) => setScope(e.target.value)}>
-                      <option value="all">
-                        {demo ? 'Both demo sources' : 'All matching stores'}
-                      </option>
-                      {(demo ? STORE_NAMES.slice(0, 2) : STORE_NAMES).map((store) => (
-                        <option key={store}>{store}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Price basis
-                    <select
-                      value={basis}
-                      onChange={(e) => setBasis(e.target.value as 'delivered' | 'item')}
-                    >
-                      <option value="delivered">Known delivered total</option>
-                      <option value="item">Listed item price · delivery extra/unknown</option>
-                    </select>
-                  </label>
-                  <div className="notice">
-                    <ShieldCheck size={18} />
-                    <span>
-                      {demo
-                        ? 'Uses your selected price basis. Conditional discounts are excluded. The local worker checks synthetic offers every minute.'
-                        : 'Checks are scheduled by the worker. History and alerts require a configured source agreement. Unknown stock or delivery cannot qualify for delivered-price alerts.'}
-                    </span>
-                  </div>
-                  <button className="primary full-width" disabled={busy}>
-                    {session.user
-                      ? 'Save target'
-                      : demo
-                        ? 'Continue with a demo profile'
-                        : 'Continue to sign in'}{' '}
-                    <ArrowRight size={17} />
-                  </button>
-                </form>
               </>
             ) : reportProduct ? (
               <>
@@ -1954,7 +1936,17 @@ export default function Atlas({
           />
         </div>
         <WeekLedger observations={comparableHistory} basis={historyBasis} />
+        <p className="fine-print">
+          {historyCoverage(comparableHistory, historyBasis, range).recordedDays} of {range} days
+          have recorded {historyBasis} prices for this product. New tracking cannot supply prices
+          from before its first real check.
+        </p>
         <div className="history-panel">
+          <ExternalHistory
+            sourceUrl={
+              p.attributes['Product URL'] || po.find((offer) => offer.purchaseUrl)?.purchaseUrl
+            }
+          />
           <div className="section-heading">
             <div>
               <p className="eyebrow">CONTEXT FOR YOUR NEXT MOVE</p>
@@ -2165,6 +2157,24 @@ export default function Atlas({
           title="A few personal details."
           description="Your profile, notification preferences, and data controls."
         />
+        <div className="settings-panel">
+          <div className="setting-row">
+            <div>
+              <strong>Appearance</strong>
+              <p className="muted small">
+                Light paper or dark paper. Available without signing in.
+              </p>
+            </div>
+            <select
+              aria-label="Color theme"
+              value={theme}
+              onChange={(event) => changeTheme(event.target.value as 'light' | 'dark')}
+            >
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+        </div>
         {session.user ? (
           <>
             <div className="settings-panel">
@@ -2224,27 +2234,6 @@ export default function Atlas({
                 >
                   <span />
                 </button>
-              </div>
-              <div className="setting-row">
-                <div>
-                  <strong>Appearance</strong>
-                  <p className="muted small">Choose the view that feels right.</p>
-                </div>
-                <select
-                  aria-label="Color theme"
-                  defaultValue={
-                    typeof document !== 'undefined'
-                      ? document.documentElement.dataset.theme
-                      : 'light'
-                  }
-                  onChange={(e) => {
-                    document.documentElement.dataset.theme = e.target.value;
-                    localState.setItem('atlas-theme', e.target.value);
-                  }}
-                >
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
               </div>
               <div className="setting-row">
                 <div>
