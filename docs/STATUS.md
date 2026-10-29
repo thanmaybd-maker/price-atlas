@@ -1,5 +1,21 @@
 # Current status
 
+## 30 October archive integration
+
+Claude's copied Wayback helper, bounded transport, launchers and history-only writer have been
+reviewed against current main. Integration adds matching report digests, apply-time listing,
+price, provenance and retention checks, CSV archive labels and original retailer URLs, and
+capture citations in the 30-day table and both seven-day receipts. Archive points cannot become
+current offers or trigger alerts. See [the archive procedure](./WAYBACK-HISTORY.md).
+
+A read-only check from this Windows machine reached the archive and validated two Sony Amazon
+captures on 11 and 12 October, both at ₹19,489. One other replay was a captcha; Flipkart timed out.
+A separate six-listing category check returned no additional accepted prices, with 503s, timeouts,
+out-of-stock and no-price pages. Its zero accepted count does not establish zero archive coverage.
+These are bounded samples, not a complete search of all historical captures. No archive prices
+have been written to the application database in this integration check. Sparse history remains
+an explicit limitation; a full seven-day or thirty-day dataset has not been established.
+
 ## 29 October source evidence, discovery review and Firecrawl
 
 The [review follow-up](./REVIEW-FOLLOWUP.md) implements explicit retailer outcomes, absolute offer evidence and extraction provenance, separate catalog/import counters, one-offer wording, stronger model/accessory discovery filtering and a bounded product picker loaded on interaction. Home metadata is smaller while detail routes retain full specifications. A same-catalog measurement compared 797,899 bytes on the earlier production Home page with 682,628 bytes on the candidate build; this is a specific HTML-size measurement, not a general latency guarantee. Valid ISBN-13 identities normalize across ISBN/GTIN fields while binding and edition remain decisive.

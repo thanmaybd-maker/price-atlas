@@ -1,5 +1,70 @@
 import { test, expect } from '@playwright/test';
 
+test('archived history exposes capture proof in both the 30-day table and seven-day receipt', async ({
+  page,
+}) => {
+  await page.route(/\/api\/v1\/history\?/, async (route) => {
+    const response = await route.fetch();
+    const result = await response.json();
+    const product = result.products[0];
+    if (!product) throw new Error('History fixture needs one catalog product');
+    const observedAt = Math.floor((Date.now() - 86400000) / 1000) * 1000;
+    const timestamp = new Date(observedAt).toISOString().replace(/\D/g, '').slice(0, 14);
+    const originalUrl = 'https://www.amazon.in/dp/B09XS7JWHH';
+    const archiveUrl = `https://web.archive.org/web/${timestamp}/${originalUrl}`;
+    const observation = {
+      id: 'archive-browser-fixture',
+      productId: product.id,
+      store: 'Amazon',
+      itemPrice: 1948900,
+      shipping: 0,
+      charges: 0,
+      discount: 0,
+      currency: 'INR',
+      stock: true,
+      accepted: true,
+      condition: 'new',
+      observedAt,
+      validUntil: observedAt,
+      historyAllowed: true,
+      displayAllowed: false,
+      alertsAllowed: false,
+      seller: 'Fixture',
+      context: 'Internet Archive snapshot',
+      source: 'wayback',
+      purchaseUrl: archiveUrl,
+      evidence: {
+        kind: 'archive',
+        extraction: 'archived retailer HTML',
+        parserVersion: 'fixture',
+        originalUrl,
+        archiveUrl,
+        rawArchiveUrl: `https://web.archive.org/web/${timestamp}id_/${originalUrl}`,
+        captureTimestamp: timestamp,
+        verifiedLiveByPriceAtlas: false,
+        matchedAttributes: ['Brand'],
+      },
+    };
+    await route.fulfill({
+      json: { products: [product], history: { [product.id]: [observation] } },
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('history-coverage')).toContainText('1 of 30 days');
+  await page.getByText('View recorded daily prices', { exact: true }).click();
+  const table = page.locator('.tide-data');
+  await expect(
+    table.getByRole('link', { name: 'Internet Archive capture', exact: true }),
+  ).toHaveAttribute('href', /^https:\/\/web.archive.org\/web\//);
+  await expect(table).toContainText('not a live check');
+  expect(Date.parse((await table.locator('time').getAttribute('datetime')) || '')).toBeGreaterThan(
+    0,
+  );
+  await expect(page.getByText('Includes Internet Archive captures', { exact: true })).toBeVisible();
+  await page.getByText('Includes Internet Archive captures', { exact: true }).click();
+  await expect(page.locator('.hs .do .rx')).toContainText('not live checks');
+});
+
 test('target options are requested only after opening the picker and stay bounded', async ({
   page,
 }) => {

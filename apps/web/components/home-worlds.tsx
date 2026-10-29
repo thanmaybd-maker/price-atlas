@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { eligible, money, rank, total, type Offer, type Product, type Rule } from '@domain/index';
 import { retailers } from '../../../packages/domain/retailers';
 import { weeklyHistory } from '../../../packages/domain/weekly-history';
+import { HistoryCitation } from './history-citation';
 import { TidesWorld } from './tides-world';
 import { fetchJson } from '../lib/fetch-json';
 import { historyCoverage } from '../../../packages/domain/history-coverage';
@@ -909,6 +910,19 @@ function WeekWorld({
                       <span>₹{fmt(s.price)}</span>
                     </div>
                   ))}
+                  {day.archivePoints.length > 0 && (
+                    <details>
+                      <summary>Includes Internet Archive captures</summary>
+                      <p>
+                        Archived store pages; not live checks. Values apply to their capture dates.
+                      </p>
+                      {day.archivePoints.map((o) => (
+                        <p key={o.id}>
+                          <HistoryCitation offer={o} />
+                        </p>
+                      ))}
+                    </details>
+                  )}
                 </>
               ) : (
                 <div className="row sm">
