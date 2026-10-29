@@ -48,6 +48,9 @@
   --sea-ink: #1b2f5e;
   --sea-paper: #efe6d2;
   --sea-sky: #dccfae;
+  --sea-haze: #9fc0e0;
+  --sea-sand: #e8d6ad;
+  --sea-wet: #c9b285;
   --sea-sun: oklch(62% 0.17 32);
   --sea-fuji: oklch(52% 0.05 255);
   --v2-head: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
@@ -268,6 +271,10 @@ h2 {
 .v2-still {
   fill: var(--sea-c1);
 }
+.v2-still-sand {
+  fill: var(--sea-sand);
+}
+.v2-sea[data-ready='true'] .v2-still-sand,
 .v2-sea[data-ready='true'] .v2-still {
   display: none;
 }
