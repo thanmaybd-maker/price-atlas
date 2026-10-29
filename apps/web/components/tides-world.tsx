@@ -2,7 +2,8 @@
 // "Thirty days, drawn as tides." from the design canvas: one ridge per product (home) or per store
 // (product page), lowest recorded price per day, with gaps where nothing was observed.
 import { useState } from 'react';
-import { total, type Offer } from '@domain/index';
+import type { Offer } from '@domain/index';
+import { dailyLows } from '../../../packages/domain/daily-history';
 
 type Basis = 'delivered' | 'item';
 const fmt = (paise: number) => new Intl.NumberFormat('en-IN').format(Math.round(paise / 100));
@@ -12,26 +13,6 @@ const fmt = (paise: number) => new Intl.NumberFormat('en-IN').format(Math.round(
 // and on product pages (one ridge per store).
 // ---------------------------------------------------------------------------
 export type Ridge = { key: string; name: string; obs: Offer[] };
-function dailyLows(obs: Offer[], basis: Basis, days = 30) {
-  const key = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const today = Date.parse(`${key.format(Date.now())}T00:00:00+05:30`);
-  const start = today - (days - 1) * 86400000;
-  const out: (number | null)[] = Array(days).fill(null);
-  for (const o of obs) {
-    if (!o.historyAllowed || !o.accepted || o.currency !== 'INR' || !o.stock) continue;
-    const i = Math.floor((o.observedAt - start) / 86400000);
-    if (i < 0 || i >= days) continue;
-    const v = total(o, basis);
-    if (v == null) continue;
-    if (out[i] == null || v < (out[i] as number)) out[i] = v;
-  }
-  return out;
-}
 export function TidesWorld({
   ridges,
   title = 'Thirty days, drawn as tides.',
