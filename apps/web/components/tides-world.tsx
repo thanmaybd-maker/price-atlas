@@ -128,8 +128,7 @@ export function TidesWorld({
                         fill="var(--al-ink)"
                       >
                         <title>
-                          {g.r.name}: ₹{fmt(value)} ·{' '}
-                          {day === N - 1 ? 'today' : `${N - 1 - day} days ago`}
+                          {`${g.r.name}: ₹${fmt(value)} · ${day === N - 1 ? 'today' : `${N - 1 - day} days ago`}`}
                         </title>
                       </circle>
                     ),
