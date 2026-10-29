@@ -63,6 +63,13 @@ test('archived history exposes capture proof in both the 30-day table and seven-
   await expect(page.getByText('Includes Internet Archive captures', { exact: true })).toBeVisible();
   await page.getByText('Includes Internet Archive captures', { exact: true }).click();
   await expect(page.locator('.hs .do .rx')).toContainText('not live checks');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.locator('.al-sheet').screenshot({ path: `data/archive-evidence-${width}.png` });
+  }
 });
 
 test('target options are requested only after opening the picker and stay bounded', async ({

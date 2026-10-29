@@ -173,7 +173,7 @@ async function selectListings(): Promise<ListingRow[]> {
     usable.filter(test).slice(0, PER).forEach(add);
   }
   if (!PRODUCT && !SAMPLE.length) usable.slice(0, LIMIT).forEach(add);
-  return picked.slice(0, LIMIT + (PRODUCT ? 1 : 0) + SAMPLE.length * PER);
+  return picked.slice(0, LIMIT);
 }
 
 async function dryRun() {
