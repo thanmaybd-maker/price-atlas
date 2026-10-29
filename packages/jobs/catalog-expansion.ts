@@ -74,7 +74,16 @@ export async function catalogExpansionStatus() {
       'SELECT state,count(*)::integer AS count FROM atlas.catalog_frontier GROUP BY state',
     )
   ).rows;
-  return { ...config, counts: Object.fromEntries(counts.map((r) => [r.state, r.count])) };
+  const next = (
+    await postgres().query(
+      "SELECT min(at) AS at FROM (SELECT min(available_at) AS at FROM atlas.catalog_frontier WHERE state='pending' UNION ALL SELECT min(updated_at) AS at FROM atlas.catalog_pages WHERE NOT exhausted) pending",
+    )
+  ).rows[0];
+  return {
+    ...config,
+    nextAttemptAt: Math.max(Number(config?.blocked_until || 0), Number(next?.at || 0)),
+    counts: Object.fromEntries(counts.map((r) => [r.state, r.count])),
+  };
 }
 export async function runCatalogExpansionStep(fetcher: typeof fetch = nykaaFetch) {
   const now = Date.now();
@@ -164,7 +173,7 @@ export async function runCatalogExpansionStep(fetcher: typeof fetch = nykaaFetch
     candidate = row.id;
     const known = (
       await postgres().query(
-        "SELECT product_id FROM atlas.listings WHERE store='Nykaa' AND split_part(url,'?',1)=$1 AND evidence<>'{}'::jsonb LIMIT 1",
+        "SELECT product_id FROM atlas.listings WHERE store='Nykaa' AND split_part(url,'?',1)=$1 AND evidence<>'{}'::jsonb AND evidence->'attributes'->>'Verification status' IS DISTINCT FROM 'PARTIAL_UNVERIFIED' LIMIT 1",
         [row.url],
       )
     ).rows[0];
@@ -178,6 +187,11 @@ export async function runCatalogExpansionStep(fetcher: typeof fetch = nykaaFetch
       );
       if (product.attributes['Base product ID'] !== row.id)
         throw new ScrapeError('identity_mismatch', 'Catalog parent identity changed.');
+      if (product.status === 'PARTIAL_UNVERIFIED')
+        throw new ScrapeError(
+          'price_missing',
+          'Partial metadata does not count as a verified catalog product.',
+        );
       const result = await importScraped(product, `expansion-${randomUUID()}`, {
         catalogIntervalMinutes: 10080,
       });

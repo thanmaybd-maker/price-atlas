@@ -10,16 +10,25 @@ import {
 } from '../database/postgres';
 import { matchesQuery, normalizeQuery } from '../domain/search';
 import { canonicalRetailUrl, scrapeSearchHtml, ScrapeError } from '../providers/scraper';
-import { parseSearchHtml, duckDuckGoProducts, type SearchCandidate } from '../providers/search';
+import {
+  parseSearchHtml,
+  duckDuckGoProducts,
+  bingProducts,
+  type SearchCandidate,
+} from '../providers/search';
 import { livePolicy } from '../providers/live';
 import { reserveSource, fetchProductWithBudget } from './index';
 import { STORE_NAMES, type Store } from '../domain/index';
+import { retailers, storesForCategory, retailerSearchUrl } from '../domain/retailers';
+import { categoryFor } from '../matching/index';
+import { MAX_PAID_CREDITS_PER_REQUEST } from './credit-budget';
 
 export type LookupData = {
   productIds: string[];
   candidates: SearchCandidate[];
   sources: { store: Store; method: string; status: string }[];
   message?: string;
+  searchLinks?: { store: Store; url: string }[];
 };
 export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
   const q = value.trim();
@@ -35,7 +44,7 @@ export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
     } catch {
       throw new ScrapeError(
         'invalid_query',
-        'Use a direct HTTPS product URL from a supported retailer.',
+        `Use a direct HTTPS product URL from: ${STORE_NAMES.join(', ')}.`,
       );
     }
   }
@@ -45,7 +54,7 @@ export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
     q,
     url,
     key: createHash('sha256')
-      .update(`retailers-v2:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
+      .update(`retailers-v3:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
       .digest('hex'),
   };
 }
@@ -100,7 +109,10 @@ export async function discoverProducts(
   };
   let credits = 0;
   const maximumCredits = url
-    ? Math.max(0, Math.min(10, Number(process.env.LOOKUP_MAX_CREDITS || 10)))
+    ? Math.max(
+        0,
+        Math.min(MAX_PAID_CREDITS_PER_REQUEST, Number(process.env.LOOKUP_MAX_CREDITS || 10)),
+      )
     : 0;
   const allowPaid = (cost: number) => {
     // Names and broad searches are always free. A direct supported URL is an
@@ -113,7 +125,7 @@ export async function discoverProducts(
   const deadline = Date.now() + 45000;
   const importUrl = async (destination: string) => {
     const cached = await reusableListing(destination);
-    if (cached) return cached.productId;
+    if (cached && !options.searchMore) return cached.productId;
     await beforeNetwork();
     if (Date.now() > deadline - 5000)
       throw new ScrapeError(
@@ -131,9 +143,16 @@ export async function discoverProducts(
   try {
     if (url) {
       const identity = canonicalRetailUrl(url);
+      data.candidates.push({
+        store: identity.store,
+        url,
+        title: 'Submitted product link · live price unverified',
+      });
       data.productIds.push(await importUrl(url));
       data.sources.push({ store: identity.store, method: 'product-page', status: 'complete' });
     } else {
+      const stores = scope === 'all' ? storesForCategory(categoryFor(q, {})) : [scope];
+      data.searchLinks = stores.map((store) => ({ store, url: retailerSearchUrl(store, q) }));
       const existing = (await catalog()).filter((p) => matchesQuery(p, q));
       const currentOffers = scope === 'all' ? [] : await offers();
       const scoped = existing.filter(
@@ -149,15 +168,17 @@ export async function discoverProducts(
       else {
         await beforeNetwork();
         await Promise.all(
-          (scope === 'all' ? STORE_NAMES : [scope]).map(async (store) => {
+          stores.map(async (store) => {
             let candidates: SearchCandidate[] = [],
               method = 'direct';
             try {
               if (!livePolicy(store).search)
                 throw new ScrapeError('disabled', 'Search is disabled for this retailer.');
               try {
-                await reserveSource(store, { transport: 'direct' });
-                candidates = parseSearchHtml(await scrapeSearchHtml(q, store), store);
+                if (!retailers[store].discoveryFirst) {
+                  await reserveSource(store, { transport: 'direct' });
+                  candidates = parseSearchHtml(await scrapeSearchHtml(q, store), store);
+                }
               } catch (e) {
                 if (
                   e instanceof ScrapeError &&
@@ -178,10 +199,28 @@ export async function discoverProducts(
                     throw e;
                 }
               }
-              const relevant = candidates.filter((c) =>
-                matchesQuery({ name: c.title, brand: '', subtitle: '' }, q),
-              );
-              data.candidates.push(...(relevant.length ? relevant : candidates).slice(0, 6));
+              if (!candidates.length && Date.now() < deadline - 16000) {
+                method = 'web-search-rss';
+                await reserveSource(store, { transport: 'direct' });
+                candidates = await bingProducts(q, store);
+              }
+              const words = normalizeQuery(q)
+                .split(' ')
+                .filter((w) => w.length > 2 && !['the', 'and', 'for', 'buy', 'price'].includes(w));
+              const relevant = candidates
+                .map((c) => ({
+                  c,
+                  score:
+                    words.filter((w) => normalizeQuery(c.title).includes(w)).length /
+                    Math.max(1, words.length),
+                }))
+                .filter(
+                  ({ c, score }) =>
+                    score >= 0.6 || matchesQuery({ name: c.title, brand: '', subtitle: '' }, q),
+                )
+                .sort((a, b) => b.score - a.score)
+                .map(({ c }) => c);
+              data.candidates.push(...relevant.slice(0, 6));
               let imported = false;
               let failure: unknown;
               for (const selected of relevant.slice(0, 2)) {
@@ -241,7 +280,7 @@ export async function discoverProducts(
     data.message = data.sources.some((s) => s.status === 'rate_limited')
       ? 'The stores are busy. Please try again in a minute, or paste a direct product URL.'
       : data.sources.some((s) => ['daily_budget', 'monthly_budget'].includes(s.status))
-        ? 'Free fetching did not return verified details and the paid collection allowance has been reached. Please try again later.'
+        ? 'The shared collection allowance has been reached. Recorded results and store search links remain available; collection resumes after the budget resets.'
         : 'No verified product details were available. Try a more specific model name or paste a supported retailer product URL.';
   await postgres().query(
     "UPDATE atlas.search_cache SET state='complete',data=$2,expires_at=$3 WHERE query_key=$1",

@@ -113,6 +113,12 @@ beforeAll(async () => {
     ),
   );
   process.env.DATABASE_URL = 'isolated-tests';
+  await db.exec(
+    await readFile(
+      new URL('../packages/database/migrations/011_retailer_coverage.sql', import.meta.url),
+      'utf8',
+    ),
+  );
   process.env.SOURCE_POLICIES_JSON = JSON.stringify({
     Amazon: {
       ...demoPolicy('Amazon'),
@@ -749,17 +755,22 @@ it('discovers a custom product, imports verified details, and reuses shared sear
     expect(result?.products).toHaveLength(2);
     expect(result?.products.every((p) => p?.category === 'appliances')).toBe(true);
     expect(result?.offers.every((o) => o.itemPrice > 0)).toBe(true);
-    expect(fetcher).toHaveBeenCalledTimes(14);
+    const firstRequests = fetcher.mock.calls.length;
+    expect(firstRequests).toBeGreaterThan(0);
+    expect(result?.sources.some((s) => ['Nykaa', 'Myntra', 'AJIO'].includes(s.store))).toBe(false);
+    expect(
+      fetcher.mock.calls.some(([url]) => new URL(String(url)).hostname === 'app.scrapingbee.com'),
+    ).toBe(false);
     const cached = await discoverProducts('  ACME qz9 Mixer  ');
     expect(cached?.cached).toBe(true);
     expect(cached?.products).toHaveLength(2);
-    expect(fetcher).toHaveBeenCalledTimes(14);
+    expect(fetcher).toHaveBeenCalledTimes(firstRequests);
     const network = vi.fn().mockRejectedValue(new Error('Network should not be needed'));
     const recorded = await discoverProducts('QZ9 Acme mixer', 'all', { beforeNetwork: network });
     expect(recorded?.products).toHaveLength(2);
     expect(recorded?.message).toContain('recorded catalog');
     expect(network).not.toHaveBeenCalled();
-    expect(fetcher).toHaveBeenCalledTimes(14);
+    expect(fetcher).toHaveBeenCalledTimes(firstRequests);
     expect(
       (
         await db.query('SELECT credits FROM atlas.collection_budget WHERE day=$1', [
@@ -1043,4 +1054,18 @@ it('preserves the expansion frontier and pauses until the next UTC day when the 
     if (prior === undefined) delete process.env.SCRAPER_REQUESTS_PER_DAY;
     else process.env.SCRAPER_REQUESTS_PER_DAY = prior;
   }
+});
+
+it('persists new retailer metadata without turning a partial page into a price observation', async () => {
+  const url = 'https://www.ajio.com/acme-cotton-shirt/p/466655544_blue';
+  const partial = parseProductHtml(
+    `<link rel="canonical" href="${url}"><meta property="og:title" content="Acme Cotton Shirt">`,
+    url,
+  );
+  const imported = await store.importScraped(partial, 'partial-ajio');
+  expect(imported.observations).toBe(0);
+  expect((await store.findProduct(imported.productId))?.attributes['Verification status']).toBe(
+    'PARTIAL_UNVERIFIED',
+  );
+  expect(await store.offers(imported.productId)).toHaveLength(0);
 });

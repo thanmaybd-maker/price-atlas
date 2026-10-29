@@ -95,6 +95,7 @@ async function handler(req: NextRequest) {
             verifiedBaseProducts: expansion.counts.verified || 0,
             pendingBaseProducts: expansion.counts.pending || 0,
             blockedUntil: Number(expansion.blocked_until || 0),
+            nextAttemptAt: expansion.nextAttemptAt,
             lastError: expansion.last_error || null,
           },
         });

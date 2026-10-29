@@ -1,4 +1,5 @@
 import { exactMatch, type Category } from '../domain/index';
+import { compareVariants, variantSignature } from '../domain/variant-guard';
 export const categoryRegistry: Record<Category, string[]> = {
   phones: ['Brand', 'Model Number', 'RAM', 'Storage', 'Color', 'Connectivity'],
   laptops: ['Brand', 'Model Number', 'Processor', 'RAM', 'Storage', 'Graphics', 'Display', 'Color'],
@@ -60,6 +61,8 @@ export function compareAttributes(
 ) {
   const first = normalizedAttributes(a),
     second = normalizedAttributes(b);
+  const variants = compareVariants(variantSignature('', first), variantSignature('', second));
+  if (variants.decision !== 'accepted') return variants;
   // Apple retail part numbers encode the exact storage/color/regional SKU.
   // RAM is not consistently disclosed on Apple's iPhone retailer pages.
   const applePart =
@@ -149,13 +152,13 @@ export function categoryFor(title: string, attributes: Record<string, string>): 
   )
     return 'fashion';
   if (
-    /\b(?:calculator|notebook paper|ball ?pen|fountain pen|pencil|stationery|marker pen)\b/i.test(
+    /\b(?:calculator|fx-?\d{3}[a-z]+|notebook paper|ball ?pen|fountain pen|pencil|stationery|marker pen)\b/i.test(
       title,
     )
   )
     return 'stationery';
   if (
-    /\b(?:book|novel|paperback|hardcover|hardback)\b/i.test(title) ||
+    /\b(?:book|novel|paperback|hardcover|hardback|\d+(?:st|nd|rd|th) edition)\b/i.test(title) ||
     Object.keys(attributes).some((k) => /^(?:ISBN(?:[- ]?1[03])?|Author|Publisher)$/i.test(k)) ||
     /^97[89]\d{10}$/.test(attributes.GTIN || '')
   )

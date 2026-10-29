@@ -1,12 +1,5 @@
-export const STORE_NAMES = [
-  'Amazon',
-  'Flipkart',
-  'Meesho',
-  'Croma',
-  'Nykaa',
-  'iHerb',
-  'B&H',
-] as const;
+import { STORE_NAMES, retailers, retailerForUrl } from './retailer-registry';
+export { STORE_NAMES };
 export type Store = (typeof STORE_NAMES)[number];
 export type Category =
   | 'phones'
@@ -89,6 +82,7 @@ export function eligible(o: Offer, now = Date.now()) {
     o.accepted &&
     o.condition === 'new' &&
     o.currency === 'INR' &&
+    !retailers[o.store].international &&
     o.stock &&
     o.displayAllowed &&
     o.observedAt <= now &&
@@ -178,41 +172,9 @@ export function parseRetailUrl(value: string): { store: Store; externalId: strin
   }
   if (url.protocol !== 'https:' || url.username || url.password || url.port)
     throw new Error('Use a direct HTTPS retailer product link.');
-  const host = url.hostname.toLowerCase();
-  if (['amazon.in', 'www.amazon.in'].includes(host)) {
-    const id = url.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i)?.[1];
-    if (id) return { store: 'Amazon', externalId: id.toUpperCase() };
-  }
-  if (['flipkart.com', 'www.flipkart.com'].includes(host)) {
-    const id = url.searchParams.get('pid');
-    if (id && /^[A-Z0-9]{8,30}$/i.test(id))
-      return { store: 'Flipkart', externalId: id.toUpperCase() };
-    const item = url.pathname.match(/\/p\/(itm[a-f0-9]{10,24})(?:\/|$)/i)?.[1];
-    if (!id && item) return { store: 'Flipkart', externalId: item.toUpperCase() };
-  }
-  if (['meesho.com', 'www.meesho.com'].includes(host)) {
-    const id = url.pathname.match(/\/(?:[^/]+\/)?p\/([a-z0-9]{4,20})(?:\/|$)/i)?.[1];
-    if (id) return { store: 'Meesho', externalId: id.toLowerCase() };
-  }
-  if (['croma.com', 'www.croma.com'].includes(host)) {
-    const id = url.pathname.match(/\/p\/(\d{4,12})(?:\/|$)/)?.[1];
-    if (id) return { store: 'Croma', externalId: id };
-  }
-  if (['nykaa.com', 'www.nykaa.com'].includes(host)) {
-    const id = url.pathname.match(/\/p\/(\d{3,12})(?:\/|$)/)?.[1];
-    const sku = url.searchParams.get('skuId');
-    if (id && (!sku || /^\d{3,12}$/.test(sku))) return { store: 'Nykaa', externalId: sku || id };
-  }
-  if (['iherb.com', 'www.iherb.com', 'in.iherb.com'].includes(host)) {
-    const id = url.pathname.match(/^\/pr\/[^/]+\/(\d{3,12})(?:\/|$)/)?.[1];
-    if (id) return { store: 'iHerb', externalId: id };
-  }
-  if (['bhphotovideo.com', 'www.bhphotovideo.com'].includes(host)) {
-    const id = url.pathname.match(
-      /^\/c\/product\/(\d{3,12}-(?:REG|USA|IMP))\/[^/]+\.html(?:\/|$)/i,
-    )?.[1];
-    if (id) return { store: 'B&H', externalId: id.toUpperCase() };
-  }
+  const store = retailerForUrl(url);
+  const externalId = store ? retailers[store].productId(url) : undefined;
+  if (store && externalId) return { store, externalId };
   throw new Error(
     'Use a direct product URL from a supported retailer. Short links and unrecognized destinations are not fetched.',
   );

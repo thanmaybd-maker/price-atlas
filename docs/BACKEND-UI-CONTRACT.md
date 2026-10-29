@@ -1,6 +1,6 @@
 # Backend contract for the UI work
 
-UI components and styles are owned by the concurrent UI work. Backend additions preserve existing response fields.
+Claude's UI is integrated. Functional changes preserve its styling and the existing API response fields. Canonical retailer metadata lives in `packages/domain/retailer-registry.ts`; `retailers.ts` re-exports it for compatibility.
 
 `GET /api/v1/catalog/status` returns public counts, canonical category IDs/labels and expansion progress. `products` counts saved SKU records. `expansion.verifiedBaseProducts` counts unique Nykaa parent product IDs that passed product-page verification; multiple shade/size discovery links under one parent count once. The target is 2,500 such base products, separately from the existing catalog. Pending discovery links are not saved products and do not count as verified.
 
@@ -15,3 +15,5 @@ Product attributes may include `Retailer`, `Product URL`, `Base product ID`, `So
 Bulk imports retain a weekly catalog check interval to fit the shared request allowance. Enabled target rules still receive hourly scheduling. Offer display freshness remains 24 hours and alert eligibility one hour. Weekly checks do not extend a stored offer's freshness. The 2,500-product import progresses in bounded batches and can pause at the shared daily request limit.
 
 Never display or request provider API keys in a client component. Provider account failover is entirely server-side.
+
+Discovery now also returns `searchLinks: {store,url}[]` containing validated retailer search destinations, with no claimed live prices. `searchMore: true` forces an explicit direct URL to refresh its cached listing, or performs additional free name discovery. Parsed metadata may carry `Verification status: PARTIAL_UNVERIFIED`; no observation is created when the price is missing. International stores retain `Source price` / `Source currency` even for INR and are excluded from domestic ranking. The catalog-status response adds `expansion.nextAttemptAt` without changing existing fields.

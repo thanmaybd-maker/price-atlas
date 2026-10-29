@@ -90,3 +90,30 @@ export async function duckDuckGoProducts(
   });
   return results.slice(0, 8);
 }
+export async function bingProducts(
+  query: string,
+  store: Store,
+  fetcher: typeof fetch = fetch,
+): Promise<SearchCandidate[]> {
+  const url = new URL('https://www.bing.com/search');
+  url.searchParams.set('format', 'rss');
+  url.searchParams.set('q', `site:${retailers[store].searchDomain} ${query}`);
+  const response = await fetcher(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'en-IN,en;q=0.9' },
+    signal: AbortSignal.timeout(6000),
+    redirect: 'error',
+  });
+  const $ = load(await boundedHtml(response, /xml|rss|html|text\/plain/i), { xmlMode: true }),
+    seen = new Set<string>(),
+    results: SearchCandidate[] = [];
+  $('item').each((_, node) => {
+    try {
+      const identity = canonicalRetailUrl($(node).find('link').first().text().trim());
+      const title = $(node).find('title').first().text().replace(/\s+/g, ' ').trim();
+      if (identity.store !== store || seen.has(identity.externalId) || title.length < 4) return;
+      seen.add(identity.externalId);
+      results.push({ store, url: identity.url, title: title.slice(0, 300) });
+    } catch {}
+  });
+  return results.slice(0, 8);
+}

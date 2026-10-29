@@ -12,6 +12,7 @@ import {
 } from '../domain/index';
 import { retailers } from '../domain/retailers';
 import { isIsbn13 } from '../domain/isbn';
+import { variantAttributes } from '../domain/variant-guard';
 import {
   canonicalRetailUrl,
   listingKey,
@@ -267,7 +268,7 @@ export async function importScraped(
     // Serialize same-listing imports so simultaneous browser submissions dedupe.
     await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [id]);
     const prior = (await c.query('SELECT * FROM atlas.listings WHERE id=$1', [id])).rows[0];
-    const sourceAttributes = { ...scraped.attributes };
+    const sourceAttributes = variantAttributes(scraped.title, scraped.attributes);
     if (isIsbn13(scraped.externalId)) {
       sourceAttributes.ISBN = scraped.externalId;
       sourceAttributes.GTIN ||= scraped.externalId;
@@ -282,6 +283,7 @@ export async function importScraped(
       !prior &&
       policy.matching &&
       scraped.condition === 'new' &&
+      !retailers[scraped.store].international &&
       compareAttributes(category, attributes, attributes).decision === 'accepted'
     ) {
       // Serialize candidate selection so concurrent store imports cannot split one variant.
@@ -294,7 +296,9 @@ export async function importScraped(
       ).rows;
       const matches = candidates.filter(
         (p) =>
-          p.stores.every((store: Store) => livePolicy(store).matching) &&
+          p.stores.every(
+            (store: Store) => livePolicy(store).matching && !retailers[store].international,
+          ) &&
           p.data.attributes?.Condition === 'new' &&
           compareAttributes(category, p.data.attributes, attributes).decision === 'accepted',
       );
@@ -380,8 +384,8 @@ export async function importScraped(
       condition: scraped.condition,
       observedAt: scraped.observedAt,
       validUntil: scraped.observedAt + policy.displayTtlSeconds * 1000,
-      historyAllowed: policy.history,
-      alertsAllowed: policy.alerts,
+      historyAllowed: policy.history && !retailers[scraped.store].international,
+      alertsAllowed: policy.alerts && !retailers[scraped.store].international,
       displayAllowed: policy.currentPrices,
       seller: scraped.seller,
       context: retailers[scraped.store].deliveryNote,

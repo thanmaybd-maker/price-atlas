@@ -58,7 +58,10 @@ import { TelegramSettings } from './telegram-settings';
 import { SeaHero } from './sea-hero';
 import { SearchFlower } from './search-flower';
 import { WeekLedger } from './week-ledger';
+import { RecentHistory } from './recent-history';
 import { matchesQuery } from '../../../packages/domain/search';
+import { retailers } from '../../../packages/domain/retailers';
+import { variantLabel } from '../../../packages/domain/variant-guard';
 import type { SearchCandidate } from '../../../packages/providers/search';
 type User = {
   id: string;
@@ -174,6 +177,7 @@ export default function Atlas({
     ids: string[];
     message: string;
     candidates: SearchCandidate[];
+    searchLinks?: { store: (typeof STORE_NAMES)[number]; url: string }[];
   }>({ query: '', busy: false, ids: [], message: '', candidates: [] });
   const [compare, setCompare] = useState<string[]>([]);
   const [history, setHistory] = useState(initialHistory);
@@ -185,6 +189,7 @@ export default function Atlas({
   const [reportProduct, setReportProduct] = useState<Product | null>(null);
   const [heroStore, setHeroStore] = useState('all');
   const [bloom, setBloom] = useState(false);
+  const [lookupVersion, setLookupVersion] = useState(0);
   const pending = useRef<(() => void) | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const targetInput = useRef<HTMLInputElement>(null);
@@ -204,7 +209,11 @@ export default function Atlas({
       const response = await fetch('/api/v1/discovery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchText, store: searchStore }),
+        body: JSON.stringify({
+          query: searchText,
+          store: searchStore,
+          searchMore: params.get('verify') === '1',
+        }),
         signal: controller.signal,
       });
       let result = await response.json();
@@ -238,6 +247,7 @@ export default function Atlas({
             ? `${found.length} product${found.length === 1 ? '' : 's'} found. Prices and availability are from recorded retailer checks.`
             : 'No verified details found. Try a specific model name or retailer product URL.'),
         candidates: result.candidates || [],
+        searchLinks: result.searchLinks || [],
       });
       if (/^https?:\/\//i.test(searchText) && found[0]) router.push(`/p/${found[0].slug}`);
     })().catch((error) => {
@@ -254,11 +264,11 @@ export default function Atlas({
       active = false;
       controller.abort();
     };
-  }, [demo, page, searchText, searchStore, router]);
+  }, [demo, page, searchText, searchStore, params.get('verify'), lookupVersion, router]);
   useEffect(() => {
     if (!demo && page === 'search' && searchText.trim().length >= 2) setBloom(true);
     else setBloom(false);
-  }, [demo, page, searchText]);
+  }, [demo, page, searchText, searchStore]);
   async function refresh() {
     const result = await api('session');
     setSession(result);
@@ -467,6 +477,10 @@ export default function Atlas({
     } else router.push(`/search?q=${encodeURIComponent(query.trim())}`);
   }
 
+  const priceFor = (p: Product) => {
+    const po = offers.filter((o) => o.productId === p.id);
+    return rank(po).lowest ?? rank(po, Date.now(), 'item').lowest ?? Infinity;
+  };
   let filtered = products.filter(
     (p) =>
       (!category || p.category === category) &&
@@ -477,16 +491,14 @@ export default function Atlas({
       (searchStore === 'all' ||
         p.attributes.Retailer === searchStore ||
         offers.some((o) => o.productId === p.id && o.store === searchStore)) &&
-      (!maximum ||
-        (rank(offers.filter((o) => o.productId === p.id)).lowest ?? Infinity) <= maximum * 100),
+      (!maximum || priceFor(p) <= maximum * 100),
   );
   if (sort.startsWith('price'))
     filtered = filtered.sort(
-      (a, b) =>
-        ((rank(offers.filter((o) => o.productId === a.id)).lowest ?? Infinity) -
-          (rank(offers.filter((o) => o.productId === b.id)).lowest ?? Infinity)) *
-        (sort === 'price-desc' ? -1 : 1),
+      (a, b) => (priceFor(a) - priceFor(b)) * (sort === 'price-desc' ? -1 : 1),
     );
+  const pageCount = Math.max(1, Math.ceil(filtered.length / 24));
+  const currentPage = Math.min(pageCount, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
   function Card({ p, index = 0 }: { p: Product; index?: number }) {
     const po = offers.filter((o) => o.productId === p.id);
     const r = rank(po);
@@ -631,6 +643,7 @@ export default function Atlas({
         </div>
       </header>
       <main id="main-content">
+        {!demo && <RecentHistory query={searchText} product={page === 'p' ? current : undefined} />}
         {page === 'home' ? (
           <>
             <section className="v2-hero page-width">
@@ -639,7 +652,7 @@ export default function Atlas({
                   The right product. <span>The better price.</span>
                 </h1>
                 <p className="v2-lede">
-                  One search reads seven stores and compares only the exact same variant.
+                  Search across ten retailers. Compare recorded prices for matching variants.
                 </p>
                 <SearchBox
                   hero
@@ -806,6 +819,49 @@ export default function Atlas({
                     </p>
                   </details>
                 )}
+                {lookup.query === searchText && !lookup.busy && (
+                  <>
+                    <button
+                      className="outline-button"
+                      onClick={() => {
+                        setBloom(true);
+                        if (params.get('verify') === '1') setLookupVersion((v) => v + 1);
+                        else navigateFilter('verify', '1');
+                      }}
+                    >
+                      {/^https?:\/\//i.test(searchText)
+                        ? 'Deep Verify this URL'
+                        : 'Search more stores for free'}
+                    </button>
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        const url = new URL(location.href);
+                        url.searchParams.delete('verify');
+                        void navigator.clipboard
+                          .writeText(url.href)
+                          .then(() => notify('Shareable link copied.'))
+                          .catch(() => notify('Copy the link from your address bar.'));
+                      }}
+                    >
+                      Copy Shareable Link
+                    </button>
+                    {Boolean(lookup.searchLinks?.length) && (
+                      <details>
+                        <summary>Search directly on stores · prices unverified</summary>
+                        <ul>
+                          {lookup.searchLinks?.map((link) => (
+                            <li key={link.store}>
+                              <a href={link.url} target="_blank" rel="noopener noreferrer">
+                                Search {link.store}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </>
+                )}
               </section>
             )}
             <div className="category-tabs">
@@ -891,7 +947,7 @@ export default function Atlas({
             </div>
             {bloom && (
               <SearchFlower
-                key={searchText}
+                key={`${searchText}:${searchStore}`}
                 query={searchText}
                 busy={lookup.query !== searchText || lookup.busy}
                 found={lookup.query === searchText ? lookup.ids.length : 0}
@@ -902,10 +958,7 @@ export default function Atlas({
             {bloom ? null : filtered.length ? (
               <div className="product-grid">
                 {filtered
-                  .slice(
-                    (Math.max(1, Number(params.get('page')) || 1) - 1) * 24,
-                    Math.max(1, Number(params.get('page')) || 1) * 24,
-                  )
+                  .slice((currentPage - 1) * 24, currentPage * 24)
                   .map((p, i) => Card({ p, index: i }))}
               </div>
             ) : (
@@ -929,6 +982,27 @@ export default function Atlas({
                   </Link>
                 }
               />
+            )}
+            {!bloom && pageCount > 1 && (
+              <nav aria-label="Product pages" className="filter-bar">
+                <button
+                  className="outline-button"
+                  disabled={currentPage === 1}
+                  onClick={() => navigateFilter('page', String(currentPage - 1))}
+                >
+                  Previous page
+                </button>
+                <span>
+                  Page {currentPage} of {pageCount}
+                </span>
+                <button
+                  className="outline-button"
+                  disabled={currentPage === pageCount}
+                  onClick={() => navigateFilter('page', String(currentPage + 1))}
+                >
+                  Next page
+                </button>
+              </nav>
             )}
           </section>
         ) : page === 'p' && current ? (
@@ -1442,13 +1516,26 @@ export default function Atlas({
     if (!current) return null;
     const p = current;
     const po = offers.filter((o) => o.productId === p.id);
+    const international = po.filter((o) => retailers[o.store].international);
+    const domestic = po.filter((o) => !retailers[o.store].international);
+    const variantOffers = domestic.filter((o) => o.condition !== 'new' || !o.accepted);
+    const primaryOffers = domestic.filter((o) => o.condition === 'new' && o.accepted);
     const lastObserved = po
       .filter((o) => o.displayAllowed)
       .sort((a, b) => b.observedAt - a.observedAt)[0];
     const r = rank(po);
     const itemRank = rank(po, Date.now(), 'item');
     const rule = session.rules.find((r) => r.productId === p.id);
-    const visibleHistory = history.filter((o) => o.observedAt >= Date.now() - range * 86400000);
+    const comparableHistory = history.filter(
+      (o) =>
+        o.currency === 'INR' &&
+        !retailers[o.store].international &&
+        o.accepted &&
+        o.condition === 'new',
+    );
+    const visibleHistory = comparableHistory.filter(
+      (o) => o.observedAt >= Date.now() - range * 86400000,
+    );
     const historyPrices = visibleHistory
       .filter((o) => o.historyAllowed && o.stock)
       .map((o) => total(o, rule?.basis || 'delivered'))
@@ -1468,7 +1555,10 @@ export default function Atlas({
           <div>
             <div className="detail-art">
               <span className="detail-art-label">
-                <ShieldCheck size={14} /> EXACT VARIANT
+                <ShieldCheck size={14} />{' '}
+                {p.attributes['Verification status'] === 'PARTIAL_UNVERIFIED'
+                  ? 'PARTIAL · UNVERIFIED'
+                  : 'LISTING VARIANT'}
               </span>
               <ProductArt product={p} hero />
               <span className="art-caption">
@@ -1497,6 +1587,7 @@ export default function Atlas({
             <h1>{p.name}</h1>
             <p className="detail-description">{p.description}</p>
             <div className="variant-chips">
+              {!demo && <span>{variantLabel(p.name, p.attributes)}</span>}
               {Object.entries(p.attributes)
                 .filter(([k]) => ['RAM', 'Storage', 'Color', 'Connectivity'].includes(k))
                 .map(([k, v]) => (
@@ -1562,9 +1653,22 @@ export default function Atlas({
               </a>
             )}
             <div className="detail-actions">
+              {!demo && p.attributes['Product URL'] && (
+                <Link
+                  className="outline-button"
+                  href={`/search?q=${encodeURIComponent(p.attributes['Product URL'])}&verify=1`}
+                >
+                  Refresh / Deep Verify
+                </Link>
+              )}
               <button
                 className="primary"
-                disabled={Boolean(p.attributes['Source currency']) && !po.length}
+                disabled={
+                  Boolean(p.attributes['Source currency']) ||
+                  Boolean(
+                    retailers[p.attributes.Retailer as (typeof STORE_NAMES)[number]]?.international,
+                  )
+                }
                 onClick={() => openTarget(p, rule)}
               >
                 <Bell size={17} />
@@ -1610,7 +1714,7 @@ export default function Atlas({
         <div className="section-heading detail-section-heading">
           <div>
             <p className="eyebrow">THE SAME PRODUCT. SIDE BY SIDE.</p>
-            <h2>Choose your store.</h2>
+            <h2>Domestic offers (INR).</h2>
           </div>
           <span className="muted small">Source default location · INR</span>
         </div>
@@ -1623,7 +1727,7 @@ export default function Atlas({
             <span>Availability</span>
             <span />
           </div>
-          {po.map((o) => (
+          {primaryOffers.map((o) => (
             <div
               className={`offer-row ${r.winners.some((w) => w.id === o.id) ? 'winner' : ''}`}
               key={o.id}
@@ -1634,7 +1738,7 @@ export default function Atlas({
               </div>
               <div>
                 <span className="mobile-label">Item price</span>
-                {eligible(o) ? money(o.itemPrice) : 'Expired'}
+                {o.displayAllowed && o.validUntil > Date.now() ? money(o.itemPrice) : 'Expired'}
               </div>
               <div>
                 <span className="mobile-label">Delivery</span>
@@ -1657,9 +1761,17 @@ export default function Atlas({
               <div>
                 <span className="stock-label">
                   <i />
-                  {eligible(o) ? 'In stock' : 'Refresh needed'}
+                  {o.validUntil <= Date.now()
+                    ? 'Refresh needed'
+                    : o.stock
+                      ? 'In stock'
+                      : p.attributes.Availability === 'Not confirmed by source'
+                        ? 'Stock unverified'
+                        : 'Out of stock'}
                 </span>
                 <span>{relative(o.observedAt)}</span>
+                <span>{retailers[o.store].deliveryNote}</span>
+                <span>{variantLabel(p.name, { ...p.attributes, Condition: o.condition })}</span>
               </div>
               {!demo && o.purchaseUrl ? (
                 <a
@@ -1686,6 +1798,51 @@ export default function Atlas({
             </div>
           ))}
         </div>
+        {!primaryOffers.length && (
+          <p className="muted">
+            No verified domestic offer is currently available for this exact variant.
+          </p>
+        )}
+        {variantOffers.length > 0 && (
+          <section>
+            <h3>Other variants / conditions</h3>
+            {variantOffers.map((o) => (
+              <p key={o.id}>
+                {o.store} · {o.condition} · {money(o.itemPrice)} · Excluded from best-price ranking{' '}
+                {o.purchaseUrl && (
+                  <a href={o.purchaseUrl} target="_blank" rel="noopener noreferrer">
+                    Check on store
+                  </a>
+                )}
+              </p>
+            ))}
+          </section>
+        )}
+        {(international.length > 0 || p.attributes['Source price']) && (
+          <section>
+            <h3>International / cross-border offers</h3>
+            <p>
+              Listed prices exclude unverified international shipping and import duty. Check India
+              eligibility and the landed total at checkout.
+            </p>
+            {p.attributes['Source price'] && (
+              <p>
+                {p.attributes.Retailer} · {p.attributes['Source price']}{' '}
+                {p.attributes['Source currency']} · {p.attributes['Checked at']}
+              </p>
+            )}
+            {international.map((o) => (
+              <p key={o.id}>
+                {o.store} · {money(o.itemPrice)} INR · {relative(o.observedAt)}{' '}
+                {o.purchaseUrl && (
+                  <a href={o.purchaseUrl} target="_blank" rel="noopener noreferrer">
+                    Check landed cost on store
+                  </a>
+                )}
+              </p>
+            ))}
+          </section>
+        )}
         <p className="fine-print">
           {demo
             ? 'Illustrative prices, not retailer quotes.'
@@ -1695,7 +1852,7 @@ export default function Atlas({
             Report a price or match issue
           </button>
         </p>
-        <WeekLedger observations={history} basis={rule?.basis || 'delivered'} />
+        <WeekLedger observations={comparableHistory} basis={rule?.basis || 'delivered'} />
         <div className="history-panel">
           <div className="section-heading">
             <div>
@@ -2214,7 +2371,7 @@ export default function Atlas({
             'Can I paste a retailer link?',
             demo
               ? 'Direct product links are validated in demo mode. Live resolution runs in the separate live catalog.'
-              : 'Sign in and paste a direct product URL from Amazon.in, Flipkart, Meesho, Croma, Nykaa, iHerb or B&H. Collection errors are shown explicitly. Short links and unsupported hosts are not fetched.',
+              : `Paste a direct product URL from ${STORE_NAMES.join(', ')}. Collection errors are shown explicitly. Short links and unsupported hosts are not fetched.`,
           ],
           [
             'How are purchases and affiliate links handled?',
