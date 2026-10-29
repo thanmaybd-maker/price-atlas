@@ -200,7 +200,6 @@
 }
 @keyframes land-cs {
   from {
-    opacity: 0;
     transform: translateY(-40px) rotate(8deg);
   }
 }
