@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { publicCatalog, publicHistory } from '@/lib/public-data';
 import { z } from 'zod';
 import * as data from '@database/runtime';
 import { account, authClient, isAdmin, safeReturn } from '@/lib/auth';
@@ -55,7 +56,19 @@ async function handler(req: NextRequest) {
     });
   try {
     if (!knownApiPath(path)) return json({ error: 'API endpoint not found.', requestId }, 404);
-    user = await account(token);
+    const publicRead =
+      req.method === 'GET' &&
+      [
+        'health',
+        'catalog',
+        'search',
+        'suggestions',
+        'offers',
+        'products',
+        'discovery',
+        'history',
+      ].includes(path[0]);
+    if (!publicRead) user = await account(token);
     if (req.method !== 'GET') {
       const origin = req.headers.get('origin');
       const expectedOrigin =
@@ -79,6 +92,28 @@ async function handler(req: NextRequest) {
       } else buckets.set(key, { count: 1, until: now + 60000 });
     }
     if (req.method === 'GET') {
+      if (path[0] === 'history') {
+        const raw = req.nextUrl.searchParams.get('ids');
+        const ids = raw
+          ? z
+              .array(
+                z
+                  .string()
+                  .min(1)
+                  .max(100)
+                  .regex(/^[a-zA-Z0-9_-]+$/),
+              )
+              .max(4)
+              .parse(raw.split(','))
+          : [];
+        const days = z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(30)
+          .parse(req.nextUrl.searchParams.get('days') || 30);
+        return json(await publicHistory(ids, days));
+      }
       if (path[0] === 'catalog' && path[1] === 'status' && data.isLive()) {
         const counts = (
           await postgres().query(
@@ -142,10 +177,11 @@ async function handler(req: NextRequest) {
         const query = (req.nextUrl.searchParams.get('q') || '').toLowerCase();
         const category = req.nextUrl.searchParams.get('category');
         const sort = req.nextUrl.searchParams.get('sort');
-        let products = (await data.catalog()).filter(
+        const snapshot = await publicCatalog();
+        let products = snapshot.products.filter(
           (p) => (!category || p.category === category) && matchesQuery(p, query),
         );
-        const all = await data.offers();
+        const all = snapshot.offers;
         if (sort === 'price-asc')
           products.sort(
             (a, b) =>
@@ -170,13 +206,17 @@ async function handler(req: NextRequest) {
       if (path[0] === 'products') {
         const product = await data.findProduct(path[1]);
         if (!product) return json({ error: 'Product not found.', requestId }, 404);
-        return json({
-          product,
-          offers: await data.offers(product.id),
-          history: await data.history(
+        const [offers, history] = await Promise.all([
+          data.offers(product.id),
+          data.history(
             product.id,
             Math.min(365, Math.max(1, Number(req.nextUrl.searchParams.get('days')) || 30)),
           ),
+        ]);
+        return json({
+          product,
+          offers,
+          history,
           mode: data.isLive() ? 'live' : 'demo',
         });
       }
@@ -457,8 +497,15 @@ async function handler(req: NextRequest) {
     }
     if (path[0] === 'rules') {
       if (req.method === 'POST' || req.method === 'PATCH') {
-        const rule = await data.saveRule(user.id, ruleSchema.parse(await req.json()));
-        await data.dispatch();
+        const rule = await data.saveRule(user.id, ruleSchema.parse(await req.json()), true);
+        after(async () => {
+          try {
+            await data.evaluateProduct(rule.productId);
+            await data.dispatch();
+          } catch {
+            console.error('Deferred in-app dispatch failed', { requestId });
+          }
+        });
         return json({ rule }, 201);
       }
       if (req.method === 'DELETE') {

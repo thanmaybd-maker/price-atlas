@@ -32,6 +32,7 @@ export function knownApiPath(parts: string[]) {
       'search',
       'suggestions',
       'offers',
+      'history',
       'export',
       'imports',
       'discovery',

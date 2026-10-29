@@ -7,6 +7,17 @@ import { eligible, money, rank, total, type Offer, type Product, type Rule } fro
 import { retailers } from '../../../packages/domain/retailers';
 import { weeklyHistory } from '../../../packages/domain/weekly-history';
 import { TidesWorld } from './tides-world';
+import { fetchJson } from '../lib/fetch-json';
+import { historyCoverage } from '../../../packages/domain/history-coverage';
+import { ExternalHistory } from './external-history';
+import { reducedMotion } from './three-loader';
+export type PinDraft = {
+  productId: string;
+  target?: number;
+  store?: string;
+  basis?: Basis;
+  id?: string;
+};
 
 type Basis = 'delivered' | 'item';
 type Watch = { id: string; product_id: string; collection: string };
@@ -59,7 +70,8 @@ const CAT: Record<string, string> = {
   other: 'Other',
 };
 const FILLS = ['pink', 'lime', 'ink'];
-const fmt = (paise: number) => new Intl.NumberFormat('en-IN').format(Math.round(paise / 100));
+const fmt = (paise: number) =>
+  new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(paise / 100);
 const storeLabel = (s: string) => (s === 'Amazon' ? 'Amazon.in' : s);
 const tint = (s: string) => 's-' + s.toLowerCase().replace(/[^a-z]/g, '');
 const short = (p: Product) => {
@@ -413,48 +425,114 @@ function TargetsWorld({
   watches,
   rules,
   onPin,
+  initialTarget,
 }: {
   products: Product[];
   offers: Offer[];
   watches: Watch[];
   rules: Rule[];
-  onPin: (p: Product, rupees: number, store: string, basis: Basis) => void;
+  onPin: (
+    p: Product,
+    rupees: number,
+    store: string,
+    basis: Basis,
+    ruleId?: string,
+  ) => Promise<boolean>;
+  initialTarget?: PinDraft;
 }) {
   const pool = useMemo(() => {
     const saved = watches
       .map((w) => products.find((p) => p.id === w.product_id))
       .filter((p): p is Product => Boolean(p));
-    const priced = products.filter(
-      (p) => lowest(offers.filter((o) => o.productId === p.id)) != null,
+    const domestic = products.filter(
+      (p) =>
+        !p.attributes['Source currency'] &&
+        !retailers[p.attributes.Retailer as keyof typeof retailers]?.international,
     );
-    return [...new Set([...saved, ...priced])].slice(0, 3);
+    return [...new Map([...saved, ...domestic].map((p) => [p.id, p])).values()];
   }, [products, offers, watches]);
-  const [dp, setDp] = useState(0);
-  const p = pool[Math.min(dp, pool.length - 1)];
+  const [selectedId, setSelectedId] = useState(initialTarget?.productId || pool[0]?.id || '');
+  const [filter, setFilter] = useState('');
+  const p = pool.find((q) => q.id === selectedId) || pool[0];
   const pOffers = p ? offers.filter((o) => o.productId === p.id) : [];
   const suggested = (q?: Product) => {
     if (!q) return 0;
-    const lo = lowest(offers.filter((o) => o.productId === q.id)) ?? q.basePrice;
-    return Math.max(100, Math.floor((lo * 0.95) / 10000) * 100);
+    const lo = lowest(
+      offers.filter((o) => o.productId === q.id),
+      'item',
+    );
+    return lo === null ? 0 : Math.max(1, Math.floor(lo * 0.95) / 100);
   };
-  const [dt, setDt] = useState<number | null>(null);
+  const [dt, setDt] = useState<string | null>(
+    initialTarget?.target == null ? null : String(initialTarget.target / 100),
+  );
   const [ds, setDs] = useState('all');
-  const [db, setDb] = useState<Basis>('delivered');
-  const draft = dt ?? suggested(p);
-  const stores = ['all', ...new Set(pOffers.map((o) => o.store))].slice(0, 5);
+  const [db, setDb] = useState<Basis>('item');
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const amount = dt ?? String(suggested(p) || '');
+  const stores = [
+    'all',
+    ...new Set(pOffers.filter((o) => !retailers[o.store].international).map((o) => o.store)),
+  ];
+  useEffect(() => {
+    if (initialTarget) {
+      setSelectedId(initialTarget.productId);
+      setDt(initialTarget.target == null ? null : String(initialTarget.target / 100));
+      setDs(initialTarget.store || 'all');
+      setDb(initialTarget.basis || 'item');
+      setFeedback('');
+      document
+        .getElementById('targets')
+        ?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    }
+  }, [
+    initialTarget?.productId,
+    initialTarget?.target,
+    initialTarget?.id,
+    initialTarget?.store,
+    initialTarget?.basis,
+  ]);
   return (
     <section className="pu" id="targets">
       <div className="wrap">
         <div className="pu-head rv">
           <h2>Pin a target</h2>
-          <p>Name your price, pick the stores, and Price Atlas checks it every hour.</p>
+          <p>
+            Choose any saved product, pin your price, and follow fresh matching checks. Collection
+            depends on source availability.
+          </p>
         </div>
         <div className="pu-grid">
           <form
             className="form"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (p && draft > 0) onPin(p, draft, ds, db);
+              if (!p || saving) return;
+              setSaving(true);
+              setFeedback('Pinning your target…');
+              try {
+                const saved = await onPin(
+                  p,
+                  Number(amount),
+                  ds,
+                  db,
+                  initialTarget?.productId === p.id ? initialTarget.id : undefined,
+                );
+                setFeedback(
+                  saved
+                    ? 'Target pinned. Your saved note is on the board.'
+                    : 'Your draft is ready. Sign in to finish pinning it.',
+                );
+              } catch (error) {
+                setFeedback(
+                  error instanceof Error
+                    ? error.message
+                    : 'Could not pin this target. Please retry.',
+                );
+              } finally {
+                setSaving(false);
+              }
             }}
           >
             <label htmlFor="pu-tgt">Alert me at or below</label>
@@ -462,33 +540,48 @@ function TargetsWorld({
               <span>₹</span>
               <input
                 id="pu-tgt"
-                inputMode="numeric"
-                value={draft ? new Intl.NumberFormat('en-IN').format(draft) : ''}
-                onChange={(e) => {
-                  const n = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
-                  setDt(isNaN(n) ? 0 : n);
-                }}
+                type="number"
+                inputMode="decimal"
+                min="1"
+                max="100000000"
+                step="0.01"
+                required
+                value={amount}
+                onChange={(e) => setDt(e.target.value)}
               />
             </div>
-            <span className="lbl">Product</span>
-            <div className="seg" role="group" aria-label="Product">
-              {pool.map((q, i) => (
-                <button
-                  key={q.id}
-                  type="button"
-                  className={q === p ? 'on' : ''}
-                  aria-pressed={q === p}
-                  onClick={() => {
-                    setDp(i);
-                    setDt(null);
-                    setDs('all');
-                  }}
-                >
-                  {short(q)}
-                </button>
-              ))}
-              {!pool.length && <span className="note">Search a product first.</span>}
-            </div>
+            <label htmlFor="pin-product-search">Find a product</label>
+            <input
+              id="pin-product-search"
+              type="search"
+              value={filter}
+              placeholder="Model, brand or product name"
+              onChange={(event) => setFilter(event.target.value)}
+            />
+            <label htmlFor="pin-product">Product</label>
+            <select
+              id="pin-product"
+              value={p?.id || ''}
+              onChange={(event) => {
+                setSelectedId(event.target.value);
+                setDt(null);
+                setDs('all');
+                setFeedback('');
+              }}
+            >
+              {pool
+                .filter(
+                  (q) =>
+                    q.id === p?.id ||
+                    `${q.name} ${q.brand}`.toLowerCase().includes(filter.toLowerCase()),
+                )
+                .map((q) => (
+                  <option key={q.id} value={q.id}>
+                    {q.name}
+                  </option>
+                ))}
+            </select>
+            {!pool.length && <p className="note">Search a domestic product first.</p>}
             <span className="lbl">Stores</span>
             <div className="seg" role="group" aria-label="Stores">
               {stores.map((s) => (
@@ -523,8 +616,15 @@ function TargetsWorld({
               ))}
             </div>
             <p className="note">Use item price when a store does not state delivery.</p>
-            <button className="pin" type="submit" disabled={!p}>
-              Pin it
+            <p role="status" aria-live="polite" className="note">
+              {feedback}
+            </p>
+            <button className="pin" type="submit" disabled={!p || saving}>
+              {saving
+                ? 'Pinning…'
+                : initialTarget?.id && initialTarget.productId === p?.id
+                  ? 'Update pinned target'
+                  : 'Pin it'}
             </button>
           </form>
           <div className="sheets">
@@ -588,10 +688,18 @@ function TargetsWorld({
 // ---------------------------------------------------------------------------
 // This week, day by day (dose tray + receipt), budget strip and catalog progress
 // ---------------------------------------------------------------------------
-function WeekWorld({ product, obs }: { product: Product | null; obs: Offer[] }) {
+function WeekWorld({
+  product,
+  obs,
+  basis,
+}: {
+  product: Product | null;
+  obs: Offer[];
+  basis: Basis;
+}) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const week = useMemo(() => (mounted ? weeklyHistory(obs, 'delivered') : []), [obs, mounted]);
+  const week = useMemo(() => (mounted ? weeklyHistory(obs, basis) : []), [obs, mounted, basis]);
   const last = week
     .map((d, i) => (d.low ? i : -1))
     .filter((i) => i >= 0)
@@ -716,7 +824,9 @@ function WeekWorld({ product, obs }: { product: Product | null; obs: Offer[] }) 
               )}
               <div className="stub">
                 <span>observed prices only</span>
-                <span className="ring">delivered</span>
+                <span className="ring">
+                  {basis === 'item' ? 'item price · delivery extra' : 'delivered'}
+                </span>
               </div>
             </div>
           </div>
@@ -841,6 +951,7 @@ export function HomeWorlds({
   emailAvailable,
   onSave,
   onPin,
+  initialTarget,
 }: {
   products: Product[];
   offers: Offer[];
@@ -849,34 +960,54 @@ export function HomeWorlds({
   notifications: Note[];
   emailAvailable: boolean;
   onSave: (p: Product) => void;
-  onPin: (p: Product, rupees: number, store: string, basis: Basis) => void;
+  onPin: (
+    p: Product,
+    rupees: number,
+    store: string,
+    basis: Basis,
+    ruleId?: string,
+  ) => Promise<boolean>;
+  initialTarget?: PinDraft;
 }) {
-  // history for up to four products: saved ones first, then ones with live offers
-  const tideProducts = useMemo(() => {
-    const saved = watches
-      .map((w) => products.find((p) => p.id === w.product_id))
-      .filter((p): p is Product => Boolean(p));
-    const priced = products.filter((p) => offers.some((o) => o.productId === p.id));
-    return [...new Set([...saved, ...priced])].slice(0, 4);
-  }, [products, offers, watches]);
+  const [tideProducts, setTideProducts] = useState<Product[]>([]);
   const [history, setHistory] = useState<Record<string, Offer[]>>({});
+  const [historyBasis, setHistoryBasis] = useState<Basis>('item');
+  const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [historyError, setHistoryError] = useState('');
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [weekId, setWeekId] = useState('');
   const box = useRef<HTMLDivElement>(null);
-  const ids = tideProducts.map((p) => p.id).join(',');
+  const ids = watches
+    .slice(0, 4)
+    .map((watch) => watch.product_id)
+    .join(',');
   useEffect(() => {
     const el = box.current;
-    if (!el || !ids) return;
+    if (!el) return;
     let alive = true;
-    const load = () =>
-      Promise.all(
-        ids.split(',').map((id) =>
-          fetch(`/api/v1/products/${encodeURIComponent(id)}?days=30`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((j) => [id, (j?.history || []) as Offer[]] as const)
-            .catch(() => [id, [] as Offer[]] as const),
-        ),
-      ).then((rows) => {
-        if (alive) setHistory(Object.fromEntries(rows));
-      });
+    const controller = new AbortController();
+    const load = async () => {
+      setHistoryState('loading');
+      setHistoryError('');
+      try {
+        const result = await fetchJson<{ products: Product[]; history: Record<string, Offer[]> }>(
+          `/api/v1/history?days=30${ids ? `&ids=${encodeURIComponent(ids)}` : ''}`,
+          { signal: controller.signal },
+        );
+        if (alive) {
+          setTideProducts(result.products);
+          setHistory(result.history);
+          setHistoryState('ready');
+        }
+      } catch (error) {
+        if (alive) {
+          setHistoryState('error');
+          setHistoryError(
+            error instanceof Error ? error.message : 'Could not load recorded history.',
+          );
+        }
+      }
+    };
     const io = new IntersectionObserver(
       (es) => {
         if (es.some((e) => e.isIntersecting)) {
@@ -889,15 +1020,17 @@ export function HomeWorlds({
     io.observe(el);
     return () => {
       alive = false;
+      controller.abort();
       io.disconnect();
     };
-  }, [ids]);
+  }, [ids, historyVersion]);
   const ridges = tideProducts.map((p) => ({
     key: p.id,
-    name: short(p),
+    name: p.name,
     obs: history[p.id] || [],
   }));
-  const weekProduct = tideProducts[0] || null;
+  const weekProduct =
+    tideProducts.find((product) => product.id === weekId) || tideProducts[0] || null;
   return (
     <div className="hs" ref={box}>
       <OffersWorld products={products} offers={offers} />
@@ -914,9 +1047,66 @@ export function HomeWorlds({
         watches={watches}
         rules={rules}
         onPin={onPin}
+        initialTarget={initialTarget}
       />
-      <TidesWorld ridges={ridges} />
-      <WeekWorld product={weekProduct} obs={weekProduct ? history[weekProduct.id] || [] : []} />
+      <div className="history-tools">
+        <label>
+          Weekly product{' '}
+          <select
+            aria-label="Weekly product"
+            value={weekProduct?.id || ''}
+            onChange={(event) => setWeekId(event.target.value)}
+          >
+            {tideProducts.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          History price basis{' '}
+          <select
+            aria-label="Home history price basis"
+            value={historyBasis}
+            onChange={(event) => setHistoryBasis(event.target.value as Basis)}
+          >
+            <option value="item">Item price · shipping excluded</option>
+            <option value="delivered">Delivered total · known shipping only</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          className="outline-button"
+          disabled={historyState === 'loading'}
+          onClick={() => setHistoryVersion((version) => version + 1)}
+        >
+          Refresh recorded history
+        </button>
+        <p data-testid="history-coverage" role="status">
+          {historyState === 'loading'
+            ? 'Loading recorded checks…'
+            : historyState === 'error'
+              ? `${historyError} Retry with Refresh recorded history.`
+              : (() => {
+                  const coverage = historyCoverage(Object.values(history).flat(), historyBasis);
+                  return `${coverage.recordedDays} of 30 days have recorded ${historyBasis} prices across these products. ${coverage.first ? `Available from ${coverage.first} to ${coverage.last}.` : 'Tracking has not produced eligible checks for this basis yet.'} Blank days have no recorded checks; they are never filled with invented prices.`;
+                })()}
+        </p>
+      </div>
+      <TidesWorld ridges={ridges} basis={historyBasis} />
+      <ExternalHistory
+        sourceUrl={
+          weekProduct?.attributes['Product URL'] ||
+          offers.find((offer) => offer.productId === weekProduct?.id && offer.purchaseUrl)
+            ?.purchaseUrl
+        }
+      />
+      <WeekWorld
+        product={weekProduct}
+        obs={weekProduct ? history[weekProduct.id] || [] : []}
+        basis={historyBasis}
+      />
       <AlertsWorld
         products={products}
         offers={offers}

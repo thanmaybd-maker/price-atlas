@@ -1,5 +1,11 @@
 # Current status
 
+## 29 October theme, paper targets and recorded-history repair
+
+The [usability repair](./USABILITY-REPAIR.md) replaces the legacy target dialog with the shared sticky-note composer, preserves decimal rupees and explicit sign-in-return drafts, and confirms saves without a blocking session refresh. Light and Dark now cover the Home/Categories paper surfaces, account pages, product offers, forms and ring canvas. Public catalog reads coalesce without caching accounts; one bounded history batch replaces four product reads, with actual coverage, item/delivered selection, a daily table and visible retry states. Current product offers are read independently of the catalog cache.
+
+Final local verification: 167 unit/integration tests, type checking, production build, all 12 release/usability browser scenarios and the real four-product history API smoke pass. Private browser actions use isolated fixtures; they do not prove real Google consent or recipient delivery. Publication/hosted checks are recorded separately. Retained observations remain sparse on October 6, 28 and 29; no missing days are filled. [Free-source research](./HISTORY-SOURCES.md) explains the independent tracker references and why their charts were not copied into our database.
+
 ## 29 October functionality and evaluator review
 
 Follow-up after Claude's Home/Categories expansion: the tide chart now applies domestic INR, new-condition, accepted, in-stock, history-permitted and non-future observation guards before calculating daily lows. Alert previews say “recorded”, do not imply confirmed message delivery, and disclose that shipping depends on the saved target's basis. Cross-border category copy preserves the source currency rather than promising USD. The expanded suite passes 162 unit/integration tests. The deployed Home/Categories release passed all five release browser scenarios and ten live API checks before this follow-up.
