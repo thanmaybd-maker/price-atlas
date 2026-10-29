@@ -19,7 +19,7 @@ export function archiveEvidence(offer: Offer) {
       archive.port ||
       archive.username ||
       archive.password ||
-      !archive.pathname.startsWith(`/web/${e.captureTimestamp}/https://`) ||
+      !new RegExp(`^/web/${e.captureTimestamp}/https?://`).test(archive.pathname) ||
       original.protocol !== 'https:' ||
       original.username ||
       original.password

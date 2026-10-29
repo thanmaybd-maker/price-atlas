@@ -651,6 +651,15 @@ describe('archive integration safeguards', () => {
     expect(
       archiveEvidence({
         ...o.offer,
+        evidence: {
+          ...o.offer.evidence,
+          archiveUrl: o.offer.evidence.archiveUrl.replace('/https://', '/http://'),
+        },
+      }),
+    ).not.toBeNull();
+    expect(
+      archiveEvidence({
+        ...o.offer,
         evidence: { ...o.offer.evidence, archiveUrl: 'javascript:alert(1)' },
       }),
     ).toBeNull();

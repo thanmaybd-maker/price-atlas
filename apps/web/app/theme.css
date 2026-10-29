@@ -85,6 +85,9 @@
 }
 .tide-data {
   padding: 18px;
+}
+.history-table-scroll {
+  max-width: 100%;
   overflow-x: auto;
 }
 .tide-data table {
@@ -96,9 +99,26 @@
 .tide-data th {
   padding: 10px;
   border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.tide-data td:first-child,
+.tide-data th:first-child {
+  min-width: 14rem;
 }
 .tide-data summary {
   cursor: pointer;
+}
+.tide-data td:last-child,
+.tide-data th:last-child {
+  min-width: 18rem;
+}
+.history-citation {
+  display: block;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.history-citation time {
+  display: block;
 }
 .external-history {
   padding: 20px;

@@ -215,47 +215,55 @@ export function TidesWorld({
               {basis === 'item'
                 ? 'Item prices; shipping is excluded.'
                 : 'Only totals with known shipping.'}{' '}
-              Missing days have no recorded check.
+              Missing days have no recorded check. On small screens, scroll the table sideways to
+              read source evidence.
             </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Product / store</th>
-                  <th>India date</th>
-                  <th>Lowest recorded price</th>
-                  <th>Evidence for this price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {geom.flatMap((g) =>
-                  g.s.flatMap((value, index) =>
-                    value === null ? (
-                      []
-                    ) : (
-                      <tr key={`${g.r.key}:${index}`}>
-                        <td>{g.r.name}</td>
-                        <td>
-                          {new Intl.DateTimeFormat('en-CA', {
-                            timeZone: 'Asia/Kolkata',
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                          }).format(Date.now() - (N - 1 - index) * 86400000)}
-                        </td>
-                        <td>₹{fmt(value)}</td>
-                        <td>
-                          {g.recorded[index].observations.map((o) => (
-                            <div key={o.id}>
-                              <HistoryCitation offer={o} />
-                            </div>
-                          ))}
-                        </td>
-                      </tr>
+            <div
+              className="history-table-scroll"
+              role="region"
+              aria-label="Daily price evidence table"
+              tabIndex={0}
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th>Product / store</th>
+                    <th>India date</th>
+                    <th>Lowest recorded price</th>
+                    <th>Evidence for this price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {geom.flatMap((g) =>
+                    g.s.flatMap((value, index) =>
+                      value === null ? (
+                        []
+                      ) : (
+                        <tr key={`${g.r.key}:${index}`}>
+                          <td>{g.r.name}</td>
+                          <td>
+                            {new Intl.DateTimeFormat('en-CA', {
+                              timeZone: 'Asia/Kolkata',
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                            }).format(Date.now() - (N - 1 - index) * 86400000)}
+                          </td>
+                          <td>₹{fmt(value)}</td>
+                          <td>
+                            {g.recorded[index].observations.map((o) => (
+                              <div key={o.id}>
+                                <HistoryCitation offer={o} />
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      ),
                     ),
-                  ),
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </details>
         </div>
       </div>

@@ -68,6 +68,16 @@ test('archived history exposes capture proof in both the 30-day table and seven-
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
+    if (width === 390) {
+      const scroll = page.getByRole('region', { name: 'Daily price evidence table' });
+      await scroll.scrollIntoViewIfNeeded();
+      await scroll.evaluate((node) => {
+        node.scrollLeft = node.scrollWidth;
+      });
+      await expect(
+        table.getByRole('link', { name: 'Internet Archive capture', exact: true }),
+      ).toBeInViewport();
+    }
     await page.locator('.al-sheet').screenshot({ path: `data/archive-evidence-${width}.png` });
   }
 });

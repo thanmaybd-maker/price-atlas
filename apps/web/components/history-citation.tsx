@@ -5,7 +5,7 @@ export function HistoryCitation({ offer }: { offer: Offer }) {
   const e = archiveEvidence(offer);
   const time = new Date(offer.observedAt).toISOString();
   return (
-    <span>
+    <span className="history-citation">
       {e ? (
         <>
           <a href={e.archiveUrl} target="_blank" rel="noopener noreferrer">
