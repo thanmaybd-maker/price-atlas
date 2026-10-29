@@ -182,6 +182,7 @@ export default function Atlas({
   const [offers, setOffers] = useState(initialOffers);
   const [session, setSession] = useState<Session>(empty);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [themeReady, setThemeReady] = useState(false);
   const [pinDraft, setPinDraft] = useState<PinDraft>();
   const [query, setQuery] = useState(params.get('q') || '');
   const [toast, setToast] = useState('');
@@ -346,6 +347,7 @@ export default function Atlas({
           setCompare(selected.filter((id) => initialProducts.some((p) => p.id === id)).slice(0, 4));
       } catch {}
     changeTheme(localState.getItem('atlas-theme') === 'dark' ? 'dark' : 'light');
+    setThemeReady(true);
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -735,6 +737,7 @@ export default function Atlas({
             <button
               className="icon-button appearance-toggle"
               aria-label={theme === 'dark' ? 'Use Light theme' : 'Use Dark theme'}
+              disabled={!themeReady}
               onClick={() => changeTheme(theme === 'dark' ? 'light' : 'dark')}
             >
               {theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
@@ -2167,6 +2170,7 @@ export default function Atlas({
             </div>
             <select
               aria-label="Color theme"
+              disabled={!themeReady}
               value={theme}
               onChange={(event) => changeTheme(event.target.value as 'light' | 'dark')}
             >
