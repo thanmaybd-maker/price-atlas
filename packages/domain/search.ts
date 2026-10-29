@@ -1,4 +1,6 @@
 import type { Product } from './index';
+export const bundleMismatch = (title: string, query: string) =>
+  /\b(?:bundle|combo|kit)\b/i.test(title) && !/\b(?:bundle|combo|kit|set|pack)\b/i.test(query);
 export const normalizeQuery = (value: string) =>
   value
     .normalize('NFKC')
@@ -27,6 +29,7 @@ export function matchesQuery(
   product: Pick<Product, 'name' | 'brand' | 'subtitle'> & Partial<Pick<Product, 'attributes'>>,
   query: string,
 ) {
+  if (bundleMismatch(product.name, query)) return false;
   const details = Object.entries(product.attributes || {})
     .filter(([key]) =>
       [
