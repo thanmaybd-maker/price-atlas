@@ -7,8 +7,8 @@ type Step = { title: string; detail: string; tone: Tone };
 const MAX_WAIT_PETALS = 7;
 
 // ---------------------------------------------------------------------------
-// Organic 11-petal lotus. One petal per real lookup step, in this order:
-// read search, recent searches, up to 7 store-page waits, verification, ranking.
+// Organic 11-petal lotus. Petals illustrate lookup progress, not individual
+// verified network requests: local input, cache/discovery waits, then results.
 // Interleaved across inner (3), middle (4) and outer (4) whorls so any partial
 // count still reads as a balanced bloom.
 // ---------------------------------------------------------------------------
@@ -689,8 +689,8 @@ export function SearchFlower({
         if (cacheShown.current) return;
         cacheShown.current = true;
         push({
-          title: 'Checked recent searches',
-          detail: 'results are kept for 6 hours',
+          title: 'Looking for recorded matches',
+          detail: 'cached checks may be reused',
           tone: 'seen',
         });
       }, 600),
@@ -699,8 +699,8 @@ export function SearchFlower({
       if (waited.current >= MAX_WAIT_PETALS || finished.current) return;
       waited.current++;
       push({
-        title: 'Reading store pages',
-        detail: 'search pages nominate, product pages decide',
+        title: 'Still checking retailer pages',
+        detail: 'waiting for the search service; petals are not a store count',
         tone: 'seen',
       });
     }, 1700);
@@ -772,8 +772,8 @@ export function SearchFlower({
           </div>
         )}
       </div>
-      <button className="v2-fl-skip" onClick={() => doneRef.current()} disabled={busy}>
-        {busy ? 'Checking…' : 'Show results'}
+      <button className="v2-fl-skip" onClick={() => doneRef.current()}>
+        {busy ? 'Show recorded results' : 'Show results'}
       </button>
       <div className={flash ? 'v2-flash on' : 'v2-flash'} aria-hidden="true" />
     </section>

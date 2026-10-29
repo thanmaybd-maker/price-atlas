@@ -55,7 +55,7 @@ import { LiveLogin } from './live-login';
 import { Operations } from './operations';
 import { Mfa } from './mfa';
 import { TelegramSettings } from './telegram-settings';
-import { SeaHero } from './sea-hero';
+import { RingHero } from './ring-hero';
 import { SearchFlower } from './search-flower';
 import { WeekLedger } from './week-ledger';
 import { RecentHistory } from './recent-history';
@@ -63,6 +63,9 @@ import { matchesQuery } from '../../../packages/domain/search';
 import { retailers } from '../../../packages/domain/retailers';
 import { variantLabel } from '../../../packages/domain/variant-guard';
 import type { SearchCandidate } from '../../../packages/providers/search';
+import { historyEvidence } from '../../../packages/domain/evidence';
+import { localState, sessionState } from '../lib/browser-storage';
+import { visiblePoll } from '../lib/visible-poll';
 type User = {
   id: string;
   name: string;
@@ -182,7 +185,12 @@ export default function Atlas({
   }>({ query: '', busy: false, ids: [], message: '', candidates: [] });
   const [compare, setCompare] = useState<string[]>([]);
   const [history, setHistory] = useState(initialHistory);
-  const [range, setRange] = useState(30);
+  const [range, setRange] = useState(
+    [7, 30, 90].includes(Number(params.get('days'))) ? Number(params.get('days')) : 30,
+  );
+  const [historyBasis, setHistoryBasis] = useState<'item' | 'delivered'>(
+    params.get('basis') === 'delivered' ? 'delivered' : 'item',
+  );
   const [adminError, setAdminError] = useState('');
   const [admin, setAdmin] = useState<Admin | null>(null);
   const [menu, setMenu] = useState(false);
@@ -229,8 +237,14 @@ export default function Atlas({
           },
         );
         result = await status.json();
+        if (!status.ok)
+          throw new Error(result.error || 'Unable to read lookup status. Please retry.');
       }
       if (!active) return;
+      if (result.state === 'pending' || result.state === 'missing')
+        throw new Error(
+          'The retailer check is taking longer than expected. Recorded results remain available; retry shortly for its final status.',
+        );
       const found = (result.products || []) as Product[];
       const incoming = (result.offers || []) as Offer[];
       setProducts((prior) => [...found, ...prior.filter((p) => !found.some((f) => f.id === p.id))]);
@@ -274,9 +288,9 @@ export default function Atlas({
     const result = await api('session');
     setSession(result);
     if (result.user && !demo) {
-      const raw = sessionStorage.getItem('atlas-pending-intent');
+      const raw = sessionState.getItem('atlas-pending-intent');
       if (raw) {
-        sessionStorage.removeItem('atlas-pending-intent');
+        sessionState.removeItem('atlas-pending-intent');
         try {
           const intent = JSON.parse(raw);
           if (intent.type === 'target') {
@@ -300,14 +314,14 @@ export default function Atlas({
   }
   useEffect(() => {
     void refresh().catch(() => setToast('Unable to load your session. Check your connection.'));
-    const stored = localStorage.getItem(compareStorageKey);
+    const stored = localState.getItem(compareStorageKey);
     if (stored)
       try {
         const selected = JSON.parse(stored);
         if (Array.isArray(selected))
           setCompare(selected.filter((id) => initialProducts.some((p) => p.id === id)).slice(0, 4));
       } catch {}
-    document.documentElement.dataset.theme = localStorage.getItem('atlas-theme') || 'light';
+    document.documentElement.dataset.theme = localState.getItem('atlas-theme') || 'light';
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -317,6 +331,8 @@ export default function Atlas({
   useEffect(() => {
     setQuery(params.get('q') || '');
     setHistory(initialHistory);
+    setRange([7, 30, 90].includes(Number(params.get('days'))) ? Number(params.get('days')) : 30);
+    setHistoryBasis(params.get('basis') === 'delivered' ? 'delivered' : 'item');
     setProducts(initialProducts);
     setOffers(initialOffers);
     setMenu(false);
@@ -331,18 +347,27 @@ export default function Atlas({
         });
   }, [page]);
   useEffect(() => {
-    const timer = setInterval(() => {
-      void api('search')
-        .then((r) => setOffers(r.offers))
-        .catch(() => {});
-      void refresh().catch(() => {});
-      if (current)
-        void api(`products/${current.id}?days=90`)
-          .then((r) => setHistory(r.history))
-          .catch(() => {});
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [current?.id]);
+    let active = true;
+    const stop = visiblePoll(async () => {
+      const result = await api(current ? `products/${current.id}?days=90` : 'offers');
+      if (!active) return;
+      if (current) {
+        setHistory(result.history);
+        setOffers((prior) => [
+          ...result.offers,
+          ...prior.filter((o) => o.productId !== current.id),
+        ]);
+      } else setOffers(result.offers);
+      if (session.user) {
+        const next = await api('session');
+        if (active) setSession(next);
+      }
+    });
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [current?.id, session.user?.id]);
   useEffect(() => {
     if (!(auth || targetProduct || reportProduct)) return;
     const previous = document.activeElement as HTMLElement;
@@ -408,7 +433,7 @@ export default function Atlas({
   }
   function save(p: Product) {
     if (!demo && !session.user)
-      sessionStorage.setItem(
+      sessionState.setItem(
         'atlas-pending-intent',
         JSON.stringify({ type: 'watch', productId: p.id }),
       );
@@ -446,7 +471,7 @@ export default function Atlas({
       return;
     }
     setCompare(next);
-    localStorage.setItem(compareStorageKey, JSON.stringify(next));
+    localState.setItem(compareStorageKey, JSON.stringify(next));
   }
   function navigateFilter(key: string, value: string) {
     const p = new URLSearchParams(params.toString());
@@ -464,7 +489,7 @@ export default function Atlas({
     }
     if (/^https?:\/\//i.test(query)) {
       if (!demo && !session.user) {
-        sessionStorage.setItem(
+        sessionState.setItem(
           'atlas-pending-intent',
           JSON.stringify({ type: 'import', url: query }),
         );
@@ -694,7 +719,7 @@ export default function Atlas({
                 </p>
               </div>
               <div className="v2-art">
-                <SeaHero />
+                <RingHero />
               </div>
             </section>
             <section className="v2-cats page-width" aria-labelledby="v2-cats-title">
@@ -1415,7 +1440,7 @@ export default function Atlas({
                     e.preventDefault();
                     if (!session.user) {
                       if (!demo)
-                        sessionStorage.setItem(
+                        sessionState.setItem(
                           'atlas-pending-intent',
                           JSON.stringify({
                             type: 'target',
@@ -1568,7 +1593,7 @@ export default function Atlas({
     );
     const historyPrices = visibleHistory
       .filter((o) => o.historyAllowed && o.stock)
-      .map((o) => total(o, rule?.basis || 'delivered'))
+      .map((o) => total(o, historyBasis))
       .filter((value): value is number => value !== null);
     return (
       <section className="page-width detail-page">
@@ -1885,7 +1910,7 @@ export default function Atlas({
             Report a price or match issue
           </button>
         </p>
-        <WeekLedger observations={comparableHistory} basis={rule?.basis || 'delivered'} />
+        <WeekLedger observations={comparableHistory} basis={historyBasis} />
         <div className="history-panel">
           <div className="section-heading">
             <div>
@@ -1904,6 +1929,51 @@ export default function Atlas({
               ))}
             </div>
           </div>
+          <div className="detail-actions">
+            <label>
+              History price basis{' '}
+              <select
+                aria-label="History price basis"
+                value={historyBasis}
+                onChange={(event) => setHistoryBasis(event.target.value as 'item' | 'delivered')}
+              >
+                <option value="item">Item price · shipping excluded</option>
+                <option value="delivered">Delivered total · known shipping only</option>
+              </select>
+            </label>
+            <button
+              className="outline-button"
+              disabled={!visibleHistory.some((o) => o.historyAllowed)}
+              onClick={() => {
+                const url = URL.createObjectURL(
+                  new Blob([historyEvidence(p, visibleHistory, historyBasis)], {
+                    type: 'text/csv;charset=utf-8',
+                  }),
+                );
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `price-atlas-${p.id}-${range}d-${historyBasis}.csv`;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              }}
+            >
+              Export history CSV
+            </button>
+            <button
+              className="outline-button"
+              onClick={() =>
+                void perform(async () => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('basis', historyBasis);
+                  url.searchParams.set('days', String(range));
+                  await navigator.clipboard.writeText(url.toString());
+                  notify('History view link copied.');
+                })
+              }
+            >
+              Copy history view link
+            </button>
+          </div>
           <div className="history-summary">
             <div>
               <span className="tiny-label">Lowest in shown checks</span>
@@ -1912,7 +1982,7 @@ export default function Atlas({
               </strong>
             </div>
             <div>
-              <span className="tiny-label">Your target</span>
+              <span className="tiny-label">Your target {rule ? `· ${rule.basis} price` : ''}</span>
               <strong>{rule ? money(rule.target) : 'Make it yours'}</strong>
             </div>
             <div className="history-note">
@@ -1928,8 +1998,8 @@ export default function Atlas({
           <PriceChart
             demo={demo}
             observations={visibleHistory}
-            target={rule?.target}
-            basis={rule?.basis || 'delivered'}
+            target={rule?.basis === historyBasis ? rule.target : undefined}
+            basis={historyBasis}
           />
         </div>
         <div className="spec-section">
@@ -1978,7 +2048,7 @@ export default function Atlas({
                         onClick={() => {
                           const next = selected.filter((x) => x.id !== p.id).map((x) => x.id);
                           setCompare(next);
-                          localStorage.setItem(compareStorageKey, JSON.stringify(next));
+                          localState.setItem(compareStorageKey, JSON.stringify(next));
                           router.replace(`/compare?items=${next.join(',')}`);
                         }}
                       >
@@ -2126,7 +2196,7 @@ export default function Atlas({
                   }
                   onChange={(e) => {
                     document.documentElement.dataset.theme = e.target.value;
-                    localStorage.setItem('atlas-theme', e.target.value);
+                    localState.setItem('atlas-theme', e.target.value);
                   }}
                 >
                   <option value="light">Light</option>
