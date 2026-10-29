@@ -30,6 +30,8 @@ Users connect their own Telegram chat in Settings, open the private short-lived 
 
 ## Recovery and diagnostics
 
+- `pnpm backup:restore-drill` creates an encrypted, repeatable-read application snapshot and restores it into isolated PGlite, checking every table's row count and content digest. The report states its scope: managed Supabase Auth, provider secrets, external storage and hosted-server recovery are excluded. Keep the separate key file apart from copied backups. It does not start a worker or replay restored outboxes. See the [review follow-up](./REVIEW-FOLLOWUP.md) for the real drill result.
+- `pnpm check:firecrawl` checks configured credentials and quota without printing secrets or scraping products. Keys and fallbacks stay in private environment settings; no new account or automatic purchase is needed. The shared app ceilings still take precedence over provider balances.
 - Use the MFA-protected Operations view for collection runs, quarantine, paused providers and failed job/delivery review. Honor source retry windows.
 - For stale offers, check worker ticks, budgets, source blocks and schedules. Do not extend timestamps or import listing-page prices.
 - For save failures, inspect the session, origin and response. Blocked browser storage loses local preferences, not server account data.

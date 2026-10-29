@@ -1,5 +1,13 @@
 # Current status
 
+## 29 October source evidence, discovery review and Firecrawl
+
+The [review follow-up](./REVIEW-FOLLOWUP.md) implements explicit retailer outcomes, absolute offer evidence and extraction provenance, separate catalog/import counters, one-offer wording, stronger model/accessory discovery filtering and a bounded product picker loaded on interaction. Home metadata is smaller while detail routes retain full specifications. A same-catalog measurement compared 797,899 bytes on the earlier production Home page with 682,628 bytes on the candidate build; this is a specific HTML-size measurement, not a general latency guarantee. Valid ISBN-13 identities normalize across ISBN/GTIN fields while binding and edition remain decisive.
+
+Firecrawl raw-HTML extraction passed a real one-credit-reservation Sony lookup at ₹19,989. All four configured credentials authenticated in the no-scrape balance check. Failover keeps a successful key preferred, uses cooldowns for provider failures, and never resets the shared request/credit ceilings. Fixture tests verify exhausted-key failover, provider separation, persistent fingerprint state and a denied shared allowance. Local validation passes 186 unit/integration tests, type checking and 16 release/review browser scenarios. CI and hosted verification follow publication.
+
+The application logical restore drill verified 28 tables and 2,953 rows against encrypted backup contents in isolated PGlite, with no production writes or notification replay. Managed Supabase Auth, external storage and hosted-server recovery remain outside that drill. Human Google/Telegram acceptance is still pending. Claude's separate Wayback work has a [scoped handoff](./CLAUDE-WAYBACK-HANDOFF.md); unreviewed archive scripts and chart changes are excluded from this release.
+
 ## 29 October theme, paper targets and recorded-history repair
 
 Hosted verification of the first repair passed the history smoke and ten live API checks. Its browser suite exposed a first-load theme race: a select could accept input before hydration attached its handler. Theme controls now remain disabled until ready, covered by a thirteenth browser scenario that deliberately holds JavaScript requests. The full hosted suite is rerun after this follow-up.

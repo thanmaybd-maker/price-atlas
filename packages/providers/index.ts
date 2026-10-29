@@ -47,6 +47,8 @@ export const offerSchema = z
     seller: z.string(),
     context: z.string().min(1),
     purchaseUrl: z.string().url().optional(),
+    extractionMethod: z.string().optional(),
+    parserVersion: z.string().optional(),
   })
   .refine((o) => o.discount <= o.itemPrice, { message: 'Discount cannot exceed the item price.' })
   .refine((o) => o.validUntil > o.observedAt, {

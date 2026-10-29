@@ -104,6 +104,8 @@ export class RetailerScraperAdapter implements SourceAdapter {
             seller: p.seller,
             context: 'Retailer default location; your pincode not checked',
             purchaseUrl: p.url,
+            extractionMethod: p.attributes['Fetch method'],
+            parserVersion: p.parserVersion,
           },
           this.policy,
         ),
