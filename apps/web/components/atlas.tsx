@@ -510,7 +510,7 @@ export default function Atlas({
     return (
       <article key={p.id} className="product-card" style={{ animationDelay: `${index * 45}ms` }}>
         <div className="card-art">
-          <Link href={`/p/${p.slug}`} tabIndex={-1} aria-hidden="true">
+          <Link prefetch={false} href={`/p/${p.slug}`} tabIndex={-1} aria-hidden="true">
             <ProductArt product={p} />
           </Link>
           <span className="card-category">{categories.find((c) => c.id === p.category)?.name}</span>
@@ -524,7 +524,7 @@ export default function Atlas({
         </div>
         <div className="card-body">
           <p className="eyebrow brand">{p.brand}</p>
-          <Link className="product-name" href={`/p/${p.slug}`}>
+          <Link prefetch={false} className="product-name" href={`/p/${p.slug}`}>
             {p.name}
           </Link>
           <p className="variant">{p.subtitle}</p>
@@ -578,13 +578,13 @@ export default function Atlas({
         {demo
           ? 'You’re exploring the demo. All prices and products are synthetic fixtures.'
           : 'Live retailer tracking · recorded prices and stock can change at checkout.'}{' '}
-        <Link href="/help">
+        <Link prefetch={false} href="/help">
           How it works <ArrowUpRight size={12} />
         </Link>
       </div>
       <header className="site-header">
         <div className="header-inner">
-          <Link className="wordmark" href="/" aria-label="Price Atlas home">
+          <Link prefetch={false} className="wordmark" href="/" aria-label="Price Atlas home">
             <span className="brand-mark">
               <span />
               <span />
@@ -595,18 +595,24 @@ export default function Atlas({
           </Link>
           <nav className={menu ? 'main-nav open' : 'main-nav'} aria-label="Main navigation">
             <Link
+              prefetch={false}
               className={['home', 'search', 'category', 'p'].includes(page) ? 'active' : ''}
               href="/search"
             >
               Discover
             </Link>
-            <Link className={page === 'watchlist' ? 'active' : ''} href="/watchlist">
+            <Link
+              prefetch={false}
+              className={page === 'watchlist' ? 'active' : ''}
+              href="/watchlist"
+            >
               Watchlist{' '}
               {session.watches.length > 0 && (
                 <span className="nav-count">{session.watches.length}</span>
               )}
             </Link>
             <Link
+              prefetch={false}
               className={page === 'compare' ? 'active' : ''}
               href={`/compare?items=${compare.join(',')}`}
             >
@@ -615,6 +621,7 @@ export default function Atlas({
           </nav>
           <div className="header-actions">
             <Link
+              prefetch={false}
               className="icon-button notification-link"
               href="/alerts"
               aria-label="Price alerts"
@@ -624,7 +631,12 @@ export default function Atlas({
             </Link>
             <span className="header-divider" />
             {session.user ? (
-              <Link className="avatar" href="/settings" aria-label="Account settings">
+              <Link
+                prefetch={false}
+                className="avatar"
+                href="/settings"
+                aria-label="Account settings"
+              >
                 {session.user.name.slice(0, 1).toUpperCase()}
               </Link>
             ) : (
@@ -667,7 +679,7 @@ export default function Atlas({
                     <button
                       key={st}
                       type="button"
-                      className={`v2-store s-${st.toLowerCase().replace(/[^a-z]/g, '')}${heroStore === st ? ' on' : ''}`}
+                      className={`v2-store${heroStore === st ? ' on' : ''}`}
                       aria-pressed={heroStore === st}
                       onClick={() => setHeroStore(st)}
                     >
@@ -688,11 +700,13 @@ export default function Atlas({
             <section className="v2-cats page-width" aria-labelledby="v2-cats-title">
               <div className="v2-cats-head">
                 <h2 id="v2-cats-title">Shop by category</h2>
-                <Link href="/search">See everything</Link>
+                <Link prefetch={false} href="/search">
+                  See everything
+                </Link>
               </div>
               <div className="v2-cat-grid">
                 {categories.map((c) => (
-                  <Link className="v2-cat" key={c.id} href={`/category/${c.id}`}>
+                  <Link prefetch={false} className="v2-cat" key={c.id} href={`/category/${c.id}`}>
                     <c.icon size={30} strokeWidth={1.8} />
                     <span>{c.name}</span>
                   </Link>
@@ -704,7 +718,7 @@ export default function Atlas({
                 <div>
                   <h2>A little closer to your next upgrade.</h2>
                 </div>
-                <Link className="text-link" href="/search">
+                <Link prefetch={false} className="text-link" href="/search">
                   Explore all products <ArrowUpRight size={17} />
                 </Link>
               </div>
@@ -728,7 +742,7 @@ export default function Atlas({
                   With the full picture.
                 </h2>
                 <p>We make the details clear, so the decision can be yours.</p>
-                <Link href="/help" className="text-link">
+                <Link prefetch={false} href="/help" className="text-link">
                   The Price Atlas approach <ArrowUpRight size={16} />
                 </Link>
               </div>
@@ -769,7 +783,9 @@ export default function Atlas({
         ) : page === 'search' || page === 'category' ? (
           <section className="page-width results-page">
             <div className="breadcrumbs">
-              <Link href="/">Home</Link>
+              <Link prefetch={false} href="/">
+                Home
+              </Link>
               <span>/</span>Discover
               {category && (
                 <>
@@ -807,7 +823,7 @@ export default function Atlas({
                     <ul>
                       {lookup.candidates.map((c) => (
                         <li key={c.url}>
-                          <Link href={`/search?q=${encodeURIComponent(c.url)}`}>
+                          <Link prefetch={false} href={`/search?q=${encodeURIComponent(c.url)}`}>
                             Verify details: {c.title}
                           </Link>{' '}
                           · {c.store}
@@ -866,12 +882,17 @@ export default function Atlas({
               </section>
             )}
             <div className="category-tabs">
-              <Link className={`category-tab ${!category ? 'selected' : ''}`} href="/search">
+              <Link
+                prefetch={false}
+                className={`category-tab ${!category ? 'selected' : ''}`}
+                href="/search"
+              >
                 <LayoutGrid size={17} />
                 All products
               </Link>
               {categories.map((c) => (
                 <Link
+                  prefetch={false}
                   className={`category-tab ${category === c.id ? 'selected' : ''}`}
                   key={c.id}
                   href={`/category/${c.id}`}
@@ -978,7 +999,7 @@ export default function Atlas({
                       : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
                 }
                 action={
-                  <Link className="primary" href="/search">
+                  <Link prefetch={false} className="primary" href="/search">
                     Clear filters <ArrowRight size={16} />
                   </Link>
                 }
@@ -1039,12 +1060,12 @@ export default function Atlas({
                     const rule = session.rules.find((r) => r.productId === p.id);
                     return (
                       <article className="watch-card" key={w.id}>
-                        <Link className="watch-art" href={`/p/${p.slug}`}>
+                        <Link prefetch={false} className="watch-art" href={`/p/${p.slug}`}>
                           <ProductArt product={p} />
                         </Link>
                         <div className="watch-main">
                           <span className="eyebrow">{w.collection}</span>
-                          <Link className="product-name" href={`/p/${p.slug}`}>
+                          <Link prefetch={false} className="product-name" href={`/p/${p.slug}`}>
                             {p.name}
                           </Link>
                           <p className="variant">{p.subtitle}</p>
@@ -1092,7 +1113,7 @@ export default function Atlas({
                 title="Make room for your next good find."
                 text="Save products as you explore. They’ll stay here, along with your targets and fresh offer prices."
                 action={
-                  <Link className="primary" href="/search">
+                  <Link prefetch={false} className="primary" href="/search">
                     Discover products <ArrowRight size={16} />
                   </Link>
                 }
@@ -1120,7 +1141,7 @@ export default function Atlas({
                           <Bell size={21} />
                         </div>
                         <div>
-                          <Link className="product-name" href={`/p/${p.slug}`}>
+                          <Link prefetch={false} className="product-name" href={`/p/${p.slug}`}>
                             {p.name}
                           </Link>
                           <p className="muted small">
@@ -1199,7 +1220,7 @@ export default function Atlas({
                 title="Good things are worth waiting for."
                 text="Choose a product and set the price that feels right. We’ll keep your target here."
                 action={
-                  <Link className="primary" href="/search">
+                  <Link prefetch={false} className="primary" href="/search">
                     Find a product <ArrowRight size={16} />
                   </Link>
                 }
@@ -1219,7 +1240,7 @@ export default function Atlas({
               title="This page isn’t on the map."
               text="Head back to the catalog to find your next good purchase."
               action={
-                <Link className="primary" href="/">
+                <Link prefetch={false} className="primary" href="/">
                   Back to home
                 </Link>
               }
@@ -1230,17 +1251,25 @@ export default function Atlas({
       <footer className="footer">
         <div className="page-width footer-top">
           <div>
-            <Link className="wordmark" href="/">
+            <Link prefetch={false} className="wordmark" href="/">
               PRICE<span className="atlas-word">ATLAS</span>
               <span className="brand-period">.</span>
             </Link>
             <p>Good research. Better decisions.</p>
           </div>
           <div className="footer-links">
-            <Link href="/about">Our approach</Link>
-            <Link href="/help">Help & methodology</Link>
-            <Link href="/admin">Source status</Link>
-            <Link href="/settings">Your preferences</Link>
+            <Link prefetch={false} href="/about">
+              Our approach
+            </Link>
+            <Link prefetch={false} href="/help">
+              Help & methodology
+            </Link>
+            <Link prefetch={false} href="/admin">
+              Source status
+            </Link>
+            <Link prefetch={false} href="/settings">
+              Your preferences
+            </Link>
           </div>
         </div>
         <div className="page-width footer-bottom">
@@ -1272,7 +1301,7 @@ export default function Atlas({
               ))}
             </div>
           </div>
-          <Link href={`/compare?items=${compare.join(',')}`} className="primary">
+          <Link prefetch={false} href={`/compare?items=${compare.join(',')}`} className="primary">
             Compare now <ArrowRight size={16} />
           </Link>
         </div>
@@ -1544,9 +1573,11 @@ export default function Atlas({
     return (
       <section className="page-width detail-page">
         <div className="breadcrumbs">
-          <Link href="/">Home</Link>
+          <Link prefetch={false} href="/">
+            Home
+          </Link>
           <span>/</span>
-          <Link href={`/category/${p.category}`}>
+          <Link prefetch={false} href={`/category/${p.category}`}>
             {categories.find((c) => c.id === p.category)?.name}
           </Link>
           <span>/</span>
@@ -1656,6 +1687,7 @@ export default function Atlas({
             <div className="detail-actions">
               {!demo && p.attributes['Product URL'] && (
                 <Link
+                  prefetch={false}
                   className="outline-button"
                   href={`/search?q=${encodeURIComponent(p.attributes['Product URL'])}&verify=1`}
                 >
@@ -1937,7 +1969,7 @@ export default function Atlas({
                   {selected.map((p) => (
                     <th key={p.id}>
                       <ProductArt product={p} />
-                      <Link className="product-name" href={`/p/${p.slug}`}>
+                      <Link prefetch={false} className="product-name" href={`/p/${p.slug}`}>
                         {p.name}
                       </Link>
                       <p className="variant">{p.subtitle}</p>
@@ -2003,7 +2035,7 @@ export default function Atlas({
             title="Find your contenders."
             text="Use the Compare button on any product to add it here. Pick up to four."
             action={
-              <Link href="/search" className="primary">
+              <Link prefetch={false} href="/search" className="primary">
                 Explore the catalog <ArrowRight size={16} />
               </Link>
             }
