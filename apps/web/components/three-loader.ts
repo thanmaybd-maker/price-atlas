@@ -21,6 +21,38 @@ export function loadThree(): Promise<any> {
   return pending;
 }
 
+let loaderPending: Promise<any> | null = null;
+const models = new Map<string, Promise<any>>();
+
+/** Loads a Blender-exported .glb once and resolves its scene graph (callers clone what they use). */
+export function loadModel(url: string): Promise<any> {
+  if (models.has(url)) return models.get(url) as Promise<any>;
+  const p = loadThree()
+    .then((T: any) => {
+      if (T.GLTFLoader) return T;
+      if (!loaderPending)
+        loaderPending = new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = '/vendor/three-gltf-loader-r147.js';
+          s.async = true;
+          s.onload = () => (T.GLTFLoader ? resolve(T) : reject(new Error('GLTFLoader missing')));
+          s.onerror = () => {
+            loaderPending = null;
+            reject(new Error('Unable to load GLTFLoader'));
+          };
+          document.head.appendChild(s);
+        });
+      return loaderPending;
+    })
+    .then(
+      (T: any) =>
+        new Promise((resolve, reject) => new T.GLTFLoader().load(url, resolve, undefined, reject)),
+    );
+  p.catch(() => models.delete(url));
+  models.set(url, p);
+  return p;
+}
+
 export function canWebGL() {
   try {
     const c = document.createElement('canvas');
