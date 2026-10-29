@@ -34,7 +34,8 @@
     "catalog:expand": "tsx scripts/expand-catalog.ts",
     "catalog:snapshot": "tsx scripts/export-catalog-snapshot.ts",
     "alerts:test": "tsx scripts/simulate-price-drop.ts",
-    "worker:once": "tsx scripts/worker-once.ts"
+    "worker:once": "tsx scripts/worker-once.ts",
+    "backfill:wayback": "tsx scripts/backfill-wayback.ts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

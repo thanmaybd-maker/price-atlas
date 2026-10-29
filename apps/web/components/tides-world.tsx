@@ -186,6 +186,11 @@ export function TidesWorld({
             <span>
               magenta dot <b>lowest day</b>
             </span>
+            {ridges.some((r) => r.obs.some((o) => o.context === 'Internet Archive snapshot')) && (
+              <span>
+                some days from <b>Internet Archive snapshots</b> of the store page
+              </span>
+            )}
             <span>
               small dot <b>recorded day</b>
             </span>
