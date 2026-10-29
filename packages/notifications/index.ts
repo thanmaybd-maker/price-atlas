@@ -1,5 +1,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Resend } from 'resend';
+export function emailDeliveryEnabled() {
+  return process.env.EMAIL_DELIVERY_ENABLED === 'true';
+}
 import { money } from '../domain/index';
 export type AlertMessage = {
   id: string;

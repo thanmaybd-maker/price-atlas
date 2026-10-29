@@ -1,5 +1,7 @@
 # Current status
 
+Telegram and in-app alerts are the selected no-domain channels. Email is explicitly unavailable by default (`EMAIL_DELIVERY_ENABLED=false`); the Settings control is disabled and the API rejects email opt-in until an operator verifies a sender and enables it. Disabling email delivery does not disable eligible in-app or Telegram alerts.
+
 The latest functional release centralizes ten retailers, adding Reliance Digital, Myntra and AJIO. A free primary-page request verified and imported a Reliance Digital iPhone 16 listing; this does not confirm delivery to a specific pincode. Structured Product/Book data, bounded framework JSON and canonical meta fallbacks retain explicit partial states. Pack sizes, binding, edition, model, capacity, memory, shade and condition participate in conservative matching. Cross-border offers, including international stores quoting INR, cannot win domestic rankings or trigger domestic alerts. No fixed customs percentage or exchange-rate estimate is invented.
 
 Search uses relevant retailers, direct pages, DuckDuckGo and an additional free RSS discovery fallback; every external request counts toward the shared allowance. Recorded matches and repeated cached searches avoid paid calls. The browser supports additional free discovery, explicit URL verification, shareable queries, eight local recent entries, product pagination and price filtering when shipping is unknown. The weekly ledger uses India dates, actual daily highs and lows, and no change across an unobserved previous day. Claude's styling remains in place.

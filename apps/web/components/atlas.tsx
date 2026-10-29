@@ -72,6 +72,7 @@ type User = {
 };
 type Session = {
   user: User | null;
+  delivery?: { emailAvailable: boolean };
   watches: { id: string; product_id: string; collection: string }[];
   rules: Rule[];
   notifications: {
@@ -2032,8 +2033,9 @@ export default function Atlas({
                   <div>
                     <strong>Email price alerts</strong>
                     <p className="muted small">
-                      Send eligible alerts to your verified email. Requires the configured email
-                      sender.
+                      {session.delivery?.emailAvailable
+                        ? 'Send eligible alerts to your verified email.'
+                        : 'Unavailable: no verified sender domain. Use Telegram and in-app alerts.'}
                     </p>
                   </div>
                   <button
@@ -2041,6 +2043,7 @@ export default function Atlas({
                     role="switch"
                     aria-checked={!!session.user.email_enabled}
                     aria-label="Email price alerts"
+                    disabled={!session.delivery?.emailAvailable}
                     onClick={() =>
                       void perform(async () => {
                         await api('preferences', 'PATCH', {

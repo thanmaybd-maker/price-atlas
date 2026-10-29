@@ -128,6 +128,7 @@ beforeAll(async () => {
     },
   });
   process.env.EMAIL_FROM = 'test@example.com';
+  process.env.EMAIL_DELIVERY_ENABLED = 'true';
   process.env.UNSUBSCRIBE_SECRET = 'test-only-secret-that-is-at-least-32-characters';
   process.env.APP_ORIGIN = 'https://atlas.example';
   await store.syncAccount({ id: alice, email: 'alice@example.com', email_confirmed_at: 'now' });
@@ -140,6 +141,7 @@ beforeAll(async () => {
 }, 30000);
 afterAll(async () => {
   delete process.env.SOURCE_POLICIES_JSON;
+  delete process.env.EMAIL_DELIVERY_ENABLED;
   await db.close();
 });
 it('starts a live catalog without seeding any synthetic products', async () => {

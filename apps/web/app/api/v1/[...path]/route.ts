@@ -17,7 +17,10 @@ import { catalogExpansionStatus } from '../../../../../../packages/jobs/catalog-
 import { categoryLabels } from '../../../../../../packages/domain/categories';
 import { matchesQuery } from '../../../../../../packages/domain/search';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
-import { verifyUnsubscribe } from '../../../../../../packages/notifications/index';
+import {
+  verifyUnsubscribe,
+  emailDeliveryEnabled,
+} from '../../../../../../packages/notifications/index';
 import {
   telegramStatus,
   createTelegramLink,
@@ -116,6 +119,7 @@ async function handler(req: NextRequest) {
       if (path[0] === 'session')
         return json({
           user: user ?? null,
+          delivery: { emailAvailable: emailDeliveryEnabled() },
           ...(user ? await data.personal(user.id) : { watches: [], rules: [], notifications: [] }),
         });
       if (path[0] === 'search' || path[0] === 'suggestions') {
@@ -450,6 +454,11 @@ async function handler(req: NextRequest) {
       const b = z
         .object({ enabled: z.boolean(), emailEnabled: z.boolean().optional() })
         .parse(await req.json());
+      if (data.isLive() && b.emailEnabled && !emailDeliveryEnabled())
+        return json(
+          { error: 'Email alerts are unavailable. Connect Telegram or use in-app alerts.' },
+          400,
+        );
       await data.preferences(user.id, b.enabled, b.emailEnabled);
       return json({ ok: true });
     }
