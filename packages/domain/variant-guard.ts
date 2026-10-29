@@ -1,4 +1,5 @@
 export type VariantSignature = {
+  bundle: boolean;
   condition: 'NEW' | 'REFURBISHED' | 'USED' | 'OPEN_BOX' | 'UNKNOWN';
   packCount: number | null;
   storageOrMemory?: string;
@@ -38,6 +39,7 @@ export function variantSignature(title: string, a: Record<string, string> = {}):
     a['Variant memory'] ||
     (title.match(/\b\d+\s*(?:GB|TB)\b/gi) || []).join('/');
   return {
+    bundle: /\b(?:bundle|combo|kit)\b/i.test(title) || a.Bundle === 'yes',
     condition: /open[ -]?box/i.test(text)
       ? 'OPEN_BOX'
       : /refurbished|renewed/i.test(text)
@@ -88,6 +90,7 @@ export function compareVariants(a: VariantSignature, b: VariantSignature) {
 export function variantAttributes(title: string, attributes: Record<string, string>) {
   const s = variantSignature(title, attributes),
     out = { ...attributes };
+  if (s.bundle) out.Bundle = 'yes';
   if (s.packCount) out.Pack ||= String(s.packCount);
   if (s.volumeOrWeight) out.Size ||= s.volumeOrWeight;
   if (s.bookBinding) out.Binding ||= s.bookBinding;
@@ -100,6 +103,7 @@ export function variantLabel(title: string, attributes: Record<string, string>) 
   const s = variantSignature(title, attributes);
   return [
     s.condition.toLowerCase().replace('_', ' '),
+    s.bundle ? 'Bundle / kit' : '',
     s.packCount ? `Pack of ${s.packCount}` : '',
     s.bookBinding?.toLowerCase(),
     attributes.Shade,

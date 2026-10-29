@@ -19,6 +19,7 @@ it('rejects different packs, memory, bindings, editions, models and conditions b
     ['Casio fx-991CW', 'Casio fx-991ES Plus'],
     ['Sony MDR-7506', 'Renewed Sony MDR-7506'],
     ['Serum 30ml', 'Serum 60ml'],
+    ['Serum 30ml', 'Serum 30ml combo kit'],
     ['Phone', 'Open Box Phone'],
   ])
     expect(

@@ -8,7 +8,7 @@ import {
   importScraped,
   reusableListing,
 } from '../database/postgres';
-import { matchesQuery, normalizeQuery } from '../domain/search';
+import { matchesQuery, normalizeQuery, bundleMismatch } from '../domain/search';
 import { canonicalRetailUrl, scrapeSearchHtml, ScrapeError } from '../providers/scraper';
 import {
   parseSearchHtml,
@@ -54,7 +54,7 @@ export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
     q,
     url,
     key: createHash('sha256')
-      .update(`retailers-v3:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
+      .update(`retailers-v4:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
       .digest('hex'),
   };
 }
@@ -208,6 +208,7 @@ export async function discoverProducts(
                 .split(' ')
                 .filter((w) => w.length > 2 && !['the', 'and', 'for', 'buy', 'price'].includes(w));
               const relevant = candidates
+                .filter((c) => !bundleMismatch(c.title, q))
                 .map((c) => ({
                   c,
                   score:

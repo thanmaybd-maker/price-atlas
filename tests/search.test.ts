@@ -116,3 +116,13 @@ it('uses verified size attributes for search and keeps different volumes and num
   ).toBe(true);
   expect(matchesQuery({ name: 'Phone 160 GB', brand: '', subtitle: '' }, '16')).toBe(false);
 });
+it('does not present a multi-product bundle as a single serum search result', () => {
+  const bundle = {
+    name: 'Minimalist Essential Bundle: 10% Niacinamide Serum (30ml) + Vitamin C Serum (30ml) + Sunscreen (50g)',
+    brand: 'Minimalist',
+    subtitle: '',
+    attributes: { Size: '30ml' },
+  };
+  expect(matchesQuery(bundle, 'Minimalist Niacinamide 10% 30ml')).toBe(false);
+  expect(matchesQuery(bundle, 'Minimalist Niacinamide bundle 30ml')).toBe(true);
+});
