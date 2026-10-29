@@ -2,6 +2,8 @@
 
 ## 29 October theme, paper targets and recorded-history repair
 
+Hosted verification of the first repair passed the history smoke and ten live API checks. Its browser suite exposed a first-load theme race: a select could accept input before hydration attached its handler. Theme controls now remain disabled until ready, covered by a thirteenth browser scenario that deliberately holds JavaScript requests. The full hosted suite is rerun after this follow-up.
+
 The [usability repair](./USABILITY-REPAIR.md) replaces the legacy target dialog with the shared sticky-note composer, preserves decimal rupees and explicit sign-in-return drafts, and confirms saves without a blocking session refresh. Light and Dark now cover the Home/Categories paper surfaces, account pages, product offers, forms and ring canvas. Public catalog reads coalesce without caching accounts; one bounded history batch replaces four product reads, with actual coverage, item/delivered selection, a daily table and visible retry states. Current product offers are read independently of the catalog cache.
 
 Final local verification: 167 unit/integration tests, type checking, production build, all 12 release/usability browser scenarios and the real four-product history API smoke pass. Private browser actions use isolated fixtures; they do not prove real Google consent or recipient delivery. Publication/hosted checks are recorded separately. Retained observations remain sparse on October 6, 28 and 29; no missing days are filled. [Free-source research](./HISTORY-SOURCES.md) explains the independent tracker references and why their charts were not copied into our database.

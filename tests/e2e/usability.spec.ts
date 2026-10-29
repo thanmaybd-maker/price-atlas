@@ -1,6 +1,29 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+test('appearance waits for its handler before accepting a first-load choice', async ({ page }) => {
+  let release: (() => void) | undefined;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(/\/_next\/static\/.*\.js(?:\?|$)/, async (route) => {
+    await ready;
+    await route.continue();
+  });
+  try {
+    await page.goto('/settings', { waitUntil: 'commit' });
+    const theme = page.getByRole('combobox', { name: 'Color theme' });
+    await expect(theme).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Use Dark theme', exact: true })).toBeDisabled();
+    release?.();
+    await expect(theme).toBeEnabled();
+    await theme.selectOption('dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  } finally {
+    release?.();
+  }
+});
+
 test('signed-in paper form confirms the saved target without blocking on a session refresh', async ({
   page,
 }) => {
