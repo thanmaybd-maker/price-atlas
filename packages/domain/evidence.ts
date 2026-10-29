@@ -37,6 +37,8 @@ export function historyEvidence(
       'Stock',
       'Condition',
       'Source URL',
+      'Extraction method',
+      'Parser version',
       'Evidence type',
     ],
   ];
@@ -55,6 +57,8 @@ export function historyEvidence(
       o.stock ? 'In stock' : 'Not confirmed / unavailable',
       o.condition,
       o.purchaseUrl || '',
+      o.extractionMethod || 'Not recorded',
+      o.parserVersion || 'Not recorded',
       'Recorded observation; verify at checkout',
     ]);
   return '\uFEFF' + data.map((row) => row.map(cell).join(',')).join('\r\n') + '\r\n';

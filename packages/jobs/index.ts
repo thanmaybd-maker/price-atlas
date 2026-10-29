@@ -129,11 +129,12 @@ export async function fetchProductWithBudget(
       'The paid allowance for this lookup has been reached. Try a direct product link.',
     );
   }
-  if (configured.transport !== 'scrapingbee') {
+  if (configured.transport !== 'scrapingbee' && configured.transport !== 'firecrawl') {
     await reserveSource(store, configured);
     return scrapeProduct(url, configured);
   }
-  const keys = await availableCredentials(configured.apiKey);
+  const provider = configured.transport;
+  const keys = await availableCredentials(configured.apiKey, provider);
   const deadline = Date.now() + Math.min(30000, (timeoutMs || 15000) * 2);
   let spent = 0,
     temporaryFailures = 0,
@@ -151,7 +152,7 @@ export async function fetchProductWithBudget(
     spent += cost;
     try {
       const result = await scrapeProduct(url, attempt);
-      await recordCredentialSuccess(apiKey);
+      await recordCredentialSuccess(apiKey, provider);
       return result;
     } catch (error) {
       if (!(error instanceof ScrapeError)) throw error;
@@ -164,8 +165,8 @@ export async function fetchProductWithBudget(
         if (partial) return partial;
         throw error;
       }
-      await recordCredentialFailure(apiKey, error.code);
-      if (temporary && ++temporaryFailures >= 2) {
+      await recordCredentialFailure(apiKey, error.code, provider);
+      if (temporary && ++temporaryFailures >= 2 && provider === 'scrapingbee') {
         if (partial) return partial;
         throw error;
       }

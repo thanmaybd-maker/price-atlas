@@ -11,6 +11,7 @@ import { fetchJson } from '../lib/fetch-json';
 import { historyCoverage } from '../../../packages/domain/history-coverage';
 import { ExternalHistory } from './external-history';
 import { reducedMotion } from './three-loader';
+import { OfferEvidence } from './offer-evidence';
 export type PinDraft = {
   productId: string;
   target?: number;
@@ -154,20 +155,22 @@ function OffersWorld({ products, offers }: { products: Product[]; offers: Offer[
     if (ri >= 0) {
       const v = val(o);
       fig = '₹' + fmt(v);
-      rankLabel = 'no. ' + (ri + 1);
+      rankLabel = order.length === 1 ? 'recorded' : 'no. ' + (ri + 1);
       const top = sort === 'fresh' ? ri === 0 : v === cheap;
       stat =
-        sort === 'fresh'
-          ? ri === 0
-            ? 'checked most recently'
-            : 'checked ' + ago(o.observedAt)
-          : top
-            ? sort === 'item'
-              ? 'lowest item price'
-              : 'lowest, exact'
-            : '+₹' + fmt(v - cheap);
-      statCls = top ? 'stp win' : 'stp plain';
-      if (top) cls += ' win';
+        order.length === 1
+          ? '1 recorded offer'
+          : sort === 'fresh'
+            ? ri === 0
+              ? 'checked most recently'
+              : 'checked ' + ago(o.observedAt)
+            : top
+              ? sort === 'item'
+                ? 'lowest item price'
+                : 'lowest, exact'
+              : '+₹' + fmt(v - cheap);
+      statCls = top && order.length > 1 ? 'stp win' : 'stp plain';
+      if (top && order.length > 1) cls += ' win';
     } else if (intl(o)) {
       cls += ' gate';
       fig = 'no INR price';
@@ -321,10 +324,17 @@ function OffersWorld({ products, offers }: { products: Product[]; offers: Offer[
           <span>
             {!order.length
               ? 'nothing ranked here yet'
-              : basis === 'item'
-                ? 'item prices only, delivery not added'
-                : `you save ₹${fmt(dear - cheap)} against the dearest ranked offer`}
+              : order.length === 1
+                ? `1 recorded ${basis} offer; no multi-store price comparison yet`
+                : basis === 'item'
+                  ? 'item prices only, delivery not added'
+                  : `you save ₹${fmt(dear - cheap)} against the dearest ranked offer`}
           </span>
+        </div>
+        <div className="offer-evidence-list">
+          {list.map((offer) => (
+            <OfferEvidence key={offer.id} offer={offer} basis={basis} />
+          ))}
         </div>
       </div>
     </section>
@@ -449,11 +459,63 @@ function TargetsWorld({
         !p.attributes['Source currency'] &&
         !retailers[p.attributes.Retailer as keyof typeof retailers]?.international,
     );
-    return [...new Map([...saved, ...domestic].map((p) => [p.id, p])).values()];
-  }, [products, offers, watches]);
+    const selected = domestic.find((p) => p.id === initialTarget?.productId);
+    const domesticIds = new Set(domestic.map((p) => p.id));
+    return [
+      ...new Map(
+        [
+          ...saved.filter((p) => domesticIds.has(p.id)).slice(0, 8),
+          ...(selected ? [selected] : domestic.slice(0, 1)),
+        ].map((p) => [p.id, p]),
+      ).values(),
+    ];
+  }, [products, watches, initialTarget?.productId]);
+  const [choices, setChoices] = useState<Product[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product>();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerStatus, setPickerStatus] = useState('');
+  const [pickerVersion, setPickerVersion] = useState(0);
+  const [pickerError, setPickerError] = useState(false);
+  const available = [
+    ...new Map(
+      [...pool, ...(selectedProduct ? [selectedProduct] : []), ...choices].map((p) => [p.id, p]),
+    ).values(),
+  ];
   const [selectedId, setSelectedId] = useState(initialTarget?.productId || pool[0]?.id || '');
   const [filter, setFilter] = useState('');
-  const p = pool.find((q) => q.id === selectedId) || pool[0];
+  const p = available.find((q) => q.id === selectedId) || pool[0];
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const controller = new AbortController();
+    setPickerError(false);
+    setPickerStatus('Loading recorded products…');
+    const timer = setTimeout(() => {
+      void fetchJson<{ products: Product[] }>(
+        `/api/v1/suggestions?q=${encodeURIComponent(filter)}&domestic=1`,
+        { signal: controller.signal },
+      )
+        .then((result) => {
+          setChoices(result.products);
+          setPickerStatus(
+            result.products.length ? '' : 'No recorded product matched. Search or import it first.',
+          );
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted) {
+            setPickerError(true);
+            setPickerStatus(
+              error instanceof Error
+                ? error.message
+                : 'Unable to load products. Refocus the search to retry.',
+            );
+          }
+        });
+    }, 180);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [pickerOpen, filter, pickerVersion]);
   const pOffers = p ? offers.filter((o) => o.productId === p.id) : [];
   const suggested = (q?: Product) => {
     if (!q) return 0;
@@ -556,31 +618,50 @@ function TargetsWorld({
               type="search"
               value={filter}
               placeholder="Model, brand or product name"
+              onFocus={() => setPickerOpen(true)}
               onChange={(event) => setFilter(event.target.value)}
             />
             <label htmlFor="pin-product">Product</label>
             <select
               id="pin-product"
+              onFocus={() => setPickerOpen(true)}
               value={p?.id || ''}
               onChange={(event) => {
                 setSelectedId(event.target.value);
+                setSelectedProduct(available.find((product) => product.id === event.target.value));
                 setDt(null);
                 setDs('all');
                 setFeedback('');
               }}
             >
-              {pool
+              {available
                 .filter(
                   (q) =>
                     q.id === p?.id ||
                     `${q.name} ${q.brand}`.toLowerCase().includes(filter.toLowerCase()),
                 )
+                .slice(0, 25)
                 .map((q) => (
                   <option key={q.id} value={q.id}>
                     {q.name}
                   </option>
                 ))}
             </select>
+            {pickerError && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setPickerVersion((version) => version + 1)}
+              >
+                Retry product list
+              </button>
+            )}
+            <p className="note" role="status">
+              {pickerStatus ||
+                (pickerOpen
+                  ? 'Up to 24 recorded matches; type to narrow the list.'
+                  : 'The product list loads when you open or search it.')}
+            </p>
             {!pool.length && <p className="note">Search a domestic product first.</p>}
             <span className="lbl">Stores</span>
             <div className="seg" role="group" aria-label="Stores">
@@ -706,14 +787,26 @@ function WeekWorld({
     .pop();
   const [sel, setSel] = useState<number | null>(null);
   const wsel = sel ?? last ?? 6;
-  const [status, setStatus] = useState<{ verified: number; target: number } | null>(null);
+  const [status, setStatus] = useState<{
+    total: number;
+    verified: number;
+    pending: number;
+    target: number;
+    checkedAt: number;
+  } | null>(null);
   useEffect(() => {
     let alive = true;
     fetch('/api/v1/catalog/status')
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (alive && j?.expansion)
-          setStatus({ verified: j.expansion.verifiedBaseProducts, target: j.expansion.target });
+          setStatus({
+            total: j.products,
+            verified: j.expansion.verifiedBaseProducts,
+            pending: j.expansion.pendingBaseProducts,
+            target: j.expansion.target,
+            checkedAt: j.checkedAt,
+          });
       })
       .catch(() => {});
     return () => {
@@ -844,7 +937,25 @@ function WeekWorld({
               <div style={{ fontFamily: 'var(--f-do)', fontWeight: 700, fontSize: 18 }}>
                 Catalog expansion
               </div>
-              <div className="slot">verified base products, read live from the catalog status</div>
+              <div className="slot" data-testid="catalog-coverage">
+                {status.total} catalog products · {status.verified} verified by bulk importer ·{' '}
+                {status.pending} pending bulk imports. Bulk progress is the counter at right; it
+                excludes products added by other import paths.
+              </div>
+              {Number.isFinite(status.checkedAt) && (
+                <div className="slot">
+                  Counts checked{' '}
+                  <time dateTime={new Date(status.checkedAt).toISOString()}>
+                    {new Intl.DateTimeFormat('en-IN', {
+                      timeZone: 'Asia/Kolkata',
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    }).format(status.checkedAt)}{' '}
+                    IST
+                  </time>
+                  .
+                </div>
+              )}
             </div>
             <div className="fig">
               {new Intl.NumberFormat('en-IN').format(status.verified)}{' '}

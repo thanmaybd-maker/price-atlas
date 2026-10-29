@@ -35,7 +35,7 @@ export type ScrapedProduct = {
   status?: 'VERIFIED' | 'PARTIAL_UNVERIFIED';
 };
 export type ScraperConfig = {
-  transport: 'direct' | 'scrapingbee' | 'brightdata';
+  transport: 'direct' | 'scrapingbee' | 'brightdata' | 'firecrawl';
   apiKey?: string;
   zone?: string;
   renderJs?: boolean;
@@ -721,14 +721,16 @@ export function scraperConfig(): ScraperConfig {
       : process.env.BRIGHTDATA_API_KEY
         ? 'brightdata'
         : 'direct');
-  if (!['direct', 'scrapingbee', 'brightdata'].includes(transport))
+  if (!['direct', 'scrapingbee', 'brightdata', 'firecrawl'].includes(transport))
     throw new ScrapeError('configuration', 'Unknown SCRAPER_PROVIDER.');
   return {
     transport: transport as ScraperConfig['transport'],
     apiKey:
-      transport === 'scrapingbee'
-        ? process.env.SCRAPINGBEE_API_KEY
-        : process.env.BRIGHTDATA_API_KEY,
+      transport === 'firecrawl'
+        ? process.env.FIRECRAWL_API_KEY
+        : transport === 'scrapingbee'
+          ? process.env.SCRAPINGBEE_API_KEY
+          : process.env.BRIGHTDATA_API_KEY,
     zone: process.env.BRIGHTDATA_ZONE,
     renderJs: process.env.SCRAPER_RENDER_JS === 'true',
     premiumProxy: process.env.SCRAPER_PREMIUM_PROXY === 'true',
@@ -739,6 +741,14 @@ export function scraperConfig(): ScraperConfig {
 // Reserve the full configured cost before making a request, including failed parses.
 // Fixed tiers only: never enable automatic escalation against a limited balance.
 export function scraperCreditCost(config = scraperConfig()) {
+  if (config.transport === 'firecrawl') {
+    if (!Number.isSafeInteger(config.maxCredits ?? 10) || (config.maxCredits ?? 10) < 1)
+      throw new ScrapeError(
+        'configuration',
+        'Firecrawl requires an allowance of at least one credit.',
+      );
+    return 1;
+  }
   if (config.transport !== 'scrapingbee') return 0;
   const cost = config.premiumProxy ? (config.renderJs ? 25 : 10) : config.renderJs ? 5 : 1;
   const maximum = Math.min(10, config.maxCredits ?? 10);
@@ -799,7 +809,59 @@ async function retailerHtml(
   const signal = AbortSignal.timeout(Math.min(config.timeoutMs || 25000, 55000));
   try {
     let response: Response;
-    if (config.transport === 'scrapingbee') {
+    if (config.transport === 'firecrawl') {
+      if (!config.apiKey) throw new ScrapeError('configuration', 'FIRECRAWL_API_KEY is missing.');
+      response = await fetcher('https://api.firecrawl.dev/v2/scrape', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: identity.url,
+          formats: ['rawHtml'],
+          onlyMainContent: false,
+          maxAge: 0,
+          proxy: 'basic',
+          timeout: Math.min(config.timeoutMs || 25000, 50000),
+        }),
+        signal,
+        redirect: 'error',
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new ScrapeError(
+          response.status === 402
+            ? 'provider_credits'
+            : response.status === 401
+              ? 'provider_auth'
+              : response.status === 403
+                ? 'blocked'
+                : response.status === 429
+                  ? 'provider_rate_limited'
+                  : response.status >= 500
+                    ? 'provider_unavailable'
+                    : 'http_error',
+          'Firecrawl could not complete this check.',
+          response.status === 429 || response.status >= 500,
+        );
+      }
+      const envelope = JSON.parse(await boundedHtml(response, /json/i));
+      const data = envelope?.data;
+      if (!envelope.success || typeof data?.rawHtml !== 'string' || !data.rawHtml.trim())
+        throw new ScrapeError('empty', 'Firecrawl returned no retailer HTML.');
+      if (data.metadata?.statusCode && data.metadata.statusCode >= 400)
+        throw new ScrapeError(
+          data.metadata.statusCode === 403 ? 'blocked' : 'http_error',
+          'Retailer page was unavailable through Firecrawl.',
+        );
+      for (const destination of [data.metadata?.sourceURL, data.metadata?.url].filter(Boolean)) {
+        const parsed = canonicalRetailUrl(destination);
+        if (parsed.store !== identity.store || parsed.externalId !== identity.externalId)
+          throw new ScrapeError(
+            'redirect',
+            'Firecrawl returned a different product or destination.',
+          );
+      }
+      return data.rawHtml;
+    } else if (config.transport === 'scrapingbee') {
       if (!config.apiKey) throw new ScrapeError('configuration', 'SCRAPINGBEE_API_KEY is missing.');
       const endpoint = new URL('https://app.scrapingbee.com/api/v1');
       endpoint.searchParams.set('url', identity.url);
@@ -899,7 +961,16 @@ export async function scrapeProduct(
   fetcher: typeof fetch = fetch,
 ): Promise<ScrapedProduct> {
   const identity = canonicalRetailUrl(inputUrl);
-  return parseProductHtml(await retailerHtml(identity, config, fetcher), identity.url);
+  const result = parseProductHtml(await retailerHtml(identity, config, fetcher), identity.url);
+  result.attributes['Fetch method'] =
+    config.transport === 'direct'
+      ? 'Direct retailer HTML'
+      : config.transport === 'scrapingbee'
+        ? 'ScrapingBee retailer HTML'
+        : config.transport === 'firecrawl'
+          ? 'Firecrawl retailer HTML'
+          : 'Bright Data retailer HTML';
+  return result;
 }
 export async function scrapeSearchHtml(
   query: string,

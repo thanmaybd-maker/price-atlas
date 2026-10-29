@@ -1,5 +1,6 @@
 import { exactMatch, type Category } from '../domain/index';
 import { compareVariants, variantSignature } from '../domain/variant-guard';
+import { isIsbn13 } from '../domain/isbn';
 export const categoryRegistry: Record<Category, string[]> = {
   phones: ['Brand', 'Model Number', 'RAM', 'Storage', 'Color', 'Connectivity'],
   laptops: ['Brand', 'Model Number', 'Processor', 'RAM', 'Storage', 'Graphics', 'Display', 'Color'],
@@ -47,6 +48,12 @@ const aliases: Record<string, string> = {
   'display size': 'Display',
   'refresh rate': 'Refresh Rate',
   resolution: 'Resolution',
+  isbn: 'ISBN',
+  'isbn-13': 'ISBN',
+  'isbn 13': 'ISBN',
+  isbn13: 'ISBN',
+  gtin: 'GTIN',
+  gtin13: 'GTIN',
 };
 export function normalizedAttributes(input: Record<string, string>) {
   const out: Record<string, string> = {};
@@ -61,6 +68,21 @@ export function compareAttributes(
 ) {
   const first = normalizedAttributes(a),
     second = normalizedAttributes(b);
+  if (category === 'books') {
+    const identities = [first, second].map((attributes) => {
+      const values = [attributes.ISBN, attributes.GTIN]
+        .filter(Boolean)
+        .map((value) => value.replace(/[\s-]/g, ''))
+        .filter(isIsbn13);
+      return [...new Set(values)];
+    });
+    if (identities.some((values) => values.length > 1))
+      return { decision: 'rejected' as const, conflicts: ['ISBN'], unknown: [] };
+    if (identities.some((values) => !values.length))
+      return { decision: 'review' as const, conflicts: [], unknown: ['ISBN'] };
+    first.GTIN = identities[0][0];
+    second.GTIN = identities[1][0];
+  }
   const variants = compareVariants(variantSignature('', first), variantSignature('', second));
   if (variants.decision !== 'accepted') return variants;
   // Apple retail part numbers encode the exact storage/color/regional SKU.

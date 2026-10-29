@@ -3,6 +3,46 @@
 :root {
   --history-paper: var(--surface);
 }
+.offer-evidence,
+.retailer-outcomes {
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.offer-evidence summary,
+.retailer-outcomes summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.offer-evidence dl {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(0, 3fr);
+  gap: 8px;
+  text-align: left;
+}
+.offer-evidence dd {
+  margin: 0;
+}
+.offer-evidence-list {
+  margin-top: 20px;
+}
+.retailer-outcomes ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.retailer-outcomes li {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+}
 .history-tools {
   padding: 24px;
   max-width: 1180px;

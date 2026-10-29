@@ -16,7 +16,7 @@ const fmt = (paise: number) =>
 export type Ridge = { key: string; name: string; obs: Offer[] };
 export function TidesWorld({
   ridges,
-  title = 'Thirty days, drawn as tides.',
+  title = 'Recorded history · last 30 days.',
   lede = 'Each wave is one watched product, recorded prices only, and a gap means nothing was observed. Drag across to read any day; pick a name to follow it.',
   basis = 'delivered',
   embedded = false,

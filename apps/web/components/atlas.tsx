@@ -80,6 +80,10 @@ import { fetchJson } from '../lib/fetch-json';
 import type { PinDraft } from './home-worlds';
 import { historyCoverage } from '../../../packages/domain/history-coverage';
 import { ExternalHistory } from './external-history';
+import { OfferEvidence } from './offer-evidence';
+import { RetailerOutcomes } from './retailer-outcomes';
+import type { LookupSource } from '../../../packages/domain/retailer-outcomes';
+import { discoveryConflict } from '../../../packages/domain/discovery-guard';
 type User = {
   id: string;
   name: string;
@@ -194,6 +198,7 @@ export default function Atlas({
     ids: string[];
     message: string;
     candidates: SearchCandidate[];
+    sources?: LookupSource[];
     searchLinks?: { store: (typeof STORE_NAMES)[number]; url: string }[];
   }>({ query: '', busy: false, ids: [], message: '', candidates: [] });
   const [compare, setCompare] = useState<string[]>([]);
@@ -273,8 +278,12 @@ export default function Atlas({
           (found.length
             ? `${found.length} product${found.length === 1 ? '' : 's'} found. Prices and availability are from recorded retailer checks.`
             : 'No verified details found. Try a specific model name or retailer product URL.'),
-        candidates: result.candidates || [],
+        candidates: (result.candidates || []).filter(
+          (candidate: SearchCandidate) =>
+            /^https?:\/\//i.test(searchText) || !discoveryConflict(candidate.title, searchText),
+        ),
         searchLinks: result.searchLinks || [],
+        sources: result.sources || [],
       });
       if (/^https?:\/\//i.test(searchText) && found[0]) router.push(`/p/${found[0].slug}`);
     })().catch((error) => {
@@ -648,7 +657,7 @@ export default function Atlas({
                 {r.offers.length > 1
                   ? 'Lowest delivered price'
                   : r.offers.length
-                    ? '1 available offer'
+                    ? '1 recorded offer · delivered'
                     : itemRank.offers.length
                       ? 'Item price · delivery extra/unknown'
                       : lastObserved
@@ -948,6 +957,15 @@ export default function Atlas({
                       : 'Explore the atlas.'}
                 </h1>
                 <p className="muted">Exact variants. Transparent prices. A clearer choice.</p>
+                {!demo && searchText && (
+                  <RetailerOutcomes
+                    offers={offers.filter((o) =>
+                      products.some((p) => p.id === o.productId && matchesQuery(p, searchText)),
+                    )}
+                    sources={lookup.query === searchText ? lookup.sources || [] : []}
+                    pending={lookup.query !== searchText || lookup.busy}
+                  />
+                )}
               </div>
               <SearchBox query={query} setQuery={setQuery} search={search} products={products} />
             </div>
@@ -1672,7 +1690,7 @@ export default function Atlas({
                 {r.offers.length > 1
                   ? 'Lowest eligible delivered price'
                   : r.offers.length
-                    ? 'Available delivered price'
+                    ? '1 recorded offer · delivered'
                     : itemRank.offers.length
                       ? 'Listed item price · delivery extra/unknown'
                       : p.attributes['Source price']
@@ -1841,6 +1859,7 @@ export default function Atlas({
                         : 'Out of stock'}
                 </span>
                 <span>{relative(o.observedAt)}</span>
+                <OfferEvidence offer={o} basis={r.offers.length ? 'delivered' : 'item'} />
                 <span>{retailers[o.store].deliveryNote}</span>
                 <span>{variantLabel(p.name, { ...p.attributes, Condition: o.condition })}</span>
               </div>

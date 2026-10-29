@@ -52,6 +52,8 @@ export interface Offer {
   seller: string;
   context: string;
   purchaseUrl?: string;
+  extractionMethod?: string;
+  parserVersion?: string;
 }
 export interface Rule {
   id: string;
