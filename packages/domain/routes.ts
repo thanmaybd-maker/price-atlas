@@ -1,6 +1,7 @@
 import { categoryLabels } from './categories';
 const pages = new Set([
   'search',
+  'categories',
   'compare',
   'watchlist',
   'alerts',

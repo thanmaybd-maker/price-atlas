@@ -2131,13 +2131,12 @@ th {
 [data-theme='dark'] .benefit p {
   color: #a7b09d;
 }
+/* cards rise in without fading, so their text is never below contrast while they settle */
 @keyframes appear {
   from {
-    opacity: 0;
     transform: translateY(10px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
@@ -3435,10 +3434,10 @@ th {
 .axis-label,
 .history-note,
 .card-category {
-  color: #65715f;
+  color: #5a6554;
 }
 .axis-label {
-  fill: #65715f;
+  fill: #5a6554;
 }
 .source-strip > .page-width > span:first-child,
 .floating-top .eyebrow,

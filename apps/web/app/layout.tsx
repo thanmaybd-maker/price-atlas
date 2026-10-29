@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import './atlas-v2.css';
+import './home-sketch.css';
+import './categories-sketch.css';
 export const metadata: Metadata = {
   title: 'PRICE ATLAS — Find your better price',
   description:

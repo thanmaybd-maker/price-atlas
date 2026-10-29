@@ -58,6 +58,14 @@ import { TelegramSettings } from './telegram-settings';
 import { RingHero } from './ring-hero';
 import { SearchFlower } from './search-flower';
 import { WeekLedger } from './week-ledger';
+import dynamic from 'next/dynamic';
+import { TidesWorld } from './tides-world';
+import { CategoriesBoard } from './categories-board';
+// The home "worlds" sit below the fold; loading them after the page is interactive keeps the
+// search box responsive on first paint.
+const HomeWorlds = dynamic(() => import('./home-worlds').then((m) => m.HomeWorlds), {
+  ssr: false,
+});
 import { RecentHistory } from './recent-history';
 import { matchesQuery } from '../../../packages/domain/search';
 import { retailers } from '../../../packages/domain/retailers';
@@ -464,6 +472,14 @@ export default function Atlas({
     setBasis(rule?.basis || (demo ? 'delivered' : 'item'));
     setTargetProduct(p);
   }
+  // the home page's "Pin a target" form hands its draft to the same confirm-and-save dialog
+  function pinTarget(p: Product, rupees: number, store: string, priceBasis: 'delivered' | 'item') {
+    setEditRule(null);
+    setTarget(String(rupees));
+    setScope(store);
+    setBasis(priceBasis);
+    setTargetProduct(p);
+  }
   function toggleCompare(id: string) {
     const next = compare.includes(id) ? compare.filter((v) => v !== id) : [...compare, id];
     if (next.length > 4) {
@@ -725,8 +741,8 @@ export default function Atlas({
             <section className="v2-cats page-width" aria-labelledby="v2-cats-title">
               <div className="v2-cats-head">
                 <h2 id="v2-cats-title">Shop by category</h2>
-                <Link prefetch={false} href="/search">
-                  See everything
+                <Link prefetch={false} href="/categories">
+                  See every category
                 </Link>
               </div>
               <div className="v2-cat-grid">
@@ -738,6 +754,16 @@ export default function Atlas({
                 ))}
               </div>
             </section>
+            <HomeWorlds
+              products={products}
+              offers={offers}
+              watches={session.watches}
+              rules={session.rules}
+              notifications={session.notifications}
+              emailAvailable={Boolean(session.delivery?.emailAvailable)}
+              onSave={save}
+              onPin={pinTarget}
+            />
             <section className="discovery-section page-width">
               <div className="section-heading">
                 <div>
@@ -805,6 +831,8 @@ export default function Atlas({
               </div>
             </section>
           </>
+        ) : page === 'categories' ? (
+          <CategoriesBoard />
         ) : page === 'search' || page === 'category' ? (
           <section className="page-width results-page">
             <div className="breadcrumbs">
@@ -1910,6 +1938,21 @@ export default function Atlas({
             Report a price or match issue
           </button>
         </p>
+        <div className="hs">
+          <TidesWorld
+            embedded
+            basis={historyBasis}
+            lede="One wave per store, recorded prices only. A gap means nothing was observed that day. Drag across to read any day; pick a store to follow it."
+            ridges={[...new Set(comparableHistory.map((o) => o.store))]
+              .map((s) => ({
+                key: s,
+                name: s === 'Amazon' ? 'Amazon.in' : s,
+                obs: comparableHistory.filter((o) => o.store === s),
+              }))
+              .sort((a, b) => b.obs.length - a.obs.length)
+              .slice(0, 4)}
+          />
+        </div>
         <WeekLedger observations={comparableHistory} basis={historyBasis} />
         <div className="history-panel">
           <div className="section-heading">

@@ -600,7 +600,8 @@ h2 {
   animation: v2-glow 2.4s ease-in-out infinite;
 }
 .v2-cell.drop .chg {
-  color: var(--v2-green-deep);
+  /* deeper than --v2-green-deep so it passes 4.5:1 on every pastel day */
+  color: oklch(30% 0.09 162);
 }
 .v2-cell.spike {
   box-shadow:
@@ -610,7 +611,7 @@ h2 {
     0 12px 22px -6px var(--v2-bad);
 }
 .v2-cell.spike .chg {
-  color: var(--v2-bad);
+  color: oklch(34% 0.15 28);
 }
 @keyframes v2-glow {
   50% {
