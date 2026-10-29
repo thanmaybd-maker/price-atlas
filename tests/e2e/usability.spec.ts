@@ -114,6 +114,9 @@ test('history read failure stays visible and retry restores real recorded rows',
   });
   await page.getByText('View recorded daily prices', { exact: true }).click();
   await expect(page.locator('.tide-data tbody tr').first()).toBeVisible();
+  await expect(page.locator('.ridge .recorded-point')).toHaveCount(
+    await page.locator('.tide-data tbody tr').count(),
+  );
   await page.locator('.hs .al').screenshot({ path: 'data/history-proof.png' });
 });
 

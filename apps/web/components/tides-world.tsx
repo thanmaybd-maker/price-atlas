@@ -117,6 +117,23 @@ export function TidesWorld({
                     fill={`url(#tide-${i})`}
                   ></path>
                   <path className={`rl l${i}${i === on ? ' on' : ' off'}`} d={g.line}></path>
+                  {g.s.map((value, day) =>
+                    value === null ? null : (
+                      <circle
+                        key={day}
+                        className="recorded-point"
+                        cx={g.X(day).toFixed(1)}
+                        cy={g.Y(value).toFixed(1)}
+                        r="3.5"
+                        fill="var(--al-ink)"
+                      >
+                        <title>
+                          {g.r.name}: ₹{fmt(value)} ·{' '}
+                          {day === N - 1 ? 'today' : `${N - 1 - day} days ago`}
+                        </title>
+                      </circle>
+                    ),
+                  )}
                   <text x="0" y={g.top + 34}>
                     {g.r.name.length > 26 ? g.r.name.slice(0, 25) + '…' : g.r.name}
                   </text>
@@ -169,6 +186,9 @@ export function TidesWorld({
           <div className="al-key">
             <span>
               magenta dot <b>lowest day</b>
+            </span>
+            <span>
+              small dot <b>recorded day</b>
             </span>
             <span>
               display freshness <b>24 h</b>
