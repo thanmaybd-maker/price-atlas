@@ -365,6 +365,8 @@ def wave():
 
 
 if __name__ == '__main__':
-    flower()
+    # the search flower is now a procedural lotus in search-flower.tsx; flower() is kept for reference
+    if '--flower' in sys.argv:
+        flower()
     wave()
     print('BUILT', os.listdir(OUT))
