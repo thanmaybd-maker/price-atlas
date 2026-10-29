@@ -6,7 +6,8 @@ import type { Offer } from '@domain/index';
 import { dailyLows } from '../../../packages/domain/daily-history';
 
 type Basis = 'delivered' | 'item';
-const fmt = (paise: number) => new Intl.NumberFormat('en-IN').format(Math.round(paise / 100));
+const fmt = (paise: number) =>
+  new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(paise / 100);
 
 // ---------------------------------------------------------------------------
 // Thirty days, drawn as tides. Used on the home page (one ridge per product)
@@ -176,9 +177,49 @@ export function TidesWorld({
               alert freshness <b>1 h</b>
             </span>
             <span>
-              history kept <b>30 d</b>
+              history window <b>up to 30 d</b>
             </span>
           </div>
+          <details className="tide-data">
+            <summary>View recorded daily prices</summary>
+            <p>
+              {basis === 'item'
+                ? 'Item prices; shipping is excluded.'
+                : 'Only totals with known shipping.'}{' '}
+              Missing days have no recorded check.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Product / store</th>
+                  <th>India date</th>
+                  <th>Lowest recorded price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {geom.flatMap((g) =>
+                  g.s.flatMap((value, index) =>
+                    value === null ? (
+                      []
+                    ) : (
+                      <tr key={`${g.r.key}:${index}`}>
+                        <td>{g.r.name}</td>
+                        <td>
+                          {new Intl.DateTimeFormat('en-CA', {
+                            timeZone: 'Asia/Kolkata',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                          }).format(Date.now() - (N - 1 - index) * 86400000)}
+                        </td>
+                        <td>₹{fmt(value)}</td>
+                      </tr>
+                    ),
+                  ),
+                )}
+              </tbody>
+            </table>
+          </details>
         </div>
       </div>
     </section>

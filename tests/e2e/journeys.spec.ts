@@ -20,15 +20,13 @@ test('search, product identity, and chart alternative', async ({ page }) => {
 test('target survives profile creation, then persists across reload', async ({ page }) => {
   await page.goto('/p/google-pixel-9-128gb-obsidian');
   await page.getByRole('button', { name: 'Set a price target' }).click();
-  await page.getByRole('spinbutton').fill('999999');
-  await page.getByRole('button', { name: 'Continue with a demo profile' }).click();
+  await expect(page).toHaveURL(/\?pin=/);
+  await page.getByLabel('Alert me at or below', { exact: true }).fill('999999');
+  await page.locator('#targets').getByRole('button', { name: 'Pin it', exact: true }).click();
   await page.getByRole('textbox', { name: 'Your name', exact: true }).fill('Browser verification');
   await page.getByRole('button', { name: 'Create demo profile', exact: true }).click();
-  const save = page.getByRole('button', { name: 'Save target', exact: true });
-  await expect(save).toBeEnabled();
-  await expect(page.getByRole('spinbutton')).toHaveValue('999999');
-  await save.click();
   await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(page.locator('#targets .sheet').first()).toContainText('9,99,999');
   await page.goto('/alerts');
   await expect(page.getByText('Your target price is here', { exact: true })).toHaveCount(1);
   await page.reload();

@@ -494,7 +494,6 @@ h2 {
 }
 @keyframes v2-ticket {
   from {
-    opacity: 0;
     transform: translateX(36px) rotate(1deg);
   }
 }
