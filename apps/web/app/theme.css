@@ -110,7 +110,7 @@
 }
 .tide-data td:last-child,
 .tide-data th:last-child {
-  min-width: 18rem;
+  min-width: 12rem;
 }
 .history-citation {
   display: block;

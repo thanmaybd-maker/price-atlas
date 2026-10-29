@@ -76,7 +76,7 @@ test('archived history exposes capture proof in both the 30-day table and seven-
       });
       await expect(
         table.getByRole('link', { name: 'Internet Archive capture', exact: true }),
-      ).toBeInViewport();
+      ).toBeInViewport({ ratio: 1 });
     }
     await page.locator('.al-sheet').screenshot({ path: `data/archive-evidence-${width}.png` });
   }
