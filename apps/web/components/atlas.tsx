@@ -93,6 +93,7 @@ import {
   parseQueryIntent,
 } from '../../../packages/domain/query-intent';
 import { FxNote } from './fx-note';
+import { GeminiBadge, GeminiFinds } from './gemini-finds';
 type User = {
   id: string;
   name: string;
@@ -1036,9 +1037,7 @@ export default function Atlas({
                     ) : (
                       <>Spelling checked.</>
                     )}
-                    <span className="gemini-badge">
-                      <Sparkles size={12} aria-hidden="true" /> Powered by Gemini
-                    </span>
+                    <GeminiBadge />
                   </p>
                 )}
                 {!demo && searchText && (
@@ -1221,6 +1220,12 @@ export default function Atlas({
                 onDone={() => setBloom(false)}
               />
             )}
+            {searchText &&
+              !/^https?:\/\//i.test(searchText) &&
+              filtered.length < 3 &&
+              !(lookup.query === searchText && lookup.busy) && (
+                <GeminiFinds query={assistedQuery || searchText} />
+              )}
             {filtered.length ? (
               <div className="product-grid">
                 {filtered

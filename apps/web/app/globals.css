@@ -3592,3 +3592,160 @@ th {
     font-size: clamp(35px, 11.3vw, 43px);
   }
 }
+
+/* Gemini: own motion (no Google artwork): a slowly turning gradient ring around a sparkle,
+   a light sweep across the label while searching, and a staggered reveal of results. */
+.gemini-live {
+  position: relative;
+  isolation: isolate;
+}
+.gemini-orb {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #3f57c8;
+}
+.gemini-orb::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  padding: 1.5px;
+  background: conic-gradient(from 0deg, #4f7cf7, #9b72cb, #e07a8a, #f2b14c, #4f7cf7);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: gemini-turn 6s linear infinite;
+}
+.gemini-live.working .gemini-orb::before {
+  animation-duration: 1.4s;
+}
+.gemini-live.working .gemini-word {
+  background: linear-gradient(90deg, currentColor 0 35%, #8aa6ff 50%, currentColor 65% 100%);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gemini-sweep 1.6s ease-in-out infinite;
+}
+@keyframes gemini-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes gemini-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+.gemini-finds {
+  margin: 6px 0 34px;
+  padding: 20px 22px;
+  border-radius: 16px;
+  border: 1px solid #d7dff0;
+  background: linear-gradient(180deg, #f7f9ff, #fbfcff);
+}
+.gemini-finds header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.gemini-finds h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.2px;
+}
+.gemini-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.gemini-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e3e8f4;
+  animation: gemini-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.gemini-list li > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+.gemini-list .outline-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  white-space: nowrap;
+}
+@keyframes gemini-rise {
+  from {
+    transform: translateY(8px);
+  }
+}
+.gemini-skeleton {
+  display: grid;
+  gap: 10px;
+}
+.gemini-skeleton i {
+  display: block;
+  height: 54px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #eef2fb 0 30%, #f8faff 50%, #eef2fb 70% 100%);
+  background-size: 250% 100%;
+  animation: gemini-sweep 1.3s ease-in-out infinite;
+}
+.gemini-sources {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.gemini-sources ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+[data-theme='dark'] .gemini-finds {
+  border-color: #33405c;
+  background: linear-gradient(180deg, #161d2b, #141a26);
+}
+[data-theme='dark'] .gemini-list li {
+  background: #1a2232;
+  border-color: #2e3a52;
+}
+[data-theme='dark'] .gemini-orb {
+  color: #b9c8ff;
+}
+[data-theme='dark'] .gemini-skeleton i {
+  background: linear-gradient(90deg, #1c2434 0 30%, #26304a 50%, #1c2434 70% 100%);
+  background-size: 250% 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gemini-orb::before,
+  .gemini-live.working .gemini-word,
+  .gemini-skeleton i,
+  .gemini-list li {
+    animation: none;
+  }
+  .gemini-live.working .gemini-word {
+    -webkit-text-fill-color: currentColor;
+    background: none;
+  }
+}

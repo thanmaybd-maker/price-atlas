@@ -21,6 +21,7 @@ import { retailers } from '../../../../../../packages/domain/retailers';
 import { knownApiPath } from '../../../../../../packages/domain/routes';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import { assistQuery } from '../../../../../../packages/providers/gemini';
+import { discoverWithGemini } from '../../../../../../packages/providers/gemini-discover';
 import { applyIntent, parseQueryIntent } from '../../../../../../packages/domain/query-intent';
 import { fxReference } from '../../../../../../packages/providers/fx';
 import {
@@ -67,6 +68,7 @@ async function handler(req: NextRequest) {
         'health',
         'catalog',
         'assist',
+        'ai-discover',
         'fx',
         'search',
         'suggestions',
@@ -180,6 +182,22 @@ async function handler(req: NextRequest) {
           offers: await data.offers(id || undefined),
           mode: data.isLive() ? 'live' : 'demo',
         });
+      }
+      if (path[0] === 'ai-discover') {
+        const q = z.string().trim().min(2).max(200).parse(req.nextUrl.searchParams.get('q'));
+        if (process.env.REDIS_URL) {
+          const who = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
+          if (await limited(`ai-discover:${who}`, 6).catch(() => false))
+            return json({
+              provider: 'gemini',
+              available: true,
+              query: q,
+              candidates: [],
+              sources: [],
+              reason: 'limited',
+            });
+        }
+        return json(await discoverWithGemini(q));
       }
       if (path[0] === 'fx') {
         const from = z
