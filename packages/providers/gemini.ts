@@ -135,13 +135,15 @@ export async function assistQuery(raw: string, f: Fetch = fetch): Promise<Assist
   let value: AssistResult;
   try {
     const models = MODELS();
-    let out = await callGemini(original, f, true, models[0]);
+    // Lite models do not think and reject a thinking budget, so only full models get one.
+    const thinkingOff = (m: string) => !/lite/i.test(m);
+    let out = await callGemini(original, f, thinkingOff(models[0]), models[0]);
     // Some model versions reject a thinking budget; retry once without it.
-    if (!out.ok && out.status === 400 && /thinking/i.test(out.text))
+    if (!out.ok && out.status === 400 && thinkingOff(models[0]))
       out = await callGemini(original, f, false, models[0]);
-    // A busy or unknown model falls back once to the next one.
-    if (!out.ok && [404, 429, 500, 503].includes(out.status) && models[1])
-      out = await callGemini(original, f, true, models[1]);
+    // A busy, unknown or refusing model falls back once to the next one.
+    if (!out.ok && [400, 404, 429, 500, 503].includes(out.status) && models[1])
+      out = await callGemini(original, f, thinkingOff(models[1]), models[1]);
     if (!out.ok) {
       // Google's error text never contains the key; keep only its status and message.
       let message = '';
