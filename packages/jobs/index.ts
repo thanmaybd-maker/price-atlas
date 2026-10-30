@@ -216,24 +216,31 @@ export async function fetchProductWithBudget(
 // datacenter IP with 429/403, so a refused direct fetch falls back to the paid provider
 // pool (Firecrawl) inside the shared daily credit budget instead of losing the day's check.
 async function collectPage(url: string) {
-  try {
-    return await fetchProductWithBudget(url, undefined, undefined, {
-      transport: 'direct',
-      timeoutMs: 6000,
-    });
-  } catch (error) {
-    const refused =
-      error instanceof ScrapeError &&
-      ['rate_limited', 'blocked', 'http_error', 'empty', 'network'].includes(error.code) &&
-      !(error instanceof SourceLimitError);
-    if (!refused || !process.env.FIRECRAWL_API_KEY) throw error;
-    return fetchProductWithBudget(
+  const viaFirecrawl = () =>
+    fetchProductWithBudget(
       url,
       20000,
       undefined,
       { transport: 'firecrawl', apiKey: process.env.FIRECRAWL_API_KEY },
       true,
     );
+  try {
+    const direct = await fetchProductWithBudget(url, undefined, undefined, {
+      transport: 'direct',
+      timeoutMs: 6000,
+    });
+    // A direct page without a readable price is usually a degraded bot page, not a real
+    // "unavailable": confirm through Firecrawl before it replaces the last known price.
+    if (direct.itemPrice === null && process.env.FIRECRAWL_API_KEY)
+      return await viaFirecrawl().catch(() => direct);
+    return direct;
+  } catch (error) {
+    const refused =
+      error instanceof ScrapeError &&
+      ['rate_limited', 'blocked', 'http_error', 'empty', 'network'].includes(error.code) &&
+      !(error instanceof SourceLimitError);
+    if (!refused || !process.env.FIRECRAWL_API_KEY) throw error;
+    return viaFirecrawl();
   }
 }
 export async function runCollectionJob(id: string) {
