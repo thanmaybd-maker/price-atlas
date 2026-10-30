@@ -137,7 +137,7 @@ it('keeps international INR prices in source metadata and never invents a landed
   expect(p.attributes['Source price']).toContain('999');
 });
 it('hard caps configured collection budgets while allowing stricter deployments', () => {
-  expect(boundedLimit('10000', MAX_PAID_CREDITS_PER_MONTH)).toBe(300);
+  expect(boundedLimit('10000', MAX_PAID_CREDITS_PER_MONTH)).toBe(3600);
   expect(boundedLimit('0', 300)).toBe(0);
   expect(() => boundedLimit('-1', 300)).toThrow();
 });

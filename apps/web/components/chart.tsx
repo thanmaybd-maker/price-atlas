@@ -88,20 +88,40 @@ export function PriceChart({
           const points = valid.filter((o) => o.store === store);
           return (
             <g key={store}>
-              <path
-                d={points
-                  .map(
-                    (o, j) =>
-                      `${j && o.observedAt <= points[j - 1].validUntil ? 'L' : 'M'}${x(o.observedAt)},${y(total(o, basis)!)}`,
-                  )
-                  .join(' ')}
-                fill="none"
-                stroke={colors[i % colors.length]}
-                strokeWidth={compact ? 4 : 2.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeDasharray={i ? undefined : '5 4'}
-              />
+              {(() => {
+                // Step line: a checked price holds until the next check. Stretches with no
+                // check (past the offer's validity) and the carry-forward to today are dashed.
+                const solid: string[] = [];
+                const dashed: string[] = [];
+                points.forEach((o, j) => {
+                  const px = x(o.observedAt);
+                  const py = y(total(o, basis)!);
+                  const next = points[j + 1];
+                  const nx = next ? x(next.observedAt) : days ? x(end) : px;
+                  if (nx > px) {
+                    const seg = `M${px},${py} H${nx}`;
+                    if (next && next.observedAt <= o.validUntil + 43200000) solid.push(seg);
+                    else dashed.push(seg);
+                  }
+                  if (next) solid.push(`M${nx},${py} V${y(total(next, basis)!)}`);
+                });
+                const stroke = colors[i % colors.length];
+                const common = {
+                  fill: 'none',
+                  stroke,
+                  strokeWidth: compact ? 4 : 2.5,
+                  strokeLinecap: 'round' as const,
+                  strokeLinejoin: 'round' as const,
+                };
+                return (
+                  <>
+                    {solid.length > 0 && <path d={solid.join(' ')} {...common} />}
+                    {dashed.length > 0 && (
+                      <path d={dashed.join(' ')} {...common} strokeDasharray="3 6" opacity=".75" />
+                    )}
+                  </>
+                );
+              })()}
               {!compact &&
                 points.map((o) => (
                   <circle
@@ -109,8 +129,9 @@ export function PriceChart({
                     cx={x(o.observedAt)}
                     cy={y(total(o, basis)!)}
                     r="5"
-                    fill={colors[i % colors.length]}
-                    fillOpacity=".1"
+                    fill="var(--surface, #fff)"
+                    stroke={colors[i % colors.length]}
+                    strokeWidth="2.5"
                     onMouseEnter={() => setHover(o)}
                     onMouseLeave={() => setHover(null)}
                   >
@@ -151,7 +172,7 @@ export function PriceChart({
             <span className="chart-hover">
               {hover
                 ? `${hover.store} · ${money(total(hover, basis))}`
-                : `${valid.length} ${demo ? 'synthetic checks' : 'recorded checks'} · source default location`}
+                : `${valid.length} ${demo ? 'synthetic checks' : 'recorded checks'} · dashed = no check that day, last checked price held`}
             </span>
             <button className="text-button" onClick={() => setTable(!table)}>
               {table ? 'Hide' : 'View'} data table
