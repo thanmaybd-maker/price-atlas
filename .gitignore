@@ -7,3 +7,11 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 *.log
+.vercel/
+coverage/
+.DS_Store
+Thumbs.db
+*.pem
+*.key
+*.backup
+*.enc
