@@ -172,8 +172,25 @@ function relative(at: number) {
     ? 'Just checked'
     : mins < 60
       ? `Checked ${mins}m ago`
-      : `Checked ${Math.floor(mins / 60)}h ago`;
+      : mins < 2880
+        ? `Checked ${Math.floor(mins / 60)}h ago`
+        : `Checked ${Math.floor(mins / 1440)} days ago`;
 }
+// Pipeline bookkeeping kept on the product for evidence, not shopper-facing specs.
+const HIDDEN_SPECS = new Set([
+  'Checked at',
+  'Product URL',
+  'Fetch method',
+  'Base product ID',
+  'Verification status',
+  'Delivery note',
+  'Source category',
+  'Retailer',
+  'Availability',
+  'Source currency',
+  'Parser version',
+  'Extraction method',
+]);
 export default function Atlas({
   route,
   mode = 'demo',
@@ -405,7 +422,16 @@ export default function Atlas({
         if (Array.isArray(selected))
           setCompare(selected.filter((id) => initialProducts.some((p) => p.id === id)).slice(0, 4));
       } catch {}
-    changeTheme(localState.getItem('atlas-theme') === 'dark' ? 'dark' : 'light');
+    {
+      const saved = localState.getItem('atlas-theme');
+      changeTheme(
+        saved === 'dark' || saved === 'light'
+          ? saved
+          : window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light',
+      );
+    }
     setThemeReady(true);
   }, []);
   useEffect(() => {
@@ -1958,16 +1984,13 @@ export default function Atlas({
         <div className="section-heading detail-section-heading">
           <div>
             <p className="eyebrow">THE SAME PRODUCT. SIDE BY SIDE.</p>
-            <h2>Domestic offers (INR).</h2>
+            <h2>Where to buy it.</h2>
           </div>
-          <span className="muted small">Source default location · INR</span>
         </div>
-        <div className="offers-table">
+        <div className="offers-table offers-lean">
           <div className="offers-head">
-            <span>Store & seller</span>
-            <span>Item price</span>
-            <span>Delivery</span>
-            <span>Delivered total</span>
+            <span>Store</span>
+            <span>Price</span>
             <span>Availability</span>
             <span />
           </div>
@@ -1980,25 +2003,21 @@ export default function Atlas({
                 <strong className={`offer-store ${o.store.toLowerCase()}`}>{o.store}</strong>
                 <span>{o.seller}</span>
               </div>
-              <div>
-                <span className="mobile-label">Item price</span>
-                {o.displayAllowed && o.validUntil > Date.now() ? money(o.itemPrice) : 'Expired'}
-              </div>
-              <div>
-                <span className="mobile-label">Delivery</span>
-                {o.shipping === null ? 'Unknown' : o.shipping === 0 ? 'Free' : money(o.shipping)}
-                {o.charges > 0 && <span>{money(o.charges)} mandatory fees</span>}
-              </div>
-              <div>
-                <span className="mobile-label">Total</span>
-                <strong>{eligible(o) ? money(total(o)) : 'Unavailable'}</strong>
-                {r.winners.some((w) => w.id === o.id) && (
+              <div className="offer-price">
+                <span className="mobile-label">Price</span>
+                <strong>
+                  {o.displayAllowed && o.validUntil > Date.now()
+                    ? money(o.itemPrice)
+                    : `Last ${money(o.itemPrice)}`}
+                </strong>
+                {o.shipping !== null && (
+                  <span>
+                    {o.shipping === 0 ? 'Free delivery' : `+ ${money(o.shipping)} delivery`}
+                  </span>
+                )}
+                {r.winners.some((w) => w.id === o.id) && primaryOffers.length > 1 && (
                   <span className="best-label">
-                    {r.winners.length > 1
-                      ? 'Equal lowest'
-                      : r.offers.length === 1
-                        ? 'Available offer'
-                        : 'Lowest eligible'}
+                    {r.winners.length > 1 ? 'Equal lowest' : 'Lowest price'}
                   </span>
                 )}
               </div>
@@ -2014,9 +2033,7 @@ export default function Atlas({
                         : 'Out of stock'}
                 </span>
                 <span>{relative(o.observedAt)}</span>
-                <OfferEvidence offer={o} basis={r.offers.length ? 'delivered' : 'item'} />
-                <span>{retailers[o.store].deliveryNote}</span>
-                <span>{variantLabel(p.name, { ...p.attributes, Condition: o.condition })}</span>
+                <OfferEvidence offer={o} basis="item" />
               </div>
               {!demo && o.purchaseUrl ? (
                 <a
@@ -2230,12 +2247,14 @@ export default function Atlas({
             <h2>Know exactly what you’re comparing.</h2>
           </div>
           <dl className="spec-list">
-            {Object.entries(p.attributes).map(([k, v]) => (
-              <div key={k}>
-                <dt>{k}</dt>
-                <dd>{v}</dd>
-              </div>
-            ))}
+            {Object.entries(p.attributes)
+              .filter(([k]) => !HIDDEN_SPECS.has(k))
+              .map(([k, v]) => (
+                <div key={k}>
+                  <dt>{k}</dt>
+                  <dd>{v}</dd>
+                </div>
+              ))}
           </dl>
         </div>
       </section>
