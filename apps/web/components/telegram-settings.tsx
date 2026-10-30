@@ -9,8 +9,13 @@ export function TelegramSettings() {
     [link, setLink] = useState('');
   async function request(method = 'GET') {
     const res = await fetch('/api/v1/telegram', { method });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Could not load Telegram settings.');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok)
+      throw new Error(
+        res.status === 401
+          ? 'Sign in first, then connect Telegram from this page.'
+          : `${data.error || 'Telegram could not be reached.'} (HTTP ${res.status}${data.requestId ? `, ref ${String(data.requestId).slice(0, 8)}` : ''})`,
+      );
     return data;
   }
   useEffect(() => {
@@ -38,6 +43,8 @@ export function TelegramSettings() {
     setError('');
     try {
       const result = await request('POST');
+      if (typeof result.url !== 'string' || !result.url.startsWith('https://t.me/'))
+        throw new Error('The server did not return a Telegram link. Please try again.');
       setLink(result.url);
     } catch (e) {
       setError((e as Error).message);

@@ -20,6 +20,8 @@ import { matchesQuery } from '../../../../../../packages/domain/search';
 import { retailers } from '../../../../../../packages/domain/retailers';
 import { knownApiPath } from '../../../../../../packages/domain/routes';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
+import { assistQuery } from '../../../../../../packages/providers/gemini';
+import { fxReference } from '../../../../../../packages/providers/fx';
 import {
   verifyUnsubscribe,
   emailDeliveryEnabled,
@@ -62,6 +64,8 @@ async function handler(req: NextRequest) {
       [
         'health',
         'catalog',
+        'assist',
+        'fx',
         'search',
         'suggestions',
         'offers',
@@ -174,6 +178,27 @@ async function handler(req: NextRequest) {
           offers: await data.offers(id || undefined),
           mode: data.isLive() ? 'live' : 'demo',
         });
+      }
+      if (path[0] === 'fx') {
+        const from = z
+          .string()
+          .regex(/^[A-Z]{3}$/)
+          .parse(req.nextUrl.searchParams.get('from'));
+        const reference = await fxReference(from, 'INR');
+        return json(
+          reference
+            ? { reference, note: 'Indicative only. Excludes shipping, import duty and card fees.' }
+            : { reference: null },
+        );
+      }
+      if (path[0] === 'assist') {
+        const q = z.string().trim().min(1).max(2000).parse(req.nextUrl.searchParams.get('q'));
+        if (process.env.REDIS_URL) {
+          const who = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
+          if (await limited(`assist:${who}`, 20).catch(() => false))
+            return json({ provider: 'gemini', available: true, original: q, reason: 'limited' });
+        }
+        return json(await assistQuery(q));
       }
       if (path[0] === 'search' || path[0] === 'suggestions') {
         const query = (req.nextUrl.searchParams.get('q') || '').toLowerCase();

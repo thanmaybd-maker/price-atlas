@@ -84,6 +84,8 @@ import { OfferEvidence } from './offer-evidence';
 import { RetailerOutcomes } from './retailer-outcomes';
 import type { LookupSource } from '../../../packages/domain/retailer-outcomes';
 import { discoveryConflict } from '../../../packages/domain/discovery-guard';
+import { nativeMoney } from '../../../packages/providers/fx';
+import { FxNote } from './fx-note';
 type User = {
   id: string;
   name: string;
@@ -226,8 +228,38 @@ export default function Atlas({
   const maximum = Number(params.get('max') || 0);
   const searchText = params.get('q') || '';
   const searchStore = params.get('store') || 'all';
+  const exactSearch = params.get('exact') === '1';
+  // Gemini search assist: a validated spelling/intent fix of the shopper's own words.
+  const [assist, setAssist] = useState<{
+    for: string;
+    available: boolean;
+    refined?: string;
+  } | null>(null);
   useEffect(() => {
-    if (demo || page !== 'search' || searchText.trim().length < 2) return;
+    if (page !== 'search' || searchText.trim().length < 2 || exactSearch) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7000);
+    fetch(`/api/v1/assist?q=${encodeURIComponent(searchText)}`, { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) =>
+        setAssist({
+          for: searchText,
+          available: Boolean(j?.available),
+          refined: typeof j?.refined === 'string' ? j.refined : undefined,
+        }),
+      )
+      .catch(() => setAssist({ for: searchText, available: false }));
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [page, searchText, exactSearch]);
+  const assistSettled = exactSearch || assist?.for === searchText;
+  const assistedQuery =
+    !exactSearch && assist?.for === searchText && assist.refined ? assist.refined : '';
+  const discoveryText = assistedQuery || searchText;
+  useEffect(() => {
+    if (demo || page !== 'search' || searchText.trim().length < 2 || !assistSettled) return;
     let active = true;
     const controller = new AbortController();
     setLookup({ query: searchText, busy: true, ids: [], message: '', candidates: [] });
@@ -236,7 +268,7 @@ export default function Atlas({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: searchText,
+          query: discoveryText,
           store: searchStore,
           searchMore: params.get('verify') === '1',
         }),
@@ -248,7 +280,7 @@ export default function Atlas({
       for (let attempt = 0; result.state === 'pending' && attempt < 30 && active; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         const status = await fetch(
-          `/api/v1/discovery?q=${encodeURIComponent(searchText)}&store=${encodeURIComponent(searchStore)}`,
+          `/api/v1/discovery?q=${encodeURIComponent(discoveryText)}&store=${encodeURIComponent(searchStore)}`,
           {
             signal: controller.signal,
           },
@@ -300,7 +332,17 @@ export default function Atlas({
       active = false;
       controller.abort();
     };
-  }, [demo, page, searchText, searchStore, params.get('verify'), lookupVersion, router]);
+  }, [
+    demo,
+    page,
+    searchText,
+    discoveryText,
+    assistSettled,
+    searchStore,
+    params.get('verify'),
+    lookupVersion,
+    router,
+  ]);
   useEffect(() => {
     if (!demo && page === 'search' && searchText.trim().length >= 2) setBloom(true);
     else setBloom(false);
@@ -610,7 +652,8 @@ export default function Atlas({
       (!category || p.category === category) &&
       (!params.get('q') ||
         (lookup.query === searchText && lookup.ids.includes(p.id)) ||
-        matchesQuery(p, params.get('q') || '')) &&
+        matchesQuery(p, params.get('q') || '') ||
+        (assistedQuery && matchesQuery(p, assistedQuery))) &&
       (!brand || p.brand === brand) &&
       (searchStore === 'all' ||
         p.attributes.Retailer === searchStore ||
@@ -957,6 +1000,26 @@ export default function Atlas({
                       : 'Explore the atlas.'}
                 </h1>
                 <p className="muted">Exact variants. Transparent prices. A clearer choice.</p>
+                {searchText && !exactSearch && assist?.for === searchText && assist.available && (
+                  <p className="assist-note" role="status">
+                    {assistedQuery ? (
+                      <span>
+                        Also showing results for <b>{assistedQuery}</b>.{' '}
+                        <Link
+                          prefetch={false}
+                          href={`/search?q=${encodeURIComponent(searchText)}&exact=1`}
+                        >
+                          Search only “{searchText}”
+                        </Link>
+                      </span>
+                    ) : (
+                      <>Spelling checked.</>
+                    )}
+                    <span className="gemini-badge">
+                      <Sparkles size={12} aria-hidden="true" /> Powered by Gemini
+                    </span>
+                  </p>
+                )}
                 {!demo && searchText && (
                   <RetailerOutcomes
                     offers={offers.filter((o) =>
@@ -1918,12 +1981,21 @@ export default function Atlas({
             {p.attributes['Source price'] && (
               <p>
                 {p.attributes.Retailer} · {p.attributes['Source price']}{' '}
-                {p.attributes['Source currency']} · {p.attributes['Checked at']}
+                {p.attributes['Source currency']} · {p.attributes['Checked at']}{' '}
+                {Number.isFinite(Number(p.attributes['Source price'])) && (
+                  <FxNote
+                    minor={Math.round(Number(p.attributes['Source price']) * 100)}
+                    currency={p.attributes['Source currency'] || ''}
+                  />
+                )}
               </p>
             )}
             {international.map((o) => (
               <p key={o.id}>
-                {o.store} · {money(o.itemPrice)} INR · {relative(o.observedAt)}{' '}
+                {o.store} ·{' '}
+                {o.currency === 'INR' ? money(o.itemPrice) : nativeMoney(o.itemPrice, o.currency)}{' '}
+                (native {o.currency}) · {relative(o.observedAt)}{' '}
+                <FxNote minor={o.itemPrice} currency={o.currency} />{' '}
                 {o.purchaseUrl && (
                   <a href={o.purchaseUrl} target="_blank" rel="noopener noreferrer">
                     Check landed cost on store
