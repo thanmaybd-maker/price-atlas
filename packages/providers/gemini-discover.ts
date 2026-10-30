@@ -48,6 +48,9 @@ const prompt = (query: string) =>
     'reliancedigital.in, ajio.com, meesho.com. Give the direct product page URL',
     '(for Amazon a /dp/ASIN link), never a search page, never a shortened link.',
     'Answer with JSON only, no prose: {"products":[{"title":"...","url":"https://...","price_inr":12345}]}',
+    'If the query names a kind of product with a budget or need (for example "laptop under 1 lakh"',
+    'or "sunscreen for oily skin"), list up to 6 specific current models that fit it, each with its',
+    'own product page, instead of returning nothing.',
     'Up to 6 items. Use null for price_inr when the page price is not stated. Do not guess URLs.',
   ].join('\n');
 
