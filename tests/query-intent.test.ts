@@ -121,3 +121,44 @@ describe('applyIntent', () => {
     expect(knownPrice('neo', [offer('neo', 500, { currency: 'USD' })], undefined, NOW)).toBeNull();
   });
 });
+
+describe('nearMisses', () => {
+  it('offers labelled alternatives when nothing in stock fits the budget', async () => {
+    const { nearMisses } = await import('../packages/domain/query-intent');
+    const m2 = {
+      ...({} as Product),
+      id: 'm2',
+      slug: 'm2',
+      name: 'MacBook Air M2',
+      brand: 'Apple',
+      category: 'laptops',
+      subtitle: '',
+      attributes: {},
+    } as unknown as Product;
+    const NOW2 = Date.parse('2026-10-30T12:00:00Z');
+    const o = {
+      id: 'x',
+      productId: 'm2',
+      store: 'Flipkart',
+      itemPrice: 8590000,
+      shipping: null,
+      charges: 0,
+      discount: 0,
+      currency: 'INR',
+      stock: false,
+      accepted: true,
+      condition: 'new',
+      observedAt: NOW2 - 2 * 86400000,
+      validUntil: NOW2 - 86400000,
+      historyAllowed: true,
+      alertsAllowed: false,
+      displayAllowed: true,
+      seller: 's',
+      context: 'c',
+    } as Offer;
+    const intent = parseQueryIntent('laptop under 1 lakh');
+    expect(applyIntent([m2], [o], intent, matchesQuery, { now: NOW2 })).toHaveLength(0);
+    const near = nearMisses([m2], [o], intent, matchesQuery, { now: NOW2 });
+    expect(near[0]).toMatchObject({ p: { id: 'm2' }, price: { paise: 8590000, inStock: false } });
+  });
+});

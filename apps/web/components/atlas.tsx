@@ -86,7 +86,12 @@ import type { LookupSource } from '../../../packages/domain/retailer-outcomes';
 import { discoveryConflict } from '../../../packages/domain/discovery-guard';
 import { nativeMoney } from '../../../packages/providers/fx';
 import { retailerSearchUrl } from '../../../packages/domain/retailers';
-import { applyIntent, knownPrice, parseQueryIntent } from '../../../packages/domain/query-intent';
+import {
+  applyIntent,
+  knownPrice,
+  nearMisses,
+  parseQueryIntent,
+} from '../../../packages/domain/query-intent';
 import { FxNote } from './fx-note';
 type User = {
   id: string;
@@ -663,6 +668,18 @@ export default function Atlas({
     textMatch,
     { store: effectiveStore, sort },
   ).map((row) => row.p);
+  const near = filtered.length
+    ? []
+    : nearMisses(
+        products.filter((p) => !brand || p.brand === brand),
+        offers,
+        {
+          ...intent,
+          category: intent.category || category || assistedIntent?.category,
+        } as typeof intent,
+        textMatch,
+        { store: effectiveStore },
+      );
   const pageCount = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(pageCount, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
   function Card({ p, index = 0 }: { p: Product; index?: number }) {
@@ -1210,7 +1227,29 @@ export default function Atlas({
                   .slice((currentPage - 1) * 24, currentPage * 24)
                   .map((p, i) => Card({ p, index: i }))}
               </div>
-            ) : bloom ? null : (
+            ) : bloom ? null : near.length ? (
+              <section aria-label="Closest products" className="near-misses">
+                <p className="assist-note" role="status">
+                  Nothing in stock fits{' '}
+                  {intent.maxPaise != null ? `under ${money(intent.maxPaise)}` : 'that budget'}{' '}
+                  right now. Closest tracked products, with their last checked price and stock:
+                </p>
+                <ul className="near-list">
+                  {near.map(({ p, price }) => (
+                    <li key={p.id}>
+                      <Link prefetch={false} href={`/p/${p.slug}`}>
+                        {p.name}
+                      </Link>
+                      <span>
+                        {price
+                          ? `${money(price.paise)} · ${price.store} · ${price.inStock ? (price.fresh ? 'in stock' : 'last checked') : 'out of stock'} ${new Date(price.observedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                          : 'no recent price'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : (
               <Empty
                 icon={Search}
                 title={
