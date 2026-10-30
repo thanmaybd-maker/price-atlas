@@ -106,7 +106,7 @@ async function callGemini(query: string, f: Fetch, withThinkingOff: boolean) {
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const text = await res.text();
-  if (!res.ok) return { ok: false as const, status: res.status, text: text.slice(0, 300) };
+  if (!res.ok) return { ok: false as const, status: res.status, text: text.slice(0, 4000) };
   return { ok: true as const, json: JSON.parse(text) };
 }
 
