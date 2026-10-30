@@ -18,6 +18,8 @@ export type AssistResult = {
   reason?:
     'unconfigured' | 'unchanged' | 'rejected' | 'timeout' | 'error' | 'limited' | 'not_applicable';
   cached?: boolean;
+  /** Upstream status and message when Gemini refused the request. Never contains the key. */
+  detail?: string;
 };
 
 const MODEL = () => process.env.GEMINI_MODEL || 'gemini-flash-latest';
@@ -131,8 +133,16 @@ export async function assistQuery(raw: string, f: Fetch = fetch): Promise<Assist
     // Some model versions reject a thinking budget; retry once without it.
     if (!out.ok && out.status === 400 && /thinking/i.test(out.text))
       out = await callGemini(original, f, false);
-    if (!out.ok) value = { ...base, reason: 'error' };
-    else {
+    if (!out.ok) {
+      // Google's error text never contains the key; keep only its status and message.
+      let message = '';
+      try {
+        message = String(JSON.parse(out.text)?.error?.message || '');
+      } catch {
+        message = out.text;
+      }
+      value = { ...base, reason: 'error', detail: `HTTP ${out.status}: ${message.slice(0, 160)}` };
+    } else {
       const part = out.json?.candidates?.[0]?.content?.parts?.find(
         (p: { text?: string }) => typeof p.text === 'string',
       )?.text;
