@@ -19,6 +19,8 @@ export type GeminiDiscovery = {
   available: boolean;
   query: string;
   candidates: GeminiCandidate[];
+  /** True when Google Search grounding was used; false for links from the model alone. */
+  grounded?: boolean;
   /** Web pages Google Search grounding actually used, for attribution. */
   sources: { title: string; uri: string }[];
   reason?: 'unconfigured' | 'not_applicable' | 'error' | 'timeout' | 'limited' | 'none_found';
@@ -90,7 +92,7 @@ function parseJson(text: string) {
   }
 }
 
-async function call(query: string, model: string, f: typeof fetch) {
+async function call(query: string, model: string, f: typeof fetch, grounded = true) {
   const res = await f(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
@@ -101,7 +103,7 @@ async function call(query: string, model: string, f: typeof fetch) {
       },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt(query) }] }],
-        tools: [{ google_search: {} }],
+        ...(grounded ? { tools: [{ google_search: {} }] } : {}),
         generationConfig: { temperature: 0, maxOutputTokens: 1200 },
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -138,9 +140,21 @@ export async function discoverWithGemini(
   let value: GeminiDiscovery = { ...base, reason: 'error' };
   try {
     const models = MODELS();
+    let grounded = true;
     let out = await call(query, models[0], f);
     if (!out.ok && [400, 404, 429, 500, 503].includes(out.status) && models[1])
       out = await call(query, models[1], f);
+    // Keys without Google Search grounding quota: ask the model for links it knows. Those
+    // links are verified by fetching the store page like any other, so a wrong one drops out.
+    if (!out.ok && [400, 403, 429].includes(out.status)) {
+      grounded = false;
+      out = await call(
+        query,
+        process.env.GEMINI_MODEL?.split(',')[0] || 'gemini-flash-lite-latest',
+        f,
+        false,
+      );
+    }
     if (!out.ok) {
       let message = '';
       try {
@@ -165,9 +179,13 @@ export async function discoverWithGemini(
           title: String(w.title || 'source'),
           uri: w.uri,
         }));
-      const candidates = acceptCandidates(parseJson(text));
+      // Without live search a quoted price is only model memory: drop it, keep the link.
+      const candidates = acceptCandidates(parseJson(text)).map((c) =>
+        grounded ? c : { ...c, quotedRupees: null },
+      );
       value = {
         ...base,
+        grounded,
         candidates,
         sources,
         reason: candidates.length ? undefined : 'none_found',
