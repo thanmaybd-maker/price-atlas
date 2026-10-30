@@ -21,6 +21,7 @@ import { retailers } from '../../../../../../packages/domain/retailers';
 import { knownApiPath } from '../../../../../../packages/domain/routes';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import { assistQuery } from '../../../../../../packages/providers/gemini';
+import { applyIntent, parseQueryIntent } from '../../../../../../packages/domain/query-intent';
 import { fxReference } from '../../../../../../packages/providers/fx';
 import {
   verifyUnsubscribe,
@@ -28,6 +29,7 @@ import {
 } from '../../../../../../packages/notifications/index';
 import {
   telegramStatus,
+  sendTelegramTest,
   createTelegramLink,
   disconnectTelegram,
   reviewTelegramDelivery,
@@ -204,10 +206,16 @@ async function handler(req: NextRequest) {
         const query = (req.nextUrl.searchParams.get('q') || '').toLowerCase();
         const category = req.nextUrl.searchParams.get('category');
         const sort = req.nextUrl.searchParams.get('sort');
+        const store = req.nextUrl.searchParams.get('store') || 'all';
         const snapshot = await publicCatalog();
-        let products = snapshot.products.filter(
-          (p) => (!category || p.category === category) && matchesQuery(p, query),
-        );
+        const intent = parseQueryIntent(query);
+        let products = applyIntent(
+          snapshot.products.filter((p) => !category || p.category === category),
+          snapshot.offers,
+          intent,
+          matchesQuery,
+          { store, sort: sort || undefined },
+        ).map((row) => row.p);
         if (path[0] === 'suggestions') {
           if (req.nextUrl.searchParams.get('domestic') === '1')
             products = products.filter(
@@ -222,24 +230,13 @@ async function handler(req: NextRequest) {
           });
         }
         const all = snapshot.offers;
-        if (sort === 'price-asc')
-          products.sort(
-            (a, b) =>
-              (rank(all.filter((o) => o.productId === a.id)).lowest ?? Infinity) -
-              (rank(all.filter((o) => o.productId === b.id)).lowest ?? Infinity),
-          );
-        if (sort === 'price-desc')
-          products.sort(
-            (a, b) =>
-              (rank(all.filter((o) => o.productId === b.id)).lowest ?? -Infinity) -
-              (rank(all.filter((o) => o.productId === a.id)).lowest ?? -Infinity),
-          );
         const cursor = Math.max(0, Number(req.nextUrl.searchParams.get('cursor')) || 0);
         return json({
           products: products.slice(cursor, cursor + 24),
           total: products.length,
           offers: all,
           nextCursor: products.length > cursor + 24 ? cursor + 24 : null,
+          intent,
           mode: data.isLive() ? 'live' : 'demo',
         });
       }
@@ -459,6 +456,11 @@ async function handler(req: NextRequest) {
       );
     if (path[0] === 'telegram' && data.isLive()) {
       if (req.method === 'GET') return json(await telegramStatus(user.id));
+      if (req.method === 'POST' && req.nextUrl.searchParams.get('test') === '1') {
+        if (await limited(`telegram-test:${user.id}`, 3).catch(() => false))
+          return json({ ok: false, reason: 'rate_limited' }, 429);
+        return json(await sendTelegramTest(user.id));
+      }
       if (req.method === 'POST') {
         if (!(await telegramStatus(user.id)).configured)
           return json(

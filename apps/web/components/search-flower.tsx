@@ -753,16 +753,7 @@ export function SearchFlower({
       <div className="v2-fl-q">
         <span>“{query}”</span>
       </div>
-      <ol className="v2-fl-trail" aria-hidden="true">
-        {steps
-          .slice(0, -1)
-          .slice(-7)
-          .map((s, i) => (
-            <li key={i} className={s.tone}>
-              {s.title}
-            </li>
-          ))}
-      </ol>
+      {/* One status line only (the caption below); no second list of the same messages. */}
       <div className="v2-fl-cap">
         <div className="n">{busy ? `petal ${steps.length}` : 'all petals in'}</div>
         {last && (

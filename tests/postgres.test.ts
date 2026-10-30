@@ -35,6 +35,7 @@ import {
   telegramStatus,
   disconnectTelegram,
   deliverTelegram,
+  sendTelegramTest,
   TelegramError,
   reviewTelegramDelivery,
 } from '../packages/notifications/telegram';
@@ -256,6 +257,19 @@ it('links Telegram with a single-use hashed token and keeps connection status pr
   expect(await telegramStatus(bob)).toMatchObject({ connected: false });
   expect(await handleTelegramUpdate(update)).toBeNull();
   expect((await handleTelegramUpdate({ ...update, update_id: 2 }))?.text).toContain('already used');
+});
+it('sends a Telegram test only to the caller’s own connected chat', async () => {
+  const sent: string[] = [];
+  const sender = async (chat: string) => (sent.push(chat), '77');
+  expect(await sendTelegramTest(alice, sender)).toEqual({ ok: true, messageId: '77' });
+  expect(sent).toEqual(['123']);
+  expect(await sendTelegramTest(bob, sender)).toEqual({ ok: false, reason: 'not_connected' });
+  expect(sent).toHaveLength(1);
+  expect(
+    await sendTelegramTest(alice, async () => {
+      throw new TelegramError('blocked');
+    }),
+  ).toEqual({ ok: false, reason: 'blocked' });
 });
 it('refuses group linking, expired links and silent transfer of another account’s chat', async () => {
   let link = await createTelegramLink(bob),

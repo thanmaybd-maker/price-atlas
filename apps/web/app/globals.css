@@ -1057,6 +1057,27 @@ a:hover {
 [data-theme='dark'] .assist-note {
   color: #edf4ee;
 }
+.empty-actions {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+.store-search-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.store-search-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 14px;
+}
 .fx-note {
   display: inline-block;
   color: var(--muted, #5a6554);

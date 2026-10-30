@@ -310,3 +310,25 @@ export async function deliverTelegram(sender: TelegramSender = sendTelegram) {
     }
   }
 }
+/** Send one clearly-labelled test message to the caller's own connected chat. */
+export async function sendTelegramTest(userId: string, sender: TelegramSender = sendTelegram) {
+  const row = await tx(
+    async (c) =>
+      (await c.query('SELECT chat_id,enabled FROM atlas.telegram_connections')).rows[0] as
+        { chat_id: string; enabled: boolean } | undefined,
+    userId,
+  );
+  if (!row?.enabled) return { ok: false as const, reason: 'not_connected' };
+  try {
+    const id = await sender(
+      row.chat_id,
+      'Price Atlas test message. Your Telegram alerts are connected. Real alerts arrive when a fresh, matching offer reaches your target. Send /stop to leave.',
+    );
+    return { ok: true as const, messageId: id };
+  } catch (error) {
+    return {
+      ok: false as const,
+      reason: error instanceof TelegramError ? error.code : 'ambiguous',
+    };
+  }
+}
