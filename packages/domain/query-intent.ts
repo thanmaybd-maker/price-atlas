@@ -166,7 +166,8 @@ export function knownPrice(
   offers: Offer[],
   store?: string,
   now = Date.now(),
-): KnownPrice | null {
+  includeOutOfStock = false,
+): (KnownPrice & { inStock: boolean }) | null {
   const mine = offers.filter(
     (o) =>
       o.productId === productId &&
@@ -185,13 +186,48 @@ export function knownPrice(
       store: current.offers[0].store,
       observedAt: current.offers[0].observedAt,
       fresh: true,
+      inStock: true,
     };
   const recent = mine
-    .filter((o) => o.stock && o.observedAt > now - 14 * 86400000 && o.itemPrice > 0)
+    .filter(
+      (o) =>
+        (o.stock || includeOutOfStock) && o.observedAt > now - 14 * 86400000 && o.itemPrice > 0,
+    )
     .sort((a, b) => b.observedAt - a.observedAt || a.itemPrice - b.itemPrice)[0];
   return recent
-    ? { paise: recent.itemPrice, store: recent.store, observedAt: recent.observedAt, fresh: false }
+    ? {
+        paise: recent.itemPrice,
+        store: recent.store,
+        observedAt: recent.observedAt,
+        fresh: false,
+        inStock: recent.stock,
+      }
     : null;
+}
+
+/**
+ * When a budget query has no in-stock match, the nearest honest alternatives: the same
+ * category/words, including out-of-stock and over-budget items, cheapest first. Callers
+ * must label these as not matching the budget or not in stock.
+ */
+export function nearMisses(
+  products: Product[],
+  offers: Offer[],
+  intent: QueryIntent,
+  textMatches: (p: Product, text: string) => boolean,
+  options: { store?: string; now?: number } = {},
+) {
+  if (intent.maxPaise == null && intent.minPaise == null) return [];
+  const store = options.store && options.store !== 'all' ? options.store : intent.store;
+  return products
+    .filter(
+      (p) =>
+        (!intent.category || p.category === intent.category) &&
+        (!intent.text || textMatches(p, intent.text)),
+    )
+    .map((p) => ({ p, price: knownPrice(p.id, offers, store, options.now, true) }))
+    .sort((a, b) => (a.price?.paise ?? Infinity) - (b.price?.paise ?? Infinity))
+    .slice(0, 12);
 }
 
 /** Products matching an intent, with the price used for budget and sort. */
