@@ -135,7 +135,7 @@ export async function fetchProductWithBudget(
   }
   const provider = configured.transport;
   const keys = await availableCredentials(configured.apiKey, provider);
-  const deadline = Date.now() + Math.min(30000, (timeoutMs || 15000) * 2);
+  const deadline = Date.now() + Math.min(44000, (timeoutMs || 15000) * 2);
   let spent = 0,
     temporaryFailures = 0,
     first = true;
@@ -146,7 +146,7 @@ export async function fetchProductWithBudget(
     const attempt = {
       ...configured,
       apiKey,
-      timeoutMs: Math.min(configured.timeoutMs || 15000, deadline - Date.now(), 15000),
+      timeoutMs: Math.min(configured.timeoutMs || 15000, deadline - Date.now(), 28000),
     };
     await reserveSource(store, attempt);
     spent += cost;

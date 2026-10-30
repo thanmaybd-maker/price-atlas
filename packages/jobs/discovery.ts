@@ -135,7 +135,9 @@ export async function discoverProducts(
       );
     const scraped = await fetchProductWithBudget(
       destination,
-      Math.min(10000, deadline - Date.now() - 1000),
+      // A single pasted/selected product page gets time for a proxied fetch (Amazon via
+      // Firecrawl often needs 15-25 s); broad searches keep the short limit.
+      Math.min(destination === url ? 30000 : 10000, deadline - Date.now() - 1000),
       allowPaid,
     );
     const imported = await importScraped(scraped, `lookup-${randomUUID()}`);
