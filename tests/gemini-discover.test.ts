@@ -80,4 +80,31 @@ describe('discoverWithGemini', () => {
     delete process.env.GEMINI_API_KEY;
     expect((await discoverWithGemini('x y', reply('{}'))).reason).toBe('unconfigured');
   });
+  it('falls back to ungrounded links when search grounding has no quota, without prices', async () => {
+    const calls: boolean[] = [];
+    const f = (async (_u: string | URL | Request, init?: RequestInit) => {
+      const grounded = Boolean(JSON.parse(String(init?.body)).tools);
+      calls.push(grounded);
+      if (grounded) return new Response('{"error":{"message":"quota"}}', { status: 429 });
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: '{"products":[{"title":"boAt Airdopes 141","url":"https://www.amazon.in/dp/B09N3ZNHTY","price_inr":1099}]}',
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+    }) as typeof fetch;
+    const r = await discoverWithGemini('boat airdopes 141', f);
+    expect(r).toMatchObject({ grounded: false });
+    expect(r.candidates[0]).toMatchObject({ store: 'Amazon', quotedRupees: null });
+    expect(calls).toEqual([true, true, false]);
+  });
 });
