@@ -871,3 +871,29 @@ h2 {
 .v2-ring.paused .v2-ring-word span span {
   animation: none;
 }
+
+/* Lean offer rows: store, price, availability, visit. */
+.offers-lean .offers-head,
+.offers-lean .offer-row {
+  grid-template-columns: 1.3fr 1.1fr 1.5fr auto;
+}
+.offers-lean .offer-price > strong {
+  display: block;
+  font-family: var(--v2-head, Manrope, sans-serif);
+  font-size: 24px;
+  letter-spacing: -0.5px;
+}
+.offers-lean .offer-evidence summary {
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .offers-lean .offers-head {
+    display: none;
+  }
+  .offers-lean .offer-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .offers-lean .offer-row .store-button {
+    grid-column: 1/-1;
+  }
+}
