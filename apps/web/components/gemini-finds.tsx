@@ -9,6 +9,7 @@ import { ArrowRight, Sparkles } from 'lucide-react';
 type Candidate = { title: string; store: string; url: string; quotedRupees: number | null };
 type Result = {
   available: boolean;
+  grounded?: boolean;
   candidates: Candidate[];
   sources: { title: string; uri: string }[];
   reason?: string;
