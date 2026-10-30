@@ -1105,6 +1105,44 @@ it('loads a bounded public history batch with retained timestamps and supports a
       expect(observation.observedAt).toBeLessThanOrEqual(Date.now());
 });
 
+it('a retailer block on Firecrawl basic proxy is retried once through stealth, within the cap', async () => {
+  const saved = { ...process.env };
+  Object.assign(process.env, {
+    SCRAPER_PROVIDER: 'firecrawl',
+    SCRAPER_DIRECT_FIRST: 'false',
+    FIRECRAWL_API_KEY: 'fixture-fc-stealth',
+    SCRAPER_CREDITS_PER_DAY: '100',
+    SCRAPER_CREDITS_PER_MONTH: '300',
+  });
+  delete process.env.FIRECRAWL_FALLBACK_API_KEYS;
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  const proxies: string[] = [];
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const proxy = JSON.parse(String(init?.body)).proxy;
+    proxies.push(proxy);
+    return proxy === 'basic'
+      ? Response.json({
+          success: true,
+          data: { rawHtml: '<html></html>', metadata: { statusCode: 503 } },
+        })
+      : Response.json({ success: true, data: { rawHtml: html() } });
+  });
+  try {
+    await expect(
+      fetchProductWithBudget('https://www.amazon.in/dp/B000000097'),
+    ).resolves.toMatchObject({ itemPrice: 2500000 });
+    expect(proxies).toEqual(['basic', 'stealth']);
+    proxies.length = 0;
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    await expect(
+      fetchProductWithBudget('https://www.amazon.in/dp/B000000097', 1000, (cost) => cost < 5),
+    ).rejects.toMatchObject({ code: 'http_error' });
+    expect(proxies).toEqual(['basic']);
+  } finally {
+    fetcher.mockRestore();
+    process.env = saved;
+  }
+});
 it('Firecrawl fails over exhausted keys, keeps the working account and enforces one shared lookup allowance', async () => {
   const saved = { ...process.env };
   const fields = [

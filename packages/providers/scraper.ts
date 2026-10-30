@@ -42,6 +42,8 @@ export type ScraperConfig = {
   premiumProxy?: boolean;
   maxCredits?: number;
   timeoutMs?: number;
+  /** Firecrawl only: use its stealth proxy (5 credits) after a basic-proxy block. */
+  stealth?: boolean;
 };
 const MAX_BYTES = 4 * 1024 * 1024;
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim();
@@ -747,7 +749,7 @@ export function scraperCreditCost(config = scraperConfig()) {
         'configuration',
         'Firecrawl requires an allowance of at least one credit.',
       );
-    return 1;
+    return config.stealth ? 5 : 1;
   }
   if (config.transport !== 'scrapingbee') return 0;
   const cost = config.premiumProxy ? (config.renderJs ? 25 : 10) : config.renderJs ? 5 : 1;
@@ -819,7 +821,7 @@ async function retailerHtml(
           formats: ['rawHtml'],
           onlyMainContent: false,
           maxAge: 0,
-          proxy: 'basic',
+          proxy: config.stealth ? 'stealth' : 'basic',
           timeout: Math.min(config.timeoutMs || 25000, 50000),
         }),
         signal,

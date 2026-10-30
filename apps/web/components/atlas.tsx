@@ -1257,21 +1257,47 @@ export default function Atlas({
                 title={
                   !demo && lookup.query === searchText && lookup.busy
                     ? 'Checking products…'
-                    : searchText
-                      ? `“${searchText}” isn’t tracked yet.`
-                      : 'No exact match this time.'
+                    : /^https?:\/\//i.test(searchText)
+                      ? 'Couldn’t read that store page this time.'
+                      : searchText
+                        ? `“${searchText}” isn’t tracked yet.`
+                        : 'No exact match this time.'
                 }
                 text={
                   demo
                     ? 'Try a model name, clear a filter, or explore another category. The demo has eight carefully defined variants.'
                     : lookup.query === searchText && lookup.busy
                       ? 'Searching supported retailers and verifying product details. This can take a few seconds.'
-                      : searchText
-                        ? 'Paste its product link from Amazon, Flipkart, Nykaa, Myntra, Croma or another supported store into the search box and Price Atlas starts tracking it, so you can pin a target. Or open it on a store:'
-                        : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
+                      : /^https?:\/\//i.test(searchText)
+                        ? `${lookup.query === searchText && lookup.message ? lookup.message + ' ' : ''}Stores sometimes refuse automated checks for a while. Try again in a minute; the retry uses a stronger connection.`
+                        : searchText
+                          ? 'Paste its product link from Amazon, Flipkart, Nykaa, Myntra, Croma or another supported store into the search box and Price Atlas starts tracking it, so you can pin a target. Or open it on a store:'
+                          : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
                 }
                 action={
                   <div className="empty-actions">
+                    {/^https?:\/\//i.test(searchText) && !demo && !lookup.busy && (
+                      <div className="store-search-links">
+                        <button
+                          className="primary"
+                          onClick={() => {
+                            setBloom(true);
+                            if (params.get('verify') === '1') setLookupVersion((v) => v + 1);
+                            else navigateFilter('verify', '1');
+                          }}
+                        >
+                          Try this link again
+                        </button>
+                        <a
+                          className="outline-button"
+                          href={searchText}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Open on the store <ArrowUpRight size={13} />
+                        </a>
+                      </div>
+                    )}
                     {searchText && !/^https?:\/\//i.test(searchText) && (
                       <ul className="store-search-links">
                         {(['Amazon', 'Flipkart', 'Nykaa', 'Myntra', 'Croma'] as const).map(
