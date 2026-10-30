@@ -1,11 +1,13 @@
 import type { Product } from '@domain/index';
+import { sizedImage } from '../../../packages/domain/image-size';
 export function ProductArt({ product, hero = false }: { product: Product; hero?: boolean }) {
   const p = product;
   if (p.sourceKind === 'live')
     return p.imageUrl ? (
       <img
         className={`product-art ${hero ? 'hero-art' : ''}`}
-        src={p.imageUrl}
+        src={sizedImage(p.imageUrl, hero ? 800 : 400)}
+        decoding="async"
         alt={p.name}
         loading={hero ? 'eager' : 'lazy'}
         referrerPolicy="no-referrer"

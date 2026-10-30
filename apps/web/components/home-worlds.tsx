@@ -1,6 +1,7 @@
 'use client';
 // The home page "worlds" from the Price Atlas design canvas (Main.dc.html), wired to real data.
 // Each section keeps the sketch's markup and classes; styles live in app/home-sketch.css under `.hs`.
+import { sizedImage } from '../../../packages/domain/image-size';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { eligible, money, rank, total, type Offer, type Product, type Rule } from '@domain/index';
@@ -391,7 +392,13 @@ function FridgeWorld({
                   <span className="pct">{CAT[p.category] || p.category}</span>
                   {p.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img className="pcimg" src={p.imageUrl} alt="" loading="lazy" />
+                    <img
+                      className="pcimg"
+                      src={sizedImage(p.imageUrl, 160)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
                   ) : (
                     <svg viewBox="0 0 48 48" aria-hidden="true">
                       <path d={ICONS[p.category] || ICONS.other}></path>
