@@ -90,10 +90,14 @@ export async function catalog(): Promise<Product[]> {
   ).rows.map((r) => r.data);
 }
 export async function offers(productId?: string): Promise<Offer[]> {
+  // Current offers, plus the latest recorded observation (14 days) for any accepted listing
+  // that has no current-offer row, so a product never loses its last known, dated price.
   return (
     await postgres().query(
-      `SELECT o.data FROM atlas.current_offers c JOIN atlas.observations o ON o.id=c.observation_id JOIN atlas.listings l ON l.id=c.listing_id JOIN atlas.provider_state s ON s.store=l.store WHERE l.match_state='accepted' AND s.paused=0 ${productId ? 'AND o.product_id=$1' : ''}`,
-      productId ? [productId] : [],
+      `SELECT o.data FROM atlas.current_offers c JOIN atlas.observations o ON o.id=c.observation_id JOIN atlas.listings l ON l.id=c.listing_id JOIN atlas.provider_state s ON s.store=l.store WHERE l.match_state='accepted' AND s.paused=0 ${productId ? 'AND o.product_id=$1' : ''}
+       UNION ALL
+       SELECT x.data FROM (SELECT DISTINCT ON (o.listing_id) o.data FROM atlas.observations o JOIN atlas.listings l ON l.id=o.listing_id JOIN atlas.provider_state s ON s.store=l.store WHERE l.match_state='accepted' AND s.paused=0 AND o.observed_at>$${productId ? 2 : 1} AND coalesce(o.data->>'source','')<>'wayback' AND o.observed_at>=coalesce(l.last_success,0) AND NOT EXISTS(SELECT 1 FROM atlas.current_offers c WHERE c.listing_id=o.listing_id) ${productId ? 'AND o.product_id=$1' : ''} ORDER BY o.listing_id,o.observed_at DESC) x WHERE (x.data->>'stock')::boolean AND (x.data->>'itemPrice')::bigint>0`,
+      productId ? [productId, Date.now() - 14 * 86400000] : [Date.now() - 14 * 86400000],
     )
   ).rows.map((r) => {
     const offer = r.data as Offer;
@@ -668,8 +672,10 @@ export async function collect(runKey = `live-${Math.floor(Date.now() / 60000)}`)
       [runKey, now],
     );
     const due = await c.query(
-      "SELECT l.id,l.url,l.catalog_interval_minutes,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean) AS tracked FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE l.next_check<=$1 AND s.paused=0 AND l.match_state='accepted' AND NOT EXISTS(SELECT 1 FROM atlas.jobs j WHERE j.payload->>'listingId'=l.id AND j.state IN ('pending','running')) ORDER BY tracked DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
-      [now],
+      // Products someone saved or set a target on (and the demo cohort) are checked at least
+      // daily even when their catalog cadence is weekly, so their 7-day history has no holes.
+      "SELECT l.id,l.url,l.catalog_interval_minutes,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean) AS tracked,(EXISTS(SELECT 1 FROM atlas.watches w WHERE w.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.products p WHERE p.id=l.product_id AND p.data->>'name' ~* $3)) AS daily FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE s.paused=0 AND l.match_state='accepted' AND (l.next_check<=$1 OR ((EXISTS(SELECT 1 FROM atlas.watches w WHERE w.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.products p WHERE p.id=l.product_id AND p.data->>'name' ~* $3)) AND coalesce(l.last_success,0)<$2 AND l.next_check>$1)) AND NOT EXISTS(SELECT 1 FROM atlas.jobs j WHERE j.payload->>'listingId'=l.id AND j.state IN ('pending','running')) ORDER BY tracked DESC,daily DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
+      [now, now - 22 * 3600000, process.env.DAILY_COHORT_PATTERN || '^foxtale'],
     );
     for (const l of due.rows) {
       await c.query(
@@ -681,7 +687,9 @@ export async function collect(runKey = `live-${Math.floor(Date.now() / 60000)}`)
           Number(
             l.tracked
               ? process.env.COLLECTION_INTERVAL_MINUTES || 60
-              : l.catalog_interval_minutes || process.env.CATALOG_INTERVAL_MINUTES || 1440,
+              : l.daily
+                ? Math.min(1440, Number(l.catalog_interval_minutes) || 1440)
+                : l.catalog_interval_minutes || process.env.CATALOG_INTERVAL_MINUTES || 1440,
           ) *
             60000,
         l.id,

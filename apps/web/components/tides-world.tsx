@@ -19,7 +19,7 @@ export type Ridge = { key: string; name: string; obs: Offer[] };
 export function TidesWorld({
   ridges,
   title = 'Recorded history · last 30 days.',
-  lede = 'Each wave is one watched product, recorded prices only, and a gap means nothing was observed. Drag across to read any day; pick a name to follow it.',
+  lede = 'Each wave is one watched product, recorded prices only; dotted stretches mean nothing was checked on those days. Drag across to read any day; pick a name to follow it.',
   basis = 'delivered',
   embedded = false,
 }: {
@@ -58,8 +58,18 @@ export function TidesWorld({
       else run.push(j);
     });
     flush();
+    // Dotted connectors span days nothing was checked: they join two real observations
+    // and never stand for a price on the missing days.
+    let bridge = '';
+    let prev = -1;
+    s.forEach((v, j) => {
+      if (v == null) return;
+      if (prev >= 0 && j - prev > 1)
+        bridge += `M${X(prev).toFixed(1)} ${Y(s[prev] as number).toFixed(1)} L${X(j).toFixed(1)} ${Y(v).toFixed(1)} `;
+      prev = j;
+    });
     const li = vals.length ? s.indexOf(mn) : -1;
-    return { r, s, recorded, mn, mx, top, amp, X, Y, line, area, li, has: vals.length > 0 };
+    return { r, s, recorded, mn, mx, top, amp, X, Y, line, area, bridge, li, has: vals.length > 0 };
   });
   const on = Math.min(active, Math.max(0, geom.length - 1));
   const h = Math.max(140, 34 + geom.length * 104 + 10);
@@ -120,6 +130,14 @@ export function TidesWorld({
                     fill={`url(#tide-${i})`}
                   ></path>
                   <path className={`rl l${i}${i === on ? ' on' : ' off'}`} d={g.line}></path>
+                  {g.bridge && (
+                    <path
+                      className={`rl l${i}${i === on ? ' on' : ' off'}`}
+                      d={g.bridge}
+                      style={{ strokeDasharray: '3 5', opacity: 0.55, animation: 'none' }}
+                      aria-hidden="true"
+                    ></path>
+                  )}
                   {g.s.map((value, day) =>
                     value === null ? null : (
                       <circle

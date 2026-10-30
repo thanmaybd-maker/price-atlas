@@ -4,7 +4,18 @@ export function OfferEvidence({ offer, basis }: { offer: Offer; basis: 'item' | 
   const validTime = Number.isFinite(offer.observedAt) && offer.observedAt > 0;
   return (
     <details className="offer-evidence">
-      <summary>{offer.store === 'Amazon' ? 'Amazon.in' : offer.store} source evidence</summary>
+      <summary>
+        Source ·{' '}
+        {Number.isFinite(offer.observedAt) && offer.observedAt > 0
+          ? new Intl.DateTimeFormat('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              day: 'numeric',
+              month: 'short',
+              hour: 'numeric',
+              minute: '2-digit',
+            }).format(offer.observedAt)
+          : 'time not recorded'}
+      </summary>
       <dl>
         <dt>Observed</dt>
         <dd>

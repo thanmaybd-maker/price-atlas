@@ -1100,7 +1100,6 @@ export function HomeWorlds({
   const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [historyError, setHistoryError] = useState('');
   const [historyVersion, setHistoryVersion] = useState(0);
-  const [weekId, setWeekId] = useState('');
   const box = useRef<HTMLDivElement>(null);
   const ids = watches
     .slice(0, 4)
@@ -1154,8 +1153,11 @@ export function HomeWorlds({
     name: p.name,
     obs: history[p.id] || [],
   }));
+  // The week tray follows whichever product has the most recorded checks; no picker.
   const weekProduct =
-    tideProducts.find((product) => product.id === weekId) || tideProducts[0] || null;
+    [...tideProducts].sort(
+      (a, b) => (history[b.id]?.length || 0) - (history[a.id]?.length || 0),
+    )[0] || null;
   return (
     <div className="hs" ref={box}>
       <OffersWorld products={products} offers={offers} />
@@ -1175,20 +1177,6 @@ export function HomeWorlds({
         initialTarget={initialTarget}
       />
       <div className="history-tools">
-        <label>
-          Weekly product{' '}
-          <select
-            aria-label="Weekly product"
-            value={weekProduct?.id || ''}
-            onChange={(event) => setWeekId(event.target.value)}
-          >
-            {tideProducts.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name}
-              </option>
-            ))}
-          </select>
-        </label>
         <label>
           History price basis{' '}
           <select

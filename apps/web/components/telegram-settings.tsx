@@ -52,6 +52,28 @@ export function TelegramSettings() {
       setBusy(false);
     }
   }
+  const [test, setTest] = useState('');
+  async function sendTest() {
+    setBusy(true);
+    setTest('');
+    try {
+      const res = await fetch('/api/v1/telegram?test=1', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      setTest(
+        data.ok
+          ? 'Test message sent. Check your Telegram chat with the bot.'
+          : data.reason === 'blocked'
+            ? 'Telegram says the bot is blocked. Unblock it in Telegram, press Start, then try again.'
+            : data.reason === 'not_connected'
+              ? 'Not connected yet. Open the link and press Start in Telegram first.'
+              : data.reason === 'rate_limited'
+                ? 'Too many tests. Wait a minute and try again.'
+                : `Telegram did not confirm delivery (${data.reason || `HTTP ${res.status}`}).`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   async function disconnect() {
     setBusy(true);
     setError('');
@@ -81,6 +103,7 @@ export function TelegramSettings() {
           notification preferences. Send /stop in Telegram or disconnect here.
         </p>
         {error && <p role="alert">{error}</p>}
+        {test && <p role="status">{test}</p>}
         {link && !status?.connected && (
           <p>
             <a className="btn outline" href={link} target="_blank" rel="noopener noreferrer">
@@ -90,6 +113,11 @@ export function TelegramSettings() {
           </p>
         )}
       </div>
+      {status?.connected && (
+        <button className="btn outline" disabled={busy} onClick={() => void sendTest()}>
+          Send test message
+        </button>
+      )}
       <button
         className="btn outline"
         disabled={busy || !status || (!status.configured && !status.connected)}

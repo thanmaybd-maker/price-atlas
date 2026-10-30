@@ -85,6 +85,8 @@ import { RetailerOutcomes } from './retailer-outcomes';
 import type { LookupSource } from '../../../packages/domain/retailer-outcomes';
 import { discoveryConflict } from '../../../packages/domain/discovery-guard';
 import { nativeMoney } from '../../../packages/providers/fx';
+import { retailerSearchUrl } from '../../../packages/domain/retailers';
+import { applyIntent, knownPrice, parseQueryIntent } from '../../../packages/domain/query-intent';
 import { FxNote } from './fx-note';
 type User = {
   id: string;
@@ -643,31 +645,31 @@ export default function Atlas({
     } else router.push(`/search?q=${encodeURIComponent(query.trim())}`);
   }
 
-  const priceFor = (p: Product) => {
-    const po = offers.filter((o) => o.productId === p.id);
-    return rank(po).lowest ?? rank(po, Date.now(), 'item').lowest ?? Infinity;
-  };
-  let filtered = products.filter(
-    (p) =>
-      (!category || p.category === category) &&
-      (!params.get('q') ||
-        (lookup.query === searchText && lookup.ids.includes(p.id)) ||
-        matchesQuery(p, params.get('q') || '') ||
-        (assistedQuery && matchesQuery(p, assistedQuery))) &&
-      (!brand || p.brand === brand) &&
-      (searchStore === 'all' ||
-        p.attributes.Retailer === searchStore ||
-        offers.some((o) => o.productId === p.id && o.store === searchStore)) &&
-      (!maximum || priceFor(p) <= maximum * 100),
-  );
-  if (sort.startsWith('price'))
-    filtered = filtered.sort(
-      (a, b) => (priceFor(a) - priceFor(b)) * (sort === 'price-desc' ? -1 : 1),
-    );
+  // Budget, category, store and spelling understood from the query itself
+  // ("laptop under 1 lakh", "foxtail dewy on nykaa"); Gemini's validated rewrite and
+  // fresh retailer lookups are added on top.
+  const intent = parseQueryIntent(searchText);
+  const assistedIntent = assistedQuery ? parseQueryIntent(assistedQuery) : null;
+  if (maximum) intent.maxPaise = maximum * 100;
+  const textMatch = (p: Product, text: string) =>
+    matchesQuery(p, text) ||
+    (lookup.query === searchText && lookup.ids.includes(p.id)) ||
+    Boolean(assistedIntent?.text && matchesQuery(p, assistedIntent.text));
+  const effectiveStore = searchStore !== 'all' ? searchStore : intent.store || 'all';
+  const filtered = applyIntent(
+    products.filter((p) => (!category || p.category === category) && (!brand || p.brand === brand)),
+    offers,
+    { ...intent, category: intent.category || assistedIntent?.category },
+    textMatch,
+    { store: effectiveStore, sort },
+  ).map((row) => row.p);
   const pageCount = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(pageCount, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
   function Card({ p, index = 0 }: { p: Product; index?: number }) {
-    const po = offers.filter((o) => o.productId === p.id);
+    const po = offers.filter(
+      (o) => o.productId === p.id && (effectiveStore === 'all' || o.store === effectiveStore),
+    );
+    const known = knownPrice(p.id, po);
     const r = rank(po);
     const itemRank = rank(po, Date.now(), 'item');
     const lastObserved = po
@@ -697,22 +699,24 @@ export default function Atlas({
           <div className="card-price-row">
             <div>
               <span className="tiny-label">
-                {r.offers.length > 1
-                  ? 'Lowest delivered price'
-                  : r.offers.length
-                    ? '1 recorded offer · delivered'
-                    : itemRank.offers.length
-                      ? 'Item price · delivery extra/unknown'
-                      : lastObserved
-                        ? `Last observed · ${new Date(lastObserved.observedAt).toLocaleDateString('en-IN')}`
-                        : p.attributes['Source price']
-                          ? 'Source price · shipping/import fees extra'
-                          : 'Currently unavailable'}
+                {known
+                  ? `${effectiveStore !== 'all' ? `${effectiveStore} · ` : itemRank.offers.length > 1 ? 'Lowest of ' + itemRank.offers.length + ' · ' : ''}${
+                      known.fresh
+                        ? 'item price'
+                        : `last checked ${new Date(known.observedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                    }`
+                  : lastObserved
+                    ? `Last observed · ${new Date(lastObserved.observedAt).toLocaleDateString('en-IN')}`
+                    : p.attributes['Source price']
+                      ? 'Source price · shipping/import fees extra'
+                      : effectiveStore !== 'all'
+                        ? `No recent ${effectiveStore} price`
+                        : 'No recent price'}
               </span>
               <strong className="card-price">
                 {p.attributes['Source price'] && !po.length
                   ? p.attributes['Source price']
-                  : money(r.lowest ?? itemRank.lowest ?? lastObserved?.itemPrice ?? null)}
+                  : money(known?.paise ?? lastObserved?.itemPrice ?? null)}
               </strong>
             </div>
             <span className="micro-trend">
@@ -1034,12 +1038,9 @@ export default function Atlas({
             </div>
             {!demo && searchText && (
               <section aria-label="Live product lookup">
+                {/* While checking, the search flower carries the single progress status. */}
                 <p role="status" aria-live="polite">
-                  {lookup.query === searchText && lookup.busy
-                    ? 'Checking retailer results and product details…'
-                    : lookup.query === searchText
-                      ? lookup.message
-                      : ''}
+                  {lookup.query === searchText && !lookup.busy ? lookup.message : ''}
                 </p>
                 {lookup.query === searchText && lookup.candidates.length > 0 && (
                   <details>
@@ -1180,7 +1181,9 @@ export default function Atlas({
                   <option value="30000">Under ₹30,000</option>
                   <option value="60000">Under ₹60,000</option>
                 </select>
-                <span>{filtered.length} products</span>
+                <span>
+                  {filtered.length} {filtered.length === 1 ? 'product' : 'products'}
+                </span>
               </div>
               <label className="sort-label">
                 Sort by{' '}
@@ -1201,31 +1204,55 @@ export default function Atlas({
                 onDone={() => setBloom(false)}
               />
             )}
-            {bloom ? null : filtered.length ? (
+            {filtered.length ? (
               <div className="product-grid">
                 {filtered
                   .slice((currentPage - 1) * 24, currentPage * 24)
                   .map((p, i) => Card({ p, index: i }))}
               </div>
-            ) : (
+            ) : bloom ? null : (
               <Empty
                 icon={Search}
                 title={
                   !demo && lookup.query === searchText && lookup.busy
                     ? 'Checking products…'
-                    : 'No exact match this time.'
+                    : searchText
+                      ? `“${searchText}” isn’t tracked yet.`
+                      : 'No exact match this time.'
                 }
                 text={
                   demo
                     ? 'Try a model name, clear a filter, or explore another category. The demo has eight carefully defined variants.'
                     : lookup.query === searchText && lookup.busy
                       ? 'Searching supported retailers and verifying product details. This can take a few seconds.'
-                      : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
+                      : searchText
+                        ? 'Paste its product link from Amazon, Flipkart, Nykaa, Myntra, Croma or another supported store into the search box and Price Atlas starts tracking it, so you can pin a target. Or open it on a store:'
+                        : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
                 }
                 action={
-                  <Link prefetch={false} className="primary" href="/search">
-                    Clear filters <ArrowRight size={16} />
-                  </Link>
+                  <div className="empty-actions">
+                    {searchText && !/^https?:\/\//i.test(searchText) && (
+                      <ul className="store-search-links">
+                        {(['Amazon', 'Flipkart', 'Nykaa', 'Myntra', 'Croma'] as const).map(
+                          (store) => (
+                            <li key={store}>
+                              <a
+                                className="outline-button"
+                                href={retailerSearchUrl(store, assistedQuery || searchText)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                Search {store} <ArrowUpRight size={13} />
+                              </a>
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    )}
+                    <Link prefetch={false} className="primary" href="/search">
+                      Clear filters <ArrowRight size={16} />
+                    </Link>
+                  </div>
                 }
               />
             )}
@@ -1750,28 +1777,26 @@ export default function Atlas({
             </div>
             <div className="detail-price">
               <span className="tiny-label">
-                {r.offers.length > 1
-                  ? 'Lowest eligible delivered price'
-                  : r.offers.length
-                    ? '1 recorded offer · delivered'
-                    : itemRank.offers.length
-                      ? 'Listed item price · delivery extra/unknown'
-                      : p.attributes['Source price']
-                        ? 'Source price · shipping/import fees extra'
-                        : lastObserved
-                          ? 'Observed item price · no eligible offer confirmed'
-                          : 'No fresh eligible offers'}
+                {itemRank.offers.length > 1
+                  ? `Lowest item price of ${itemRank.offers.length} stores · shipping shown at checkout`
+                  : itemRank.offers.length
+                    ? 'Item price · shipping shown at checkout'
+                    : p.attributes['Source price']
+                      ? 'Source price · shipping/import fees extra'
+                      : lastObserved
+                        ? 'Observed item price · no eligible offer confirmed'
+                        : 'No fresh eligible offers'}
               </span>
               <div>
                 <strong>
                   {p.attributes['Source price'] && !po.length
                     ? p.attributes['Source price']
-                    : money(r.lowest ?? itemRank.lowest ?? lastObserved?.itemPrice)}
+                    : money(itemRank.lowest ?? lastObserved?.itemPrice)}
                 </strong>
                 <span className="status-pill">
-                  {r.winners.length > 1
+                  {itemRank.winners.length > 1
                     ? 'Price tie'
-                    : `${Math.max(r.offers.length, itemRank.offers.length)} ${r.offers.length ? 'matching' : 'item-price'} offers`}
+                    : `${itemRank.offers.length} matching offer${itemRank.offers.length === 1 ? '' : 's'}`}
                 </span>
               </div>
               <p>
