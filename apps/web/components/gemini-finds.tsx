@@ -99,8 +99,11 @@ export function GeminiFinds({ query }: { query: string }) {
             ))}
           </ul>
           <p className="fine-print">
-            Gemini finds the store pages. Price Atlas then opens each page itself and saves only the
-            price it sees there, so history and alerts use checked prices.
+            {result.grounded === false
+              ? 'Links suggested by Gemini. '
+              : 'Store pages found by Gemini with Google Search. '}
+            Price Atlas opens each page itself and saves only the price it sees there, so history
+            and alerts use checked prices.
           </p>
           {result.sources.length > 0 && (
             <details className="gemini-sources">

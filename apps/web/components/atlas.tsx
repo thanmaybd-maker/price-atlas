@@ -1220,12 +1220,9 @@ export default function Atlas({
                 onDone={() => setBloom(false)}
               />
             )}
-            {searchText &&
-              !/^https?:\/\//i.test(searchText) &&
-              filtered.length < 3 &&
-              !(lookup.query === searchText && lookup.busy) && (
-                <GeminiFinds query={assistedQuery || searchText} />
-              )}
+            {searchText && !/^https?:\/\//i.test(searchText) && filtered.length < 3 && (
+              <GeminiFinds key={searchText} query={searchText} />
+            )}
             {filtered.length ? (
               <div className="product-grid">
                 {filtered
