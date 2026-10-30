@@ -98,6 +98,7 @@ describe('assistQuery', () => {
     expect((await assistQuery('three', junk)).reason).toBe('rejected');
   });
   it('retries once without a thinking budget when the model rejects it', async () => {
+    process.env.GEMINI_MODEL = 'gemini-flash-latest';
     let n = 0;
     const f = (async (_u: string | URL | Request, init?: RequestInit) => {
       n++;
@@ -120,6 +121,36 @@ describe('assistQuery', () => {
     }) as typeof fetch;
     expect((await assistQuery('nothng ear', f)).refined).toBe('Nothing Ear');
     expect(n).toBe(2);
+    delete process.env.GEMINI_MODEL;
+  });
+  it('sends no thinking budget to a lite model and falls back to the next model on refusal', async () => {
+    process.env.GEMINI_MODEL = 'gemini-flash-lite-latest,gemini-flash-latest';
+    const seen: { url: string; thinking: boolean }[] = [];
+    const f = (async (url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      seen.push({ url: String(url), thinking: Boolean(body.generationConfig.thinkingConfig) });
+      if (String(url).includes('lite'))
+        return new Response('{"error":{"message":"busy"}}', { status: 503 });
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { text: JSON.stringify({ query: 'Samsung Galaxy S24', category: 'phones' }) },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+    }) as typeof fetch;
+    expect((await assistQuery('samsng galxy s24', f)).refined).toBe('Samsung Galaxy S24');
+    expect(seen.map((s) => [s.url.includes('lite'), s.thinking])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+    delete process.env.GEMINI_MODEL;
   });
   it('stops at the daily cap', async () => {
     process.env.GEMINI_DAILY_LIMIT = '1';
