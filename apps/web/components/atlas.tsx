@@ -652,7 +652,13 @@ export default function Atlas({
     p.delete('page');
     if (value) p.set(key, value);
     else p.delete(key);
-    router.push(`/${page === 'category' ? `category/${category}` : 'search'}?${p}`);
+    // Filters and sort only change client-side view state: update the URL in place
+    // (Next syncs useSearchParams with history.pushState) instead of a server round trip.
+    window.history.pushState(
+      null,
+      '',
+      `/${page === 'category' ? `category/${category}` : 'search'}?${p}`,
+    );
   }
   async function search(e: FormEvent) {
     e.preventDefault();
