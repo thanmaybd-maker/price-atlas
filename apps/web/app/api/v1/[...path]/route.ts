@@ -22,6 +22,7 @@ import { knownApiPath } from '../../../../../../packages/domain/routes';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import { assistQuery } from '../../../../../../packages/providers/gemini';
 import { discoverWithGemini } from '../../../../../../packages/providers/gemini-discover';
+import { firecrawlProductSearch } from '../../../../../../packages/jobs/web-search';
 import { applyIntent, parseQueryIntent } from '../../../../../../packages/domain/query-intent';
 import { fxReference } from '../../../../../../packages/providers/fx';
 import {
@@ -197,7 +198,23 @@ async function handler(req: NextRequest) {
               reason: 'limited',
             });
         }
-        return json(await discoverWithGemini(q));
+        const found = await discoverWithGemini(q);
+        // Gemini without live search can't know new products; fall back to a store-limited
+        // web search. Links are still verified by fetching the store page.
+        if (found.available && !found.candidates.length && found.reason !== 'limited') {
+          const web = await firecrawlProductSearch(q).catch(() => ({
+            candidates: [],
+            reason: 'error',
+          }));
+          if (web.candidates.length)
+            return json({
+              ...found,
+              candidates: web.candidates,
+              reason: undefined,
+              via: 'web-search',
+            });
+        }
+        return json(found);
       }
       if (path[0] === 'fx') {
         const from = z

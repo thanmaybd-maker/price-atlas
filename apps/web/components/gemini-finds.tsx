@@ -10,6 +10,7 @@ type Candidate = { title: string; store: string; url: string; quotedRupees: numb
 type Result = {
   available: boolean;
   grounded?: boolean;
+  via?: string;
   candidates: Candidate[];
   sources: { title: string; uri: string }[];
   reason?: string;
@@ -100,9 +101,11 @@ export function GeminiFinds({ query }: { query: string }) {
             ))}
           </ul>
           <p className="fine-print">
-            {result.grounded === false
-              ? 'Links suggested by Gemini. '
-              : 'Store pages found by Gemini with Google Search. '}
+            {result.via === 'web-search'
+              ? 'Store pages found by web search for Gemini. '
+              : result.grounded === false
+                ? 'Links suggested by Gemini. '
+                : 'Store pages found by Gemini with Google Search. '}
             Price Atlas opens each page itself and saves only the price it sees there, so history
             and alerts use checked prices.
           </p>
