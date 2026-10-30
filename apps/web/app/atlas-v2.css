@@ -612,6 +612,13 @@ h2 {
 .v2-cell.spike .chg {
   color: oklch(34% 0.15 28);
 }
+/* dark days are deep tints, so the change labels switch to light inks (4.6:1 or better) */
+[data-theme='dark'] .v2-cell.drop .chg {
+  color: oklch(84% 0.13 162);
+}
+[data-theme='dark'] .v2-cell.spike .chg {
+  color: oklch(80% 0.13 28);
+}
 @keyframes v2-glow {
   50% {
     box-shadow:

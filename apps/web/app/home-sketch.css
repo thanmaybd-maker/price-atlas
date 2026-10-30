@@ -4581,7 +4581,8 @@
   font-size: clamp(36px, 4.4vw, 64px);
   letter-spacing: -0.03em;
   line-height: 1;
-  margin: 0;
+  /* room for the descenders of a two-line heading above the lede */
+  margin: 0 0 18px;
   text-transform: lowercase;
 }
 .hs .uv-grid {
@@ -4804,6 +4805,16 @@
 }
 .hs .cell.vv.spike .chg {
   color: oklch(34% 0.15 28);
+}
+/* dark cells are deep tints, so the change labels switch to light inks (4.6:1 or better) */
+[data-theme='dark'] .hs .cell.vv.drop .chg {
+  color: oklch(84% 0.13 162);
+}
+[data-theme='dark'] .hs .cell.vv.spike .chg {
+  color: oklch(80% 0.13 28);
+}
+[data-theme='dark'] .hs .rx .row.hi span:last-child {
+  color: oklch(76% 0.15 28);
 }
 /* scroll reveal slides only: a fading reveal leaves text half-transparent (and below contrast) mid-scroll */
 @keyframes rv-hs {

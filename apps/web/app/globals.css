@@ -705,6 +705,7 @@ a:hover {
 }
 .category-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-top: 27px;
@@ -1834,7 +1835,7 @@ th {
 }
 .notice {
   background: var(--soft);
-  color: #6a7e60;
+  color: #4f6346;
   display: flex;
   gap: 12px;
   align-items: flex-start;
@@ -2594,9 +2595,10 @@ th {
     display: none;
   }
   .sign-in {
-    font-size: 10px;
+    font-size: 12px;
     gap: 4px;
-    padding-inline: 3px;
+    padding: 12px 3px;
+    margin-block: -12px;
   }
   .sign-in svg {
     width: 12px;
@@ -2805,6 +2807,7 @@ th {
   }
   .category-tabs {
     overflow: auto;
+    flex-wrap: nowrap;
     gap: 5px;
     margin: 23px -18px 19px;
     padding-inline: 18px;
@@ -2954,20 +2957,23 @@ th {
   .footer-links {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px 18px;
-    font-size: 8px;
+    gap: 4px 18px;
+    font-size: 11px;
+  }
+  .footer-links a {
+    padding-block: 7px;
   }
   .footer .wordmark {
     font-size: 14px;
   }
   .footer-top p {
-    font-size: 7px;
+    font-size: 10px;
     white-space: nowrap;
   }
   .footer-bottom {
     flex-direction: column;
     gap: 7px;
-    font-size: 7px;
+    font-size: 10px;
     padding-block: 16px 22px;
   }
   .utility-page {
@@ -3001,9 +3007,13 @@ th {
   .breadcrumbs {
     padding-top: 22px;
     margin-bottom: 27px;
-    font-size: 9px;
+    font-size: 11px;
     gap: 9px;
     flex-wrap: wrap;
+  }
+  .breadcrumbs a {
+    padding-block: 8px;
+    margin-block: -8px;
   }
   .results-heading h1 {
     font-size: 31px;
@@ -3045,8 +3055,9 @@ th {
     font-size: 10px;
   }
   .sort-label select {
-    font-size: 10px;
-    padding-block: 2px;
+    font-size: 11px;
+    padding-block: 10px;
+    margin-block: -8px;
   }
   .detail-grid {
     grid-template-columns: 1fr;
@@ -3191,8 +3202,10 @@ th {
     flex-wrap: wrap;
   }
   .chart-legend .text-button {
-    font-size: 8px;
+    font-size: 11px;
     margin-left: auto;
+    padding-block: 10px;
+    margin-block: -10px;
   }
   .chart > svg {
     min-height: 145px;

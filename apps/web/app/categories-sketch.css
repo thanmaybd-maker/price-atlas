@@ -117,6 +117,20 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+/* wide screens: one row whatever the font metrics, so the font swap cannot rewrap the header and shift the board */
+@media (min-width: 1201px) {
+  .cs .hd {
+    flex-wrap: nowrap;
+  }
+  .cs .hd > :first-child {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .cs .filter {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+}
 .cs .filter button {
   min-height: 40px;
   padding: 0 16px;
@@ -143,7 +157,8 @@
 .cs .note {
   position: relative;
   background: var(--tint);
-  padding: 18px 16px 16px;
+  /* bottom padding clears the 34px folded corner */
+  padding: 18px 16px 34px;
   min-height: 400px;
   display: flex;
   flex-direction: column;
