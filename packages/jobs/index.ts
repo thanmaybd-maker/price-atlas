@@ -161,6 +161,35 @@ export async function fetchProductWithBudget(
         error.code === 'network' ||
         error.code === 'provider_unavailable' ||
         error.code === 'provider_rate_limited';
+      // Retailers often refuse Firecrawl's basic proxy (Amazon answers 503/403). Retry this
+      // key once through the stealth proxy, inside the same per-request credit ceiling.
+      if (
+        !permanent &&
+        !temporary &&
+        provider === 'firecrawl' &&
+        !attempt.stealth &&
+        ['blocked', 'http_error', 'empty'].includes(error.code) &&
+        spent + 5 <= MAX_PAID_CREDITS_PER_REQUEST &&
+        Date.now() < deadline - 3000 &&
+        (!allowPaid || allowPaid(5))
+      ) {
+        const stealth = {
+          ...attempt,
+          stealth: true,
+          timeoutMs: Math.min(25000, deadline - Date.now()),
+        };
+        await reserveSource(store, stealth);
+        spent += 5;
+        try {
+          const result = await scrapeProduct(url, stealth);
+          await recordCredentialSuccess(apiKey, provider);
+          return result;
+        } catch (retry) {
+          if (!(retry instanceof ScrapeError)) throw retry;
+          if (partial) return partial;
+          throw retry;
+        }
+      }
       if (!permanent && !temporary) {
         if (partial) return partial;
         throw error;
