@@ -3,10 +3,12 @@ import { postgres, tx, offers } from '../database/postgres';
 import { money, rank, type Rule } from '../domain/index';
 import { z } from 'zod';
 
+/** Bot username without a leading "@" or surrounding spaces, as operators often paste it. */
+export const botUsername = () => (process.env.TELEGRAM_BOT_USERNAME || '').trim().replace(/^@/, '');
 export function telegramConfigured() {
   return Boolean(
     process.env.TELEGRAM_BOT_TOKEN &&
-    /^[A-Za-z0-9_]{5,32}bot$/i.test(process.env.TELEGRAM_BOT_USERNAME || '') &&
+    /^[A-Za-z0-9_]{5,32}bot$/i.test(botUsername()) &&
     (process.env.TELEGRAM_WEBHOOK_SECRET || '').length >= 32,
   );
 }
@@ -35,7 +37,8 @@ export async function createTelegramLink(userId: string) {
   if (!telegramConfigured()) throw new Error('Telegram is awaiting bot setup.');
   const token = randomBytes(24).toString('base64url');
   await tx(async (c) => {
-    await c.query('DELETE FROM atlas.telegram_links');
+    // RLS already scopes this to the caller; the explicit filter is a second guard.
+    await c.query('DELETE FROM atlas.telegram_links WHERE user_id=$1', [userId]);
     await c.query('INSERT INTO atlas.telegram_links VALUES($1,$2,$3)', [
       hash(token),
       userId,
@@ -43,14 +46,14 @@ export async function createTelegramLink(userId: string) {
     ]);
   }, userId);
   return {
-    url: `https://t.me/${process.env.TELEGRAM_BOT_USERNAME}?start=${token}`,
+    url: `https://t.me/${botUsername()}?start=${token}`,
     expiresInSeconds: 600,
   };
 }
 export async function disconnectTelegram(userId: string) {
   await tx(async (c) => {
-    await c.query('DELETE FROM atlas.telegram_links');
-    await c.query('DELETE FROM atlas.telegram_connections');
+    await c.query('DELETE FROM atlas.telegram_links WHERE user_id=$1', [userId]);
+    await c.query('DELETE FROM atlas.telegram_connections WHERE user_id=$1', [userId]);
   }, userId);
 }
 export async function reviewTelegramDelivery(

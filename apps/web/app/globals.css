@@ -1028,6 +1028,45 @@ a:hover {
 .results-heading .muted {
   font-size: 13px;
 }
+.assist-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ink, #17211b);
+}
+.assist-note a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.gemini-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #cfd8e8;
+  background: #f3f6fc;
+  color: #2c4a7a;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+[data-theme='dark'] .assist-note {
+  color: #edf4ee;
+}
+.fx-note {
+  display: inline-block;
+  color: var(--muted, #5a6554);
+  font-size: 12px;
+}
+[data-theme='dark'] .gemini-badge {
+  border-color: #3d4f6b;
+  background: #1b2433;
+  color: #c9d8f2;
+}
 .results-page .category-tabs {
   margin-top: 30px;
   border-bottom: 1px solid var(--line);

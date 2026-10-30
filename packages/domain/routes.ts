@@ -29,6 +29,8 @@ export function knownApiPath(parts: string[]) {
     return [
       'health',
       'session',
+      'assist',
+      'fx',
       'search',
       'suggestions',
       'offers',
