@@ -2221,6 +2221,7 @@ export default function Atlas({
             observations={visibleHistory}
             target={rule?.basis === historyBasis ? rule.target : undefined}
             basis={historyBasis}
+            days={range}
           />
         </div>
         <div className="spec-section">

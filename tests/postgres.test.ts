@@ -1219,3 +1219,41 @@ it('Firecrawl fails over exhausted keys, keeps the working account and enforces 
       else process.env[key] = saved[key];
   }
 });
+it('a scheduled check refused by the retailer (429) is completed through Firecrawl the same run', async () => {
+  const saved = { ...process.env };
+  Object.assign(process.env, {
+    SCRAPER_PROVIDER: 'direct',
+    FIRECRAWL_API_KEY: 'fixture-fc-collect',
+    SCRAPER_CREDITS_PER_DAY: '100',
+    SCRAPER_CREDITS_PER_MONTH: '300',
+  });
+  delete process.env.FIRECRAWL_FALLBACK_API_KEYS;
+  const hosts: string[] = [];
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const host = new URL(String(input)).hostname;
+    hosts.push(host);
+    return host === 'api.firecrawl.dev'
+      ? Response.json({ success: true, data: { rawHtml: html() } })
+      : new Response('Too many requests', { status: 429 });
+  });
+  try {
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    const id = 'collect-429-fallback';
+    await db.query("INSERT INTO atlas.jobs VALUES($1,'collect',$2,'pending',0,NULL,0,NULL,0)", [
+      id,
+      {
+        listingId: 'amazon-b000000098',
+        url: 'https://www.amazon.in/dp/B000000098',
+        runKey: 'collect-429',
+      },
+    ]);
+    await runCollectionJob(id);
+    expect(hosts).toEqual(['www.amazon.in', 'api.firecrawl.dev']);
+    expect((await db.query('SELECT state FROM atlas.jobs WHERE id=$1', [id])).rows[0].state).toBe(
+      'complete',
+    );
+  } finally {
+    fetcher.mockRestore();
+    process.env = saved;
+  }
+});
