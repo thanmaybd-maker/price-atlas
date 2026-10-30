@@ -245,7 +245,7 @@ export default function Atlas({
   useEffect(() => {
     if (page !== 'search' || searchText.trim().length < 2 || exactSearch) return;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
+    const timer = setTimeout(() => controller.abort(), 9000);
     fetch(`/api/v1/assist?q=${encodeURIComponent(searchText)}`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) =>

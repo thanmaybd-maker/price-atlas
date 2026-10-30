@@ -22,10 +22,15 @@ export type AssistResult = {
   detail?: string;
 };
 
-const MODEL = () => process.env.GEMINI_MODEL || 'gemini-flash-latest';
+// Lite first: it answers these one-line rewrites fastest and is the least congested.
+const MODELS = () =>
+  (process.env.GEMINI_MODEL || 'gemini-flash-lite-latest,gemini-flash-latest')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
 const ENDPOINT = (model: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-const TIMEOUT_MS = 6000;
+const TIMEOUT_MS = 4000;
 const MAX_QUERY = 120;
 const CACHE_TTL = 24 * 3600000;
 const CACHE_MAX = 500;
@@ -78,7 +83,7 @@ function prompt(query: string) {
 
 type Fetch = typeof fetch;
 
-async function callGemini(query: string, f: Fetch, withThinkingOff: boolean) {
+async function callGemini(query: string, f: Fetch, withThinkingOff: boolean, model: string) {
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt(query) }] }],
     generationConfig: {
@@ -96,7 +101,7 @@ async function callGemini(query: string, f: Fetch, withThinkingOff: boolean) {
       ...(withThinkingOff ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
     },
   };
-  const res = await f(ENDPOINT(MODEL()), {
+  const res = await f(ENDPOINT(model), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -129,10 +134,14 @@ export async function assistQuery(raw: string, f: Fetch = fetch): Promise<Assist
   used++;
   let value: AssistResult;
   try {
-    let out = await callGemini(original, f, true);
+    const models = MODELS();
+    let out = await callGemini(original, f, true, models[0]);
     // Some model versions reject a thinking budget; retry once without it.
     if (!out.ok && out.status === 400 && /thinking/i.test(out.text))
-      out = await callGemini(original, f, false);
+      out = await callGemini(original, f, false, models[0]);
+    // A busy or unknown model falls back once to the next one.
+    if (!out.ok && [404, 429, 500, 503].includes(out.status) && models[1])
+      out = await callGemini(original, f, true, models[1]);
     if (!out.ok) {
       // Google's error text never contains the key; keep only its status and message.
       let message = '';
