@@ -107,11 +107,16 @@ export async function fetchProductWithBudget(
   timeoutMs?: number,
   allowPaid?: (cost: number) => boolean,
   overrides: Partial<ScraperConfig> = {},
+  skipDirect = false,
 ) {
   const { store } = canonicalRetailUrl(url);
   const configured = { ...scraperConfig(), ...(timeoutMs ? { timeoutMs } : {}), ...overrides };
   let partial: ScrapedProduct | undefined;
-  if (configured.transport !== 'direct' && process.env.SCRAPER_DIRECT_FIRST !== 'false') {
+  if (
+    !skipDirect &&
+    configured.transport !== 'direct' &&
+    process.env.SCRAPER_DIRECT_FIRST !== 'false'
+  ) {
     await reserveSource(store, { transport: 'direct' });
     try {
       const result = await scrapeProduct(url, { transport: 'direct', timeoutMs: 6000 });
@@ -207,6 +212,30 @@ export async function fetchProductWithBudget(
     'Paid verification is temporarily unavailable. Saved products and free fetching remain available.',
   );
 }
+// Scheduled checks try the free direct fetch first. Flipkart and Amazon often answer a
+// datacenter IP with 429/403, so a refused direct fetch falls back to the paid provider
+// pool (Firecrawl) inside the shared daily credit budget instead of losing the day's check.
+async function collectPage(url: string) {
+  try {
+    return await fetchProductWithBudget(url, undefined, undefined, {
+      transport: 'direct',
+      timeoutMs: 6000,
+    });
+  } catch (error) {
+    const refused =
+      error instanceof ScrapeError &&
+      ['rate_limited', 'blocked', 'http_error', 'empty', 'network'].includes(error.code) &&
+      !(error instanceof SourceLimitError);
+    if (!refused || !process.env.FIRECRAWL_API_KEY) throw error;
+    return fetchProductWithBudget(
+      url,
+      20000,
+      undefined,
+      { transport: 'firecrawl', apiKey: process.env.FIRECRAWL_API_KEY },
+      true,
+    );
+  }
+}
 export async function runCollectionJob(id: string) {
   const claimed = await postgres().query(
     "UPDATE atlas.jobs SET state='running',attempts=attempts+1,lease_until=$2 WHERE id=$1 AND state='pending' AND available_at<=$3 RETURNING *",
@@ -215,13 +244,7 @@ export async function runCollectionJob(id: string) {
   const job = claimed.rows[0];
   if (!job) return;
   try {
-    const result = await importScraped(
-      await fetchProductWithBudget(job.payload.url, undefined, undefined, {
-        transport: 'direct',
-        timeoutMs: 6000,
-      }),
-      job.payload.runKey,
-    );
+    const result = await importScraped(await collectPage(job.payload.url), job.payload.runKey);
     await tx(async (c) => {
       await c.query("UPDATE atlas.jobs SET state='complete',lease_until=NULL WHERE id=$1", [id]);
       await c.query(

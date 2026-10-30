@@ -7,12 +7,15 @@ export function PriceChart({
   compact = false,
   basis = 'delivered',
   demo = true,
+  days,
 }: {
   observations: Offer[];
   target?: number;
   compact?: boolean;
   basis?: 'delivered' | 'item';
   demo?: boolean;
+  /** Selected period; the x-axis spans the whole period even with few checks. */
+  days?: number;
 }) {
   const [table, setTable] = useState(false);
   const [hover, setHover] = useState<Offer | null>(null);
@@ -24,11 +27,26 @@ export function PriceChart({
       </div>
     );
   const values = valid.map((o) => total(o, basis)!);
-  const min = Math.min(...values, ...(target ? [target] : [])) * 0.97;
-  const max = Math.max(...values) * 1.02;
-  const start = Math.min(...valid.map((o) => o.observedAt));
-  const end = Math.max(...valid.map((o) => o.observedAt));
-  const x = (t: number) => 54 + ((t - start) / (end - start || 1)) * 640;
+  // Rounded rupee gridlines: step of 1/2/5 x 10^n paise covering the data (and target).
+  const lo = Math.min(...values, ...(target ? [target] : []));
+  const hi = Math.max(...values, ...(target ? [target] : []));
+  const rawStep = Math.max((hi - lo) / 3, hi * 0.01, 100);
+  const mag = 10 ** Math.floor(Math.log10(rawStep));
+  const step = [1, 2, 5, 10].map((m) => m * mag).find((v) => v >= rawStep) || 10 * mag;
+  let min = Math.floor(lo / step) * step;
+  let max = Math.ceil(hi / step) * step;
+  if (max === min) {
+    min -= step;
+    max += step;
+  }
+  while ((max - min) / step < 3) max += step;
+  const gridCount = Math.round((max - min) / step);
+  const lastSeen = Math.max(...valid.map((o) => o.observedAt));
+  const end = days ? Math.max(Date.now(), lastSeen) : lastSeen;
+  const firstSeen = Math.min(...valid.map((o) => o.observedAt));
+  const start = days ? Math.min(end - days * 86400000, firstSeen) : firstSeen;
+  const single = !days && end - start < 3600000;
+  const x = (t: number) => (single ? 374 : 54 + ((t - start) / (end - start || 1)) * 640);
   const y = (v: number) => 190 - ((v - min) / (max - min || 1)) * 155;
   const stores = [...new Set(valid.map((o) => o.store))];
   const colors = ['#8e99b8', '#117855', '#b05b88', '#a56a22', '#6554a4', '#2277a5', '#9a4141'];
@@ -40,21 +58,17 @@ export function PriceChart({
         aria-label={`${demo ? 'Synthetic recorded' : 'Recorded'} ${basis === 'item' ? 'item' : 'delivered'} prices, ranging from ${money(Math.min(...values))} to ${money(Math.max(...values))}. A table is available below.`}
       >
         {!compact &&
-          [0, 1, 2, 3].map((i) => (
-            <g key={i}>
-              <line
-                x1="54"
-                x2="697"
-                y1={35 + i * 51}
-                y2={35 + i * 51}
-                stroke="currentColor"
-                opacity=".07"
-              />
-              <text x="0" y={39 + i * 51} className="axis-label">
-                {money(max - ((max - min) * i) / 3)}
-              </text>
-            </g>
-          ))}
+          Array.from({ length: gridCount + 1 }, (_, i) => {
+            const v = max - i * step;
+            return (
+              <g key={i}>
+                <line x1="54" x2="697" y1={y(v)} y2={y(v)} stroke="currentColor" opacity=".07" />
+                <text x="0" y={y(v) + 4} className="axis-label">
+                  {money(v)}
+                </text>
+              </g>
+            );
+          })}
         {target && (
           <g>
             <line
@@ -109,15 +123,15 @@ export function PriceChart({
           );
         })}
         {!compact &&
-          [0, 1, 2, 3, 4].map((i) => (
+          (single ? [0.5] : [0, 0.25, 0.5, 0.75, 1]).map((f, i, all) => (
             <text
-              key={i}
-              x={54 + i * 160}
+              key={f}
+              x={single ? 374 : 54 + f * 640}
               y="220"
-              textAnchor={i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}
+              textAnchor={all.length > 1 && i === 0 ? 'start' : f === 1 ? 'end' : 'middle'}
               className="axis-label"
             >
-              {new Date(start + ((end - start) * i) / 4).toLocaleDateString('en-IN', {
+              {new Date(start + (end - start) * f).toLocaleDateString('en-IN', {
                 day: 'numeric',
                 month: 'short',
                 timeZone: 'Asia/Kolkata',
