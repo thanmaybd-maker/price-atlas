@@ -40,6 +40,7 @@ export function knownApiPath(parts: string[]) {
       'imports',
       'discovery',
       'telegram',
+      'discord',
       'preferences',
       'account',
       'watches',
