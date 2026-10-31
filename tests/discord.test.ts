@@ -37,3 +37,28 @@ it('posts without mentions and maps a deleted webhook', async () => {
     ),
   ).rejects.toThrow('webhook_deleted');
 });
+
+it('retries on short 429 rate limit and succeeds', async () => {
+  let callCount = 0;
+  const mockFetch = (async () => {
+    callCount++;
+    if (callCount === 1) {
+      return new Response('{"message":"Rate limited"}', {
+        status: 429,
+        headers: { 'retry-after': '0.01' },
+      });
+    }
+    return new Response('{}', { status: 200 });
+  }) as typeof fetch;
+
+  await postDiscord('https://discord.com/api/webhooks/1/x', 'retry me', mockFetch);
+  expect(callCount).toBe(2);
+});
+
+it('throws http_500 on server errors', async () => {
+  const failingFetch = (async () =>
+    new Response('Internal error', { status: 500 })) as typeof fetch;
+  await expect(
+    postDiscord('https://discord.com/api/webhooks/1/x', 'fail', failingFetch),
+  ).rejects.toThrow('http_500');
+});

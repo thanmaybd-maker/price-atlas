@@ -557,25 +557,31 @@ export async function dispatch() {
   }
 }
 export async function admin() {
-  const [providers, runs, counts, listings, quarantine, jobs, telegram] = await Promise.all([
-    postgres().query('SELECT store,paused,last_error FROM atlas.provider_state ORDER BY store'),
-    postgres().query('SELECT * FROM atlas.runs ORDER BY started_at DESC LIMIT 20'),
-    postgres().query(
-      'SELECT (SELECT count(*) FROM atlas.products)::int products,(SELECT count(*) FROM atlas.observations)::int observations,(SELECT count(*) FROM atlas.rules)::int rules',
-    ),
-    postgres().query(
-      'SELECT id,product_id,store,external_id,url,evidence,match_state,failures,last_success FROM atlas.listings ORDER BY next_check LIMIT 100',
-    ),
-    postgres().query(
-      "SELECT id,listing_id,data,reason FROM atlas.quarantine WHERE state='review' ORDER BY created_at LIMIT 50",
-    ),
-    postgres().query(
-      "SELECT id,kind,state,last_error,attempts FROM atlas.jobs WHERE state='failed' ORDER BY created_at DESC LIMIT 50",
-    ),
-    postgres().query(
-      "SELECT notification_id,state,last_error,attempts FROM atlas.telegram_deliveries WHERE state IN ('failed','review') ORDER BY next_attempt LIMIT 50",
-    ),
-  ]);
+  const [providers, runs, counts, listings, quarantine, jobs, telegram, discord] =
+    await Promise.all([
+      postgres().query('SELECT store,paused,last_error FROM atlas.provider_state ORDER BY store'),
+      postgres().query('SELECT * FROM atlas.runs ORDER BY started_at DESC LIMIT 20'),
+      postgres().query(
+        'SELECT (SELECT count(*) FROM atlas.products)::int products,(SELECT count(*) FROM atlas.observations)::int observations,(SELECT count(*) FROM atlas.rules)::int rules',
+      ),
+      postgres().query(
+        'SELECT id,product_id,store,external_id,url,evidence,match_state,failures,last_success FROM atlas.listings ORDER BY next_check LIMIT 100',
+      ),
+      postgres().query(
+        "SELECT id,listing_id,data,reason FROM atlas.quarantine WHERE state='review' ORDER BY created_at LIMIT 50",
+      ),
+      postgres().query(
+        "SELECT id,kind,state,last_error,attempts FROM atlas.jobs WHERE state='failed' ORDER BY created_at DESC LIMIT 50",
+      ),
+      postgres().query(
+        "SELECT notification_id,state,last_error,attempts FROM atlas.telegram_deliveries WHERE state IN ('failed','review') ORDER BY next_attempt LIMIT 50",
+      ),
+      postgres()
+        .query(
+          "SELECT d.notification_id,d.state,d.last_error,d.sent_at,n.data FROM atlas.discord_deliveries d JOIN atlas.notifications n ON n.id=d.notification_id WHERE d.state IN ('failed','sending') ORDER BY d.sent_at DESC LIMIT 50",
+        )
+        .catch(() => ({ rows: [] as any[] })),
+    ]);
   return {
     providers: providers.rows,
     runs: runs.rows.map((r) => ({ ...r, started_at: Number(r.started_at) })),
@@ -585,6 +591,14 @@ export async function admin() {
     quarantine: quarantine.rows,
     jobs: jobs.rows,
     telegram: telegram.rows,
+    discord: discord.rows.map((r: any) => ({
+      notification_id: r.notification_id,
+      state: r.state,
+      last_error: r.last_error,
+      sent_at: Number(r.sent_at),
+      title: r.data?.title,
+      store: r.data?.store,
+    })),
     capabilities: STORE_NAMES.map((store) => livePolicy(store)),
   };
 }

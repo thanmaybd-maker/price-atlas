@@ -22,7 +22,7 @@ The user wants expansion and experimentation, not a reduced classroom-only produ
 | Google sign-in and Telegram                 | Fix the reported account/link experience and prove persistence, actual receipt and disconnect                                        |
 | Complete 7/30-day history                   | Collect forward and recover dated evidence; report completion per product and window, with broader coverage progressing continuously |
 | Gemini-assisted arbitrary-product search    | Implement bounded query refinement and source discovery with verified extraction and a non-AI fallback                               |
-| Frankfurter exchange-rate references        | Implement cached dated conversions with native amounts and international separation preserved                                        |
+| Frankfurter exchange-rate references        | Implemented in 208902d / 3552e04 (cached dated conversions with native amounts and international separation preserved)               |
 | Real pincode/serviceability checks          | Pilot a retailer-specific check, then expand supported adapters; distinguish unknown from verified deliverability                    |
 | Browser push                                | Implement opt-in, subscriptions, delivery, device testing and opt-out as a requested channel                                         |
 | Full disaster recovery                      | Test application database, managed Auth, storage, configuration and worker recovery; identify unresolved dependencies explicitly     |
@@ -100,7 +100,7 @@ Local datasets, saved evidence and user-supplied URL lists remain valid sourcing
 
 - **History:** revalidate the two earlier Sony captures against current identity, provenance, report-digest and retention checks; import only if accepted. The latest validated file currently contains zero observations, while an older artifact contains Sony entries. Do not bypass safeguards or assume an import bug. Run bounded archive batches and measure yield. Store real captures as history-only; blocked/OOS checks without prices are collection events, not daily price points. Measure exact IST-day coverage in the displayed 7/30-day window. Never fill missing days with repeated prices.
 - **Gemini/search:** local exact lookup first; optional bounded spelling/intent refinement with protected model/ISBN/variant tokens, caching, timeouts and a non-AI fallback. AI may locate sources or propose extraction; accepted facts require retained source evidence and deterministic validation. Browsing agents are not forbidden from finding real evidence, but model assertions are not evidence.
-- **Frankfurter:** not implemented merely because native currencies already work. Add dated, cached exchange-rate references independently of search/history. Preserve native amounts; converted INR is indicative and excludes shipping/customs. Keep international offers outside domestic ranking and alerts. [Frankfurter](https://frankfurter.dev/)
+- **Frankfurter:** implemented in `208902d` (cached ECB reference via api.frankfurter.dev, 6-hour cache, stale/future rejection, GET /api/v1/fx?from=USD and FxNote component). Dated lookups and edge caching added in `3552e04`. Preserves native amounts; converted INR is indicative and excludes shipping/customs. Keeps international offers strictly outside domestic ranking and alerts. [Frankfurter](https://frankfurter.dev/)
 - **Pincode:** investigate one retailer-specific, permitted serviceability check. Return supported/unsupported/unknown with listing, seller/variant, pincode and timestamp context. Postal-address validation does not prove delivery. Keep checkout disclosure where no reliable check exists; do not declare universal serviceability complete.
 - **Recovery:** restore into isolated hosted PostgreSQL with all outbound sends disabled. Verify tables/checksums, constraints, RLS, saved targets and worker recovery. Test managed Auth identities/provider configuration and storage objects separately; “users log in again” is not a complete Auth recovery strategy. Protect backup keys separately. Send only an explicitly authorized test after isolation checks.
 - **Reliability/demo:** run seven actual days, record gaps and notification failures, and complete manual device/accessibility checks. A labelled simulated test proves channel behavior, not a real market price drop. Defer HyperFrames video until this path works.
@@ -116,7 +116,7 @@ Agree API contracts first. Use separate branches/worktrees and one integration o
 ## Do not carry forward these claims from the supplied chats
 
 - Guaranteed free 2,500-product timelines, universal sitemap access, or exact free-tier credit quantities without checking the actual accounts.
-- “349 bulk-verified means 74 fake products,” “local requests are outside the shared quota,” or “Frankfurter already works.”
+- “349 bulk-verified means 74 fake products,” “local requests are outside the shared quota,” or claiming unverified features without tests.
 - “Gmail cannot send to other users without a custom domain,” or “Gmail SMTP will work on free Render.”
 - “Switch to polling/create a new bot” as a substitute for diagnosing the missing link.
 - “Two archived points complete a week,” “failures count as price days,” or “remove the archive gate until import succeeds.”

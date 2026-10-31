@@ -12,6 +12,14 @@ type State = {
   quarantine?: { id: string; listing_id: string; reason: string }[];
   jobs?: { id: string; last_error: string; attempts: number }[];
   telegram?: { notification_id: string; state: string; last_error: string; attempts: number }[];
+  discord?: {
+    notification_id: string;
+    state: string;
+    last_error: string;
+    sent_at?: number;
+    title?: string;
+    store?: string;
+  }[];
   capabilities?: {
     source: string;
     mode?: string;
@@ -194,6 +202,42 @@ export function Operations({ state, reload }: { state: State; reload: () => Prom
         ))
       ) : (
         <p>No Telegram deliveries awaiting review.</p>
+      )}
+      <h3>Discord delivery review</h3>
+      <p>
+        Discord webhooks that failed or were rate-limited. Check the channel or webhook URL before
+        retrying.
+      </p>
+      {state.discord?.length ? (
+        state.discord.map((d) => (
+          <div className="setting-row" key={d.notification_id}>
+            <p>
+              {d.title ? <strong>{d.title}</strong> : null} {d.store ? `(${d.store}) · ` : ''}
+              {d.state} · {d.last_error}
+            </p>
+            <button
+              className="outline-button"
+              disabled={busy}
+              onClick={() =>
+                void action('discord', {
+                  id: d.notification_id,
+                  decision: 'retry',
+                })
+              }
+            >
+              Retry Discord alert
+            </button>
+            <button
+              className="outline-button"
+              disabled={busy}
+              onClick={() => void action('discord', { id: d.notification_id, decision: 'dismiss' })}
+            >
+              Dismiss
+            </button>
+          </div>
+        ))
+      ) : (
+        <p>No Discord deliveries awaiting review.</p>
       )}
       <h3>Failed collection jobs</h3>
       {state.jobs?.length ? (

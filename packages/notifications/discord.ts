@@ -24,13 +24,26 @@ export function ensureTables() {
 }
 
 export async function postDiscord(url: string, content: string, f: typeof fetch = fetch) {
-  const res = await f(`${url}?wait=true`, {
+  let res = await f(`${url}?wait=true`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content, username: 'Price Atlas', allowed_mentions: { parse: [] } }),
     signal: AbortSignal.timeout(10000),
     redirect: 'error',
   });
+  if (res.status === 429) {
+    const retryAfter = Number(res.headers.get('retry-after') || 0);
+    if (retryAfter > 0 && retryAfter <= 2) {
+      await new Promise((resolve) => setTimeout(resolve, Math.ceil(retryAfter * 1000)));
+      res = await f(`${url}?wait=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, username: 'Price Atlas', allowed_mentions: { parse: [] } }),
+        signal: AbortSignal.timeout(10000),
+        redirect: 'error',
+      });
+    }
+  }
   await res.body?.cancel().catch(() => {});
   if (!res.ok) throw new Error(res.status === 404 ? 'webhook_deleted' : `http_${res.status}`);
 }
@@ -136,4 +149,24 @@ export async function deliverDiscord(f: typeof fetch = fetch) {
     }
   }
   return due.length;
+}
+
+export async function reviewDiscordDelivery(
+  notificationId: string,
+  decision: 'retry' | 'dismiss',
+  actor: string,
+  reason: string,
+) {
+  await ensureTables();
+  if (decision === 'retry') {
+    await postgres().query(
+      "DELETE FROM atlas.discord_deliveries WHERE notification_id=$1 AND state IN ('failed', 'sending')",
+      [notificationId],
+    );
+  } else {
+    await postgres().query(
+      "UPDATE atlas.discord_deliveries SET state='dismissed', last_error=$2 WHERE notification_id=$1",
+      [notificationId, `Dismissed by operator ${actor}: ${reason}`],
+    );
+  }
 }
