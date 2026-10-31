@@ -3770,3 +3770,20 @@ th {
   gap: 4px 14px;
   margin-block: 6px 2px;
 }
+.telegram-steps {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+}
+.telegram-steps code {
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface);
+  user-select: all;
+}
+.telegram-steps .detail-actions {
+  margin-block: 10px;
+}

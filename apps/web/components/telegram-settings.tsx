@@ -32,7 +32,7 @@ export function TelegramSettings() {
           if (!disposed) setError(e.message);
         });
     void refresh();
-    const stop = visiblePoll(refresh, link && !status?.connected ? 15000 : 60000);
+    const stop = visiblePoll(refresh, link && !status?.connected ? 4000 : 60000);
     return () => {
       disposed = true;
       stop();
@@ -41,12 +41,17 @@ export function TelegramSettings() {
   async function connect() {
     setBusy(true);
     setError('');
+    // Open the tab inside the click so pop-up blockers allow it; point it at Telegram
+    // once the server has made the one-time link.
+    const tab = window.open('about:blank', '_blank');
     try {
       const result = await request('POST');
       if (typeof result.url !== 'string' || !result.url.startsWith('https://t.me/'))
         throw new Error('The server did not return a Telegram link. Please try again.');
       setLink(result.url);
+      if (tab) tab.location.href = result.url;
     } catch (e) {
+      tab?.close();
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -104,22 +109,54 @@ export function TelegramSettings() {
         </p>
         {error && <p role="alert">{error}</p>}
         {test && <p role="status">{test}</p>}
-        {link && !status?.connected && (
-          <p>
-            <a className="btn outline" href={link} target="_blank" rel="noopener noreferrer">
-              Open Telegram and press Start
-            </a>
-            <span className="muted small"> Link expires in 10 minutes. Keep it private.</span>
-          </p>
-        )}
+        {link &&
+          !status?.connected &&
+          (() => {
+            const u = new URL(link);
+            const bot = u.pathname.slice(1);
+            const token = u.searchParams.get('start') || '';
+            return (
+              <div className="telegram-steps">
+                <p>
+                  <strong>Telegram opened in a new tab.</strong> Press <b>Start</b> there. This page
+                  turns to “Connected” by itself within a few seconds.
+                </p>
+                <div className="detail-actions">
+                  <a
+                    className="outline-button primary"
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open Telegram (web or phone)
+                  </a>
+                  <a className="outline-button" href={`tg://resolve?domain=${bot}&start=${token}`}>
+                    Open the Telegram app
+                  </a>
+                </div>
+                <p className="muted small">
+                  Nothing opened? In Telegram search <b>@{bot}</b> and send this message:{' '}
+                  <code>/start {token}</code>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => void navigator.clipboard?.writeText(`/start ${token}`)}
+                  >
+                    Copy
+                  </button>
+                  . The code works for 10 minutes; keep it private.
+                </p>
+              </div>
+            );
+          })()}
       </div>
       {status?.connected && (
-        <button className="btn outline" disabled={busy} onClick={() => void sendTest()}>
+        <button className="outline-button primary" disabled={busy} onClick={() => void sendTest()}>
           Send test message
         </button>
       )}
       <button
-        className="btn outline"
+        className={status?.connected || link ? 'outline-button' : 'outline-button primary'}
         disabled={busy || !status || (!status.configured && !status.connected)}
         onClick={() => void (status?.connected ? disconnect() : connect())}
       >
