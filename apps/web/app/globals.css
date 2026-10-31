@@ -3787,3 +3787,23 @@ th {
 .telegram-steps .detail-actions {
   margin-block: 10px;
 }
+.telegram-connect {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-block: 10px;
+}
+.telegram-qr {
+  width: 148px;
+  height: 148px;
+  margin: 0;
+  background: #fff;
+  border-radius: 8px;
+  padding: 4px;
+  flex: none;
+}
+.telegram-qr svg {
+  width: 100%;
+  height: 100%;
+}
