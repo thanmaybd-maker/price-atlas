@@ -1106,7 +1106,9 @@ export default function Atlas({
               <section aria-label="Live product lookup">
                 {/* While checking, the search flower carries the single progress status. */}
                 <p role="status" aria-live="polite">
-                  {lookup.query === searchText && !lookup.busy ? lookup.message : ''}
+                  {lookup.query === searchText && !lookup.busy && !filtered.length
+                    ? lookup.message
+                    : ''}
                 </p>
                 {lookup.query === searchText && lookup.candidates.length > 0 && (
                   <details>
@@ -1265,8 +1267,11 @@ export default function Atlas({
                 key={`${searchText}:${searchStore}`}
                 query={searchText}
                 busy={lookup.query !== searchText || lookup.busy}
-                found={lookup.query === searchText ? lookup.ids.length : 0}
-                message={lookup.query === searchText ? lookup.message : ''}
+                found={Math.max(
+                  lookup.query === searchText ? lookup.ids.length : 0,
+                  lookup.query === searchText && !lookup.busy ? filtered.length : 0,
+                )}
+                message={lookup.query === searchText && !filtered.length ? lookup.message : ''}
                 onDone={() => setBloom(false)}
               />
             )}
