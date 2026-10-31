@@ -1,3 +1,4 @@
+import { deliverDiscord } from '../notifications/discord';
 import { backfillKeepaForUrl } from './keepa-backfill';
 import {
   boundedLimit,
@@ -464,6 +465,7 @@ export async function startLiveWorker() {
         else await runCollectionJob(row.id);
       const deliveries = await Promise.allSettled([
         deliverTelegram(),
+        deliverDiscord(),
         deliverNotifications(),
         deliverTestAlerts(),
       ]);
