@@ -2,8 +2,8 @@
 //
 // Keepa has tracked Amazon India (domain 10) for years, so a product added to Price Atlas
 // today can show its true past 30 / 90 days instead of an empty chart. Keepa logs a price
-// only when it changes; the price in effect at the end of each India day is that day's
-// value. Out-of-stock stretches (-1) stay gaps. Rows are history-only: they never become a
+// only when it changes; only dates with actual recorded changes become observations.
+// Unobserved and out-of-stock dates stay gaps. Rows are history-only: they never become a
 // current offer, never trigger alerts, and are labelled "Keepa price history".
 import type { Offer } from '../domain/index';
 
@@ -32,33 +32,35 @@ export function keepaSeries(csv: unknown): KeepaPoint[] {
 }
 
 /**
- * Day-end prices for the last `days` complete India days (today excluded: today's price
- * comes from our own live check). `scale` converts Keepa units to paise.
+ * Lowest dated change per complete India day, preserving its actual timestamp.
+ * Today is excluded. No price is carried into an unobserved day.
  */
 export function dailyFromSeries(
   points: KeepaPoint[],
   days: number,
   now = Date.now(),
   scale = 1,
-): { day: number; paise: number }[] {
+): { day: number; paise: number; observedAt: number }[] {
   const today = istDayStart(now);
-  const out: { day: number; paise: number }[] = [];
-  let j = 0;
-  let current: number | null = null;
-  for (let d = today - days * DAY; d < today; d += DAY) {
-    const end = d + DAY;
-    // lowest in-stock price seen during the day, else the price carried into it
-    let low: number | null = null;
-    while (j < points.length && points[j].at < end) {
-      const p = points[j];
-      if (p.at >= d && p.paise != null) low = low == null ? p.paise : Math.min(low, p.paise);
-      current = p.paise;
-      j++;
-    }
-    const value = low ?? current;
-    if (value != null) out.push({ day: d, paise: Math.round(value * scale) });
+  const observed = new Map<number, { day: number; paise: number; observedAt: number }>();
+  for (const p of points) {
+    if (
+      !Number.isSafeInteger(p.at) ||
+      p.at < today - days * DAY ||
+      p.at >= today ||
+      p.paise === null ||
+      !Number.isSafeInteger(p.paise) ||
+      p.paise <= 0
+    )
+      continue;
+    const day = istDayStart(p.at);
+    const price = Math.round(p.paise * scale);
+    if (!Number.isSafeInteger(price) || price <= 0) continue;
+    const previous = observed.get(day);
+    if (!previous || price < previous.paise)
+      observed.set(day, { day, paise: price, observedAt: p.at });
   }
-  return out;
+  return [...observed.values()].sort((a, b) => a.day - b.day);
 }
 
 /**
@@ -100,10 +102,9 @@ export async function fetchKeepa(asin: string, f: typeof fetch = fetch) {
 /** History-only Offer rows for one Amazon listing. */
 export function keepaObservations(
   listing: { id: string; productId: string; url: string },
-  daily: { day: number; paise: number }[],
+  daily: { day: number; paise: number; observedAt: number }[],
 ): { id: string; observedAt: number; offer: Offer }[] {
-  return daily.map(({ day, paise }) => {
-    const observedAt = day + DAY - 60000; // 23:59 IST: the price in effect that day
+  return daily.map(({ observedAt, paise }) => {
     const offer: Offer = {
       id: `keepa:${listing.id}:${observedAt}`,
       productId: listing.productId,

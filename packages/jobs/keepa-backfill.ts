@@ -2,6 +2,7 @@
 // Writes atlas.observations only (history), never current offers, rules or alerts, and
 // never over a day that already has our own live check.
 import { postgres } from '../database/postgres';
+import { livePolicy } from '../providers/live';
 import {
   dailyFromSeries,
   fetchKeepa,
@@ -19,6 +20,8 @@ export async function backfillKeepa(
   options: { days?: number; force?: boolean; f?: typeof fetch } = {},
 ) {
   if (!keepaConfigured()) return { listingId, inserted: 0, reason: 'unconfigured' };
+  const policy = livePolicy('Amazon');
+  if (!policy.history) return { listingId, inserted: 0, reason: 'history_disabled' };
   const db = postgres();
   const listing = (
     await db.query(
@@ -50,7 +53,8 @@ export async function backfillKeepa(
   const latest = [...series].reverse().find((p) => p.paise)?.paise ?? null;
   const scale = unitScale(latest, live ? Number(live) : null);
   if (!scale) return { listingId, inserted: 0, reason: 'unit_mismatch' };
-  const daily = dailyFromSeries(series, options.days ?? 90, Date.now(), scale);
+  const retention = Math.min(options.days ?? 30, policy.historyRetentionDays);
+  const daily = dailyFromSeries(series, retention, Date.now(), scale);
   const own = new Set(
     (
       await db.query(
@@ -74,7 +78,7 @@ export async function backfillKeepa(
         row.id,
         row.offer,
         row.observedAt,
-        row.observedAt + 120 * 86400000,
+        row.observedAt + retention * 86400000,
       ],
     );
     inserted += r.rowCount || 0;
