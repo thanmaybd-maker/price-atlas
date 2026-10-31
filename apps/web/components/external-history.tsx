@@ -28,6 +28,12 @@ export function trackersFor(sourceUrl?: string): Tracker[] {
     });
   if (/(amazon\.in|flipkart\.com)$/.test(host))
     out.push({
+      name: 'PriceHistory.ai',
+      href: `https://pricehistory.ai/${sourceUrl}`,
+      covers: 'Amazon, Flipkart',
+    });
+  if (/(amazon\.in|flipkart\.com)$/.test(host))
+    out.push({
       name: 'PriceBefore',
       href: `https://www.pricebefore.com/search/?q=${encodeURIComponent(sourceUrl)}`,
       covers: 'Amazon, Flipkart',
