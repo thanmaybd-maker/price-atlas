@@ -136,7 +136,7 @@ export function PriceChart({
                     onMouseLeave={() => setHover(null)}
                   >
                     <title>
-                      {`${o.store}: ${money(total(o, basis))} · ${new Date(o.observedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}
+                      {`${o.store}${o.source === 'keepa' ? ' (Keepa history)' : ''}: ${money(total(o, basis))} · ${new Date(o.observedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`}
                     </title>
                   </circle>
                 ))}
@@ -199,7 +199,10 @@ export function PriceChart({
                             timeZone: 'Asia/Kolkata',
                           })}
                         </td>
-                        <td>{o.store}</td>
+                        <td>
+                          {o.store}
+                          {o.source === 'keepa' ? ' · Keepa history' : ''}
+                        </td>
                         <td>{money(total(o, basis))}</td>
                       </tr>
                     ))}
