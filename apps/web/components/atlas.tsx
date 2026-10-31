@@ -713,6 +713,24 @@ export default function Atlas({
         textMatch,
         { store: effectiveStore },
       );
+  // Budget searches also list matches that fit the budget but are sold out right now,
+  // so a shopper sees the product exists (e.g. MacBook Neo) and can set a target on it.
+  const shownIds = new Set(filtered.map((p) => p.id));
+  const soldOut =
+    filtered.length && intent.maxPaise != null
+      ? nearMisses(
+          products.filter((p) => !shownIds.has(p.id) && (!brand || p.brand === brand)),
+          offers,
+          {
+            ...intent,
+            category: intent.category || category || assistedIntent?.category,
+          } as typeof intent,
+          textMatch,
+          { store: effectiveStore },
+        ).filter(
+          ({ price }) => price && !price.inStock && price.paise <= (intent.maxPaise ?? Infinity),
+        )
+      : [];
   const pageCount = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(pageCount, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
   function Card({ p, index = 0 }: { p: Product; index?: number }) {
@@ -1260,6 +1278,29 @@ export default function Atlas({
                 {filtered
                   .slice((currentPage - 1) * 24, currentPage * 24)
                   .map((p, i) => Card({ p, index: i }))}
+                {soldOut.length > 0 && (
+                  <section aria-label="Sold out right now" className="near-misses sold-out">
+                    <p className="assist-note">
+                      Also under {money(intent.maxPaise)} but out of stock right now:
+                    </p>
+                    <ul className="near-list">
+                      {soldOut.map(({ p, price }) => (
+                        <li key={p.id}>
+                          <Link prefetch={false} href={`/p/${p.slug}`}>
+                            {p.name}
+                          </Link>
+                          <span>
+                            {money(price!.paise)} · {price!.store} · out of stock{' '}
+                            {new Date(price!.observedAt).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
               </div>
             ) : bloom ? null : near.length ? (
               <section aria-label="Closest products" className="near-misses">

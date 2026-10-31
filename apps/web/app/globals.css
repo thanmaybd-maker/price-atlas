@@ -3749,3 +3749,6 @@ th {
     background: none;
   }
 }
+.product-grid > .sold-out {
+  grid-column: 1 / -1;
+}
