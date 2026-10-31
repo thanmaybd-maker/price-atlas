@@ -178,7 +178,7 @@ async function handler(req: NextRequest) {
             process.env.VERCEL_GIT_COMMIT_SHA ||
             process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
             process.env.GIT_COMMIT_SHA ||
-            'd0a5338',
+            'unknown',
         });
       if (path[0] === 'session')
         return json({
@@ -245,10 +245,16 @@ async function handler(req: NextRequest) {
           .string()
           .regex(/^[A-Z]{3}$/)
           .parse(req.nextUrl.searchParams.get('from'));
-        const reference = await fxReference(from, 'INR');
+        const dateReq = req.nextUrl.searchParams.get('date') ?? undefined;
+        const reference = await fxReference(from, 'INR', fetch, Date.now(), dateReq);
         const res = json(
           reference
-            ? { reference, note: 'Indicative only. Excludes shipping, import duty and card fees.' }
+            ? {
+                reference,
+                rate_date: reference.date,
+                ...(reference.requested_date ? { requested_date: reference.requested_date } : {}),
+                note: 'Indicative only. Excludes shipping, import duty and card fees.',
+              }
             : { reference: null },
         );
         res.headers.set('Cache-Control', 'public, s-maxage=21600, stale-while-revalidate=86400');

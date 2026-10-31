@@ -109,7 +109,7 @@ describe('native amounts and conversion', () => {
     };
     expect(eligible(base, NOW)).toBe(false);
   });
-  it('supports dated historical lookups from Frankfurter', async () => {
+  it('supports dated historical lookups from Frankfurter with rate_date and requested_date', async () => {
     let requestedUrl = '';
     const f = (async (url: string | URL | Request) => {
       requestedUrl = String(url);
@@ -119,6 +119,29 @@ describe('native amounts and conversion', () => {
     }) as typeof fetch;
     const r = await fxReference('USD', 'INR', f, NOW, '2026-10-15');
     expect(requestedUrl).toBe('https://api.frankfurter.dev/v1/2026-10-15?base=USD&symbols=INR');
-    expect(r).toMatchObject({ from: 'USD', to: 'INR', rate: 83.95, date: '2026-10-15' });
+    expect(r).toMatchObject({
+      from: 'USD',
+      to: 'INR',
+      rate: 83.95,
+      date: '2026-10-15',
+      rate_date: '2026-10-15',
+      requested_date: '2026-10-15',
+    });
+  });
+  it('transparently distinguishes weekend/holiday requested dates from ECB publication dates', async () => {
+    const f = (async () =>
+      new Response(
+        JSON.stringify({ base: 'USD', date: '2026-10-23', rates: { INR: 83.9 } }),
+      )) as typeof fetch;
+    // 2026-10-24 is Saturday; Frankfurter returns Friday 2026-10-23 ECB rate
+    const r = await fxReference('USD', 'INR', f, NOW, '2026-10-24');
+    expect(r).toMatchObject({
+      from: 'USD',
+      to: 'INR',
+      rate: 83.9,
+      date: '2026-10-23',
+      rate_date: '2026-10-23',
+      requested_date: '2026-10-24',
+    });
   });
 });

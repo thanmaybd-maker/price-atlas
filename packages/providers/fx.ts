@@ -9,6 +9,10 @@ export type FxReference = {
   rate: number;
   /** The ECB publication date the rate belongs to (YYYY-MM-DD). */
   date: string;
+  /** Explicit rate date returned by the ECB (TARGET business day). */
+  rate_date: string;
+  /** The requested calendar date, if different from the rate_date due to weekends/holidays. */
+  requested_date?: string;
   source: 'Frankfurter (ECB reference rate)';
   fetchedAt: number;
 };
@@ -71,6 +75,8 @@ export async function fxReference(
       to,
       rate,
       date,
+      rate_date: date,
+      ...(dateReq ? { requested_date: dateReq } : {}),
       source: 'Frankfurter (ECB reference rate)',
       fetchedAt: now,
     };

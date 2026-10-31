@@ -11,6 +11,7 @@ async function request(path, method = 'GET', body, extra = {}) {
 const health = await request('health');
 assert.equal(health.status, 200);
 assert.equal(health.body.mode, 'live');
+assert(typeof health.body.commit === 'string' && health.body.commit.length > 0);
 const search = await request('search');
 assert.equal(search.status, 200);
 assert.equal(search.body.mode, 'live');
@@ -47,6 +48,14 @@ assert.equal(fxUsd.status, 200);
 assert.equal(typeof fxUsd.body.reference?.rate, 'number');
 assert(fxUsd.body.reference.rate > 0);
 assert(Date.parse(fxUsd.body.reference.date) > Date.now() - 10 * 86400000);
+if (fxUsd.body.rate_date) assert.equal(fxUsd.body.rate_date, fxUsd.body.reference.date);
+
+const fxDated = await request('fx?from=USD&date=2026-10-24');
+assert.equal(fxDated.status, 200);
+if (fxDated.body.reference) {
+  if (fxDated.body.requested_date) assert.equal(fxDated.body.requested_date, '2026-10-24');
+  if (fxDated.body.rate_date) assert.equal(typeof fxDated.body.rate_date, 'string');
+}
 
 const fxInr = await request('fx?from=INR');
 assert.equal(fxInr.status, 200);
