@@ -5,7 +5,23 @@ import { money } from '../domain/index';
 
 const WEBHOOK =
   /^https:\/\/(?:ptb\.|canary\.)?(?:discord|discordapp)\.com\/api\/webhooks\/\d{5,25}\/[\w-]{20,120}$/;
-export const validDiscordWebhook = (url: string) => WEBHOOK.test(url.trim());
+
+export function cleanDiscordWebhook(url: string): string {
+  const trimmed = url.trim().replace(/^["']|["']$/g, '');
+  try {
+    const parsed = new URL(trimmed);
+    parsed.search = '';
+    parsed.hash = '';
+    let pathname = parsed.pathname;
+    if (pathname.endsWith('/')) pathname = pathname.slice(0, -1);
+    parsed.pathname = pathname;
+    return parsed.href;
+  } catch {
+    return trimmed;
+  }
+}
+
+export const validDiscordWebhook = (url: string) => WEBHOOK.test(cleanDiscordWebhook(url));
 
 let ensured: Promise<void> | null = null;
 /** Same DDL as migrations/012_discord.sql, so the feature works before `pnpm migrate` runs. */
@@ -59,12 +75,13 @@ export async function discordStatus(userId: string) {
 }
 
 /** Saves the webhook only after Discord accepts a confirmation message through it. */
-export async function connectDiscord(userId: string, url: string, f: typeof fetch = fetch) {
+export async function connectDiscord(userId: string, rawUrl: string, f: typeof fetch = fetch) {
+  const url = cleanDiscordWebhook(rawUrl);
   if (!validDiscordWebhook(url)) return { ok: false as const, reason: 'invalid_url' };
   await ensureTables();
   try {
     await postDiscord(
-      url.trim(),
+      url,
       '✅ Price Atlas is connected. Price alerts for your targets will appear in this channel.',
       f,
     );
@@ -73,7 +90,7 @@ export async function connectDiscord(userId: string, url: string, f: typeof fetc
   }
   await postgres().query(
     'INSERT INTO atlas.discord_connections VALUES($1,$2,$3) ON CONFLICT(user_id) DO UPDATE SET webhook_url=excluded.webhook_url,connected_at=excluded.connected_at',
-    [userId, url.trim(), Date.now()],
+    [userId, url, Date.now()],
   );
   return { ok: true as const };
 }
