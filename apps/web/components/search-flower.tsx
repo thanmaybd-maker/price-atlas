@@ -763,8 +763,13 @@ export function SearchFlower({
           </div>
         )}
       </div>
-      <button className="v2-fl-skip" onClick={() => doneRef.current()}>
-        {busy ? 'Show recorded results' : 'Show results'}
+      <button
+        type="button"
+        className="v2-fl-skip"
+        onClick={() => doneRef.current()}
+        aria-label="Skip Animation"
+      >
+        Skip Animation
       </button>
       <div className={flash ? 'v2-flash on' : 'v2-flash'} aria-hidden="true" />
     </section>

@@ -318,8 +318,14 @@
   color: #b1c3b7;
 }
 [data-theme='dark'] .axis-label {
-  fill: #b1c3b7;
-  color: #b1c3b7;
+  fill: #cbd5e1;
+  color: #cbd5e1;
+}
+[data-theme='dark'] .card-price {
+  color: #ffffff !important;
+}
+[data-theme='dark'] .chart line {
+  stroke: #475569;
 }
 [data-theme='dark'] .hs :is(.do .cell .dt, .do .cell .lo, .do .cell .chg, .al .al-key, .pu .note) {
   color: inherit;

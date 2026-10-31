@@ -39,6 +39,7 @@ import {
   Pencil,
   Sun,
   Moon,
+  Target,
 } from 'lucide-react';
 import {
   money,
@@ -809,14 +810,22 @@ export default function Atlas({
                     ? `Last observed · ${new Date(lastObserved.observedAt).toLocaleDateString('en-IN')}`
                     : p.attributes['Source price']
                       ? 'Source price · shipping/import fees extra'
-                      : effectiveStore !== 'all'
-                        ? `No recent ${effectiveStore} price`
-                        : 'No recent price'}
+                      : p.basePrice && p.basePrice > 0
+                        ? effectiveStore !== 'all'
+                          ? `${effectiveStore} · catalog price`
+                          : 'Catalog base price'
+                        : effectiveStore !== 'all'
+                          ? `No recent ${effectiveStore} price`
+                          : 'No recent price'}
               </span>
               <strong className="card-price">
                 {p.attributes['Source price'] && !po.length
                   ? p.attributes['Source price']
-                  : money(known?.paise ?? lastObserved?.itemPrice ?? null)}
+                  : money(
+                      known?.paise ??
+                        lastObserved?.itemPrice ??
+                        (p.basePrice && p.basePrice > 0 ? p.basePrice : null),
+                    )}
               </strong>
               {p.attributes['Source price'] &&
                 !po.length &&
@@ -1238,6 +1247,23 @@ export default function Atlas({
                 </Link>
               ))}
             </div>
+            {!demo && (
+              <div className="retailer-chips-row" role="group" aria-label="Filter by retailer">
+                {(['all', 'Amazon', 'Flipkart', 'Nykaa', 'Croma', 'Myntra'] as const).map(
+                  (store) => (
+                    <button
+                      key={store}
+                      type="button"
+                      className={`retailer-chip ${searchStore === store ? 'active' : ''}`}
+                      onClick={() => navigateFilter('store', store)}
+                      aria-pressed={searchStore === store}
+                    >
+                      {store === 'all' ? 'All Retailers' : store}
+                    </button>
+                  ),
+                )}
+              </div>
+            )}
             <div className="filter-bar">
               <div className="filter-controls">
                 <SlidersHorizontal size={18} />
@@ -1372,6 +1398,77 @@ export default function Atlas({
                   ))}
                 </ul>
               </section>
+            ) : searchText &&
+              !/^https?:\/\//i.test(searchText) &&
+              (!lookup.busy || lookup.query !== searchText) ? (
+              <div className="track-unknown-card">
+                <div className="track-unknown-header">
+                  <span className="track-unknown-badge">Track Unknown Product</span>
+                  <h3>“{searchText}” is not in our catalog yet</h3>
+                  <p>
+                    We couldn’t find an exact catalog match for this search. You can pin a price
+                    target so Price Atlas watches for it, or browse live store inventory directly:
+                  </p>
+                </div>
+                <div className="track-unknown-actions">
+                  <button
+                    type="button"
+                    className="primary track-pin-button"
+                    onClick={() => {
+                      const fallback = products[0] || {
+                        id: `unknown-${encodeURIComponent(searchText.toLowerCase())}`,
+                        name: searchText,
+                        brand: searchText.split(' ')[0] || 'Unknown',
+                        category: (intent.category || 'other') as any,
+                        slug: `unknown-${encodeURIComponent(searchText.toLowerCase())}`,
+                        subtitle: 'Unknown product target',
+                        description: '',
+                        attributes: {},
+                        basePrice: intent.maxPaise || 5000000,
+                      };
+                      openTarget(fallback);
+                    }}
+                  >
+                    <Target size={16} /> Pin Target Price
+                  </button>
+                  <a
+                    className="outline-button store-ext-link amazon"
+                    href={retailerSearchUrl('Amazon', assistedQuery || searchText)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Search on Amazon <ArrowUpRight size={13} />
+                  </a>
+                  <a
+                    className="outline-button store-ext-link flipkart"
+                    href={retailerSearchUrl('Flipkart', assistedQuery || searchText)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Search on Flipkart <ArrowUpRight size={13} />
+                  </a>
+                  <a
+                    className="outline-button store-ext-link nykaa"
+                    href={retailerSearchUrl('Nykaa', assistedQuery || searchText)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Search on Nykaa <ArrowUpRight size={13} />
+                  </a>
+                  <a
+                    className="outline-button store-ext-link croma"
+                    href={retailerSearchUrl('Croma', assistedQuery || searchText)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Search on Croma <ArrowUpRight size={13} />
+                  </a>
+                </div>
+                <p className="track-unknown-tip">
+                  Found it on a store? Paste its direct URL into the search box above to add it to
+                  your tracking list immediately.
+                </p>
+              </div>
             ) : (
               <Empty
                 icon={Search}

@@ -114,7 +114,7 @@ export function parseQueryIntent(raw: string): QueryIntent {
   }
   const under = q.match(
     new RegExp(
-      String.raw`\b(?:under|below|less than|upto|up to|within|max|budget|<=?)\s*${AMOUNT}`,
+      String.raw`\b(?:under|below|less than|upto|up to|within|max|budget(?: of|:)?|sub|<=?)\s*${AMOUNT}`,
     ),
   );
   if (under) {
@@ -188,21 +188,21 @@ export function knownPrice(
       fresh: true,
       inStock: true,
     };
-  const recent = mine
-    .filter(
-      (o) =>
-        (o.stock || includeOutOfStock) && o.observedAt > now - 14 * 86400000 && o.itemPrice > 0,
-    )
-    .sort((a, b) => b.observedAt - a.observedAt || a.itemPrice - b.itemPrice)[0];
-  return recent
-    ? {
-        paise: recent.itemPrice,
-        store: recent.store,
-        observedAt: recent.observedAt,
-        fresh: false,
-        inStock: recent.stock,
-      }
-    : null;
+  const eligibleRecent = mine.filter(
+    (o) => (o.stock || includeOutOfStock) && o.observedAt > now - 14 * 86400000 && o.itemPrice > 0,
+  );
+  if (eligibleRecent.length) {
+    eligibleRecent.sort((a, b) => a.itemPrice - b.itemPrice || b.observedAt - a.observedAt);
+    const best = eligibleRecent[0];
+    return {
+      paise: best.itemPrice,
+      store: best.store,
+      observedAt: best.observedAt,
+      fresh: false,
+      inStock: best.stock,
+    };
+  }
+  return null;
 }
 
 /**
@@ -225,7 +225,21 @@ export function nearMisses(
         (!intent.category || p.category === intent.category) &&
         (!intent.text || textMatches(p, intent.text)),
     )
-    .map((p) => ({ p, price: knownPrice(p.id, offers, store, options.now, true) }))
+    .map((p) => {
+      const live = knownPrice(p.id, offers, store, options.now, true);
+      const isStoreMatch = !store || store === 'all' || p.attributes?.Retailer === store;
+      const fallback =
+        isStoreMatch && p.basePrice && p.basePrice > 0
+          ? {
+              paise: p.basePrice,
+              store: (p.attributes?.Retailer || 'all') as any,
+              observedAt: options.now || Date.now(),
+              fresh: false,
+              inStock: true,
+            }
+          : null;
+      return { p, price: live ?? fallback };
+    })
     .sort((a, b) => (a.price?.paise ?? Infinity) - (b.price?.paise ?? Infinity))
     .slice(0, 12);
 }
@@ -240,7 +254,21 @@ export function applyIntent(
 ) {
   const store = options.store && options.store !== 'all' ? options.store : intent.store;
   const rows = products
-    .map((p) => ({ p, price: knownPrice(p.id, offers, store, options.now) }))
+    .map((p) => {
+      const live = knownPrice(p.id, offers, store, options.now);
+      const isStoreMatch = !store || store === 'all' || p.attributes?.Retailer === store;
+      const fallback =
+        isStoreMatch && p.basePrice && p.basePrice > 0
+          ? {
+              paise: p.basePrice,
+              store: (p.attributes?.Retailer || 'all') as any,
+              observedAt: options.now || Date.now(),
+              fresh: false,
+              inStock: true,
+            }
+          : null;
+      return { p, price: live ?? fallback };
+    })
     .filter(({ p, price }) => {
       if (intent.category && p.category !== intent.category) {
         // "laptop" also finds a MacBook filed under laptops; keep named matches outside it
@@ -248,17 +276,49 @@ export function applyIntent(
         if (!intent.text || !textMatches(p, intent.text)) return false;
       }
       if (intent.text && !textMatches(p, intent.text)) return false;
-      if (store && !price && p.attributes.Retailer !== store) return false;
+      if (store && store !== 'all') {
+        const hasStoreOffer = offers.some(
+          (o) =>
+            o.productId === p.id &&
+            o.store === store &&
+            o.displayAllowed &&
+            o.currency === 'INR' &&
+            !retailers[o.store]?.international,
+        );
+        if (!hasStoreOffer && p.attributes?.Retailer !== store) return false;
+        if (price && price.store !== store && p.attributes?.Retailer !== store) return false;
+      }
       if (intent.maxPaise != null && (!price || price.paise > intent.maxPaise)) return false;
       if (intent.minPaise != null && (!price || price.paise < intent.minPaise)) return false;
       return true;
     });
   const sort = options.sort || 'recommended';
-  if (sort === 'price-asc' || sort === 'price-desc' || intent.maxPaise != null)
+  if (sort === 'price-asc') {
     rows.sort((a, b) => {
-      // Unknown prices always last, never treated as zero.
-      if (!a.price || !b.price) return a.price ? -1 : b.price ? 1 : 0;
-      return (a.price.paise - b.price.paise) * (sort === 'price-desc' ? -1 : 1);
+      const aVal =
+        a.price?.paise ?? (a.p.basePrice && a.p.basePrice > 0 ? a.p.basePrice : Infinity);
+      const bVal =
+        b.price?.paise ?? (b.p.basePrice && b.p.basePrice > 0 ? b.p.basePrice : Infinity);
+      if (aVal === bVal) return 0;
+      return aVal - bVal;
     });
+  } else if (sort === 'price-desc') {
+    rows.sort((a, b) => {
+      const aVal =
+        a.price?.paise ?? (a.p.basePrice && a.p.basePrice > 0 ? a.p.basePrice : -Infinity);
+      const bVal =
+        b.price?.paise ?? (b.p.basePrice && b.p.basePrice > 0 ? b.p.basePrice : -Infinity);
+      if (aVal === bVal) return 0;
+      return bVal - aVal;
+    });
+  } else if (intent.maxPaise != null) {
+    rows.sort((a, b) => {
+      const aVal =
+        a.price?.paise ?? (a.p.basePrice && a.p.basePrice > 0 ? a.p.basePrice : Infinity);
+      const bVal =
+        b.price?.paise ?? (b.p.basePrice && b.p.basePrice > 0 ? b.p.basePrice : Infinity);
+      return aVal - bVal;
+    });
+  }
   return rows;
 }
