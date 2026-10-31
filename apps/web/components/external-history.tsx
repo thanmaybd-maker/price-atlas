@@ -1,64 +1,66 @@
 'use client';
-import { useState } from 'react';
+// One-click links to free trackers that have older history for this exact listing.
+// Each link resolves the product by its store URL; nothing from them enters our charts.
+
+type Tracker = { name: string; href: string; covers: string };
+
+export function trackersFor(sourceUrl?: string): Tracker[] {
+  if (!sourceUrl) return [];
+  let host = '';
+  try {
+    host = new URL(sourceUrl).hostname;
+  } catch {
+    return [];
+  }
+  const out: Tracker[] = [];
+  const asin = sourceUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase();
+  if (/amazon\.in$/.test(host) && asin)
+    out.push({
+      name: 'Keepa',
+      href: `https://keepa.com/#!product/10-${asin}`,
+      covers: 'amazon.in, years of history',
+    });
+  if (/(amazon\.in|flipkart\.com|nykaa\.com|myntra\.com|ajio\.com|meesho\.com)$/.test(host))
+    out.push({
+      name: 'BuyHatke',
+      href: `https://buyhatke.com/${sourceUrl}`,
+      covers: 'Amazon, Flipkart, Nykaa, Myntra, AJIO, Meesho',
+    });
+  if (/(amazon\.in|flipkart\.com)$/.test(host))
+    out.push({
+      name: 'PriceBefore',
+      href: `https://www.pricebefore.com/search/?q=${encodeURIComponent(sourceUrl)}`,
+      covers: 'Amazon, Flipkart',
+    });
+  return out;
+}
 
 export function ExternalHistory({ sourceUrl }: { sourceUrl?: string }) {
-  const [message, setMessage] = useState('');
+  const trackers = trackersFor(sourceUrl);
+  if (!trackers.length) return null;
   return (
-    <details className="external-history">
-      <summary>Need history from before tracking started?</summary>
+    <details className="external-history" open>
+      <summary>Older history for this exact listing</summary>
       <p>
-        Free public trackers may have older checks for this exact listing. Open a tracker and paste
-        the product link. Coverage, seller, variant and delivery rules can differ.
+        Price Atlas charts only prices it checked itself. These free trackers have followed this
+        listing for longer; each link opens its chart for this product.
       </p>
-      {sourceUrl && (
-        <>
-          <label>
-            Product link{' '}
-            <input
-              aria-label="Product link for external history"
-              value={sourceUrl}
-              readOnly
-              onFocus={(event) => event.currentTarget.select()}
-            />
-          </label>
-          <button
-            type="button"
-            className="outline-button"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(sourceUrl);
-                setMessage('Product link copied. Paste it into the tracker.');
-              } catch {
-                setMessage('Select and copy the product link above.');
-              }
-            }}
-          >
-            Copy product link
-          </button>
-        </>
-      )}
       <div className="detail-actions">
-        <a
-          className="outline-button"
-          href="https://pricehistory.app/"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open PriceHistory.app
-        </a>
-        <a
-          className="outline-button"
-          href="https://pricehistory.ai/"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open PriceHistory.ai
-        </a>
+        {trackers.map((t) => (
+          <a
+            key={t.name}
+            className="outline-button"
+            href={t.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t.covers}
+          >
+            {t.name} chart ↗
+          </a>
+        ))}
       </div>
-      <p role="status">{message}</p>
       <p className="fine-print">
-        External services are independent. Their data is not imported into Price Atlas rankings,
-        charts or alerts.
+        Independent services: seller, variant and delivery rules can differ from ours.
       </p>
     </details>
   );
