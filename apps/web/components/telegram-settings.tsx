@@ -132,7 +132,7 @@ export function TelegramSettings() {
                     </p>
                     <div className="detail-actions">
                       <a
-                        className="outline-button primary"
+                        className="primary"
                         href={`https://web.telegram.org/k/#?tgaddr=${encodeURIComponent(`tg://resolve?domain=${bot}&start=${token}`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -165,12 +165,12 @@ export function TelegramSettings() {
           })()}
       </div>
       {status?.connected && (
-        <button className="outline-button primary" disabled={busy} onClick={() => void sendTest()}>
+        <button className="primary" disabled={busy} onClick={() => void sendTest()}>
           Send test message
         </button>
       )}
       <button
-        className={status?.connected || link ? 'outline-button' : 'outline-button primary'}
+        className={status?.connected || link ? 'outline-button' : 'primary'}
         disabled={busy || !status || (!status.configured && !status.connected)}
         onClick={() => void (status?.connected ? disconnect() : connect())}
       >
