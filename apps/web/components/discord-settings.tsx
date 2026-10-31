@@ -69,7 +69,7 @@ export function DiscordSettings() {
               onChange={(e) => setUrl(e.target.value)}
               style={{ flex: 1, minWidth: 240 }}
             />
-            <button className="outline-button primary" disabled={busy || !url.trim()}>
+            <button className="primary" disabled={busy || !url.trim()}>
               {busy ? 'Checking…' : 'Connect Discord'}
             </button>
           </form>
@@ -83,7 +83,7 @@ export function DiscordSettings() {
       {connected && (
         <div className="detail-actions">
           <button
-            className="outline-button primary"
+            className="primary"
             disabled={busy}
             onClick={() =>
               void call('POST', '?test=1').then((j) => j.ok && setNote('Test alert posted.'))
