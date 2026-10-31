@@ -2313,7 +2313,11 @@ export default function Atlas({
                 {o.store} ·{' '}
                 {o.currency === 'INR' ? money(o.itemPrice) : nativeMoney(o.itemPrice, o.currency)}{' '}
                 (native {o.currency}) · {relative(o.observedAt)}{' '}
-                <FxNote minor={o.itemPrice} currency={o.currency} />{' '}
+                <FxNote
+                  minor={o.itemPrice}
+                  currency={o.currency}
+                  date={new Date(o.observedAt).toISOString().slice(0, 10)}
+                />{' '}
                 {o.purchaseUrl && (
                   <a href={o.purchaseUrl} target="_blank" rel="noopener noreferrer">
                     Check landed cost on store
