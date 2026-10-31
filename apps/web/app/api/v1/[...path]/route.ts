@@ -3,6 +3,7 @@ import {
   deliverDiscord,
   disconnectDiscord,
   discordStatus,
+  reviewDiscordDelivery,
   sendDiscordTest,
 } from '../../../../../../packages/notifications/discord';
 import { NextRequest, NextResponse, after } from 'next/server';
@@ -438,6 +439,22 @@ async function handler(req: NextRequest) {
             400,
           );
         await reviewTelegramDelivery(b.id, b.decision, user!.id, b.reason);
+        return json({ ok: true });
+      }
+      if (path[1] === 'discord' && data.isLive()) {
+        const b = z
+          .object({
+            id: z.string().uuid(),
+            decision: z.enum(['retry', 'dismiss']),
+            reason: z.string().trim().min(3).max(300).optional(),
+          })
+          .parse(await req.json());
+        await reviewDiscordDelivery(
+          b.id,
+          b.decision,
+          user!.id,
+          b.reason ?? 'Operator console action',
+        );
         return json({ ok: true });
       }
       if (path[1] === 'match' && data.isLive()) {

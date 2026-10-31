@@ -818,6 +818,17 @@ export default function Atlas({
                   ? p.attributes['Source price']
                   : money(known?.paise ?? lastObserved?.itemPrice ?? null)}
               </strong>
+              {p.attributes['Source price'] &&
+                !po.length &&
+                p.attributes['Source currency'] &&
+                p.attributes['Source currency'] !== 'INR' && (
+                  <FxNote
+                    minor={Math.round(
+                      Number(String(p.attributes['Source price']).replace(/[^0-9.]/g, '')) * 100,
+                    )}
+                    currency={p.attributes['Source currency']}
+                  />
+                )}
             </div>
             <span className="micro-trend">
               <TrendingDown size={22} />
@@ -2403,11 +2414,30 @@ export default function Atlas({
               <tbody>
                 <tr className="price-compare-row">
                   <th>Lowest delivered price</th>
-                  {selected.map((p) => (
-                    <td key={p.id}>
-                      {money(rank(offers.filter((o) => o.productId === p.id)).lowest)}
-                    </td>
-                  ))}
+                  {selected.map((p) => {
+                    const lowest = rank(offers.filter((o) => o.productId === p.id)).lowest;
+                    return (
+                      <td key={p.id}>
+                        {money(lowest)}
+                        {lowest === null &&
+                          p.attributes['Source price'] &&
+                          p.attributes['Source currency'] &&
+                          p.attributes['Source currency'] !== 'INR' && (
+                            <div>
+                              <span className="muted small">{p.attributes['Source price']}</span>
+                              <FxNote
+                                minor={Math.round(
+                                  Number(
+                                    String(p.attributes['Source price']).replace(/[^0-9.]/g, ''),
+                                  ) * 100,
+                                )}
+                                currency={p.attributes['Source currency']}
+                              />
+                            </div>
+                          )}
+                      </td>
+                    );
+                  })}
                 </tr>
                 {keys.map((k) => (
                   <tr
