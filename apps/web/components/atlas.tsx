@@ -1561,7 +1561,24 @@ export default function Atlas({
                     Active targets <span className="count-badge">{session.rules.length}</span>
                   </h2>
                   {session.rules.map((rule) => {
-                    const p = products.find((p) => p.id === rule.productId)!;
+                    const p = products.find((p) => p.id === rule.productId);
+                    if (!p) return null;
+                    const now = knownPrice(
+                      p.id,
+                      offers,
+                      rule.store === 'all' ? undefined : rule.store,
+                      undefined,
+                      true,
+                    );
+                    const status = !now
+                      ? `No price right now: the store page shows it unavailable. You’ll get an alert as soon as it is back at or below ${money(rule.target)}.`
+                      : now.paise <= rule.target && now.inStock && now.fresh
+                        ? `Target met: ${money(now.paise)} at ${now.store}. Your alert has been sent.`
+                        : now.paise <= rule.target && !now.inStock
+                          ? `${money(now.paise)} at ${now.store} is under your target but out of stock. You’ll get an alert when it is back in stock.`
+                          : now.paise <= rule.target
+                            ? `Last checked at ${money(now.paise)}; waiting for a fresh check to confirm before alerting.`
+                            : `Now ${money(now.paise)} at ${now.store}, ${money(now.paise - rule.target)} above your target.`;
                     return (
                       <div className="rule-card" key={rule.id}>
                         <div className="rule-icon">
@@ -1582,6 +1599,7 @@ export default function Atlas({
                           <span className={`status-pill ${!rule.enabled ? 'paused' : ''}`}>
                             {rule.enabled ? 'Watching' : 'Paused'}
                           </span>
+                          {rule.enabled && <p className="small rule-status">{status}</p>}
                         </div>
                         <div className="rule-actions">
                           <button className="text-button" onClick={() => openTarget(p, rule)}>

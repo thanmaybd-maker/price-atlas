@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import qrcode from 'qrcode-generator';
 import { visiblePoll } from '../lib/visible-poll';
 type Status = { configured: boolean; connected: boolean };
 export function TelegramSettings() {
@@ -41,17 +42,12 @@ export function TelegramSettings() {
   async function connect() {
     setBusy(true);
     setError('');
-    // Open the tab inside the click so pop-up blockers allow it; point it at Telegram
-    // once the server has made the one-time link.
-    const tab = window.open('about:blank', '_blank');
     try {
       const result = await request('POST');
       if (typeof result.url !== 'string' || !result.url.startsWith('https://t.me/'))
         throw new Error('The server did not return a Telegram link. Please try again.');
       setLink(result.url);
-      if (tab) tab.location.href = result.url;
     } catch (e) {
-      tab?.close();
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -118,21 +114,39 @@ export function TelegramSettings() {
             return (
               <div className="telegram-steps">
                 <p>
-                  <strong>Telegram opened in a new tab.</strong> Press <b>Start</b> there. This page
-                  turns to “Connected” by itself within a few seconds.
+                  Press <b>Start</b> in Telegram. This page turns to “Connected” by itself within a
+                  few seconds, and the bot sends you a confirmation message.
                 </p>
-                <div className="detail-actions">
-                  <a
-                    className="outline-button primary"
-                    href={link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open Telegram (web or phone)
-                  </a>
-                  <a className="outline-button" href={`tg://resolve?domain=${bot}&start=${token}`}>
-                    Open the Telegram app
-                  </a>
+                <div className="telegram-connect">
+                  <figure
+                    className="telegram-qr"
+                    aria-label="QR code: scan with your phone camera to open the bot in Telegram"
+                    dangerouslySetInnerHTML={{ __html: qrSvg(link) }}
+                  />
+                  <div>
+                    <p className="small">
+                      <b>On your phone:</b> scan this code with the camera, then tap Start.
+                    </p>
+                    <p className="small">
+                      <b>On this computer:</b>
+                    </p>
+                    <div className="detail-actions">
+                      <a
+                        className="outline-button primary"
+                        href={`https://web.telegram.org/k/#?tgaddr=${encodeURIComponent(`tg://resolve?domain=${bot}&start=${token}`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open in Telegram Web
+                      </a>
+                      <a
+                        className="outline-button"
+                        href={`tg://resolve?domain=${bot}&start=${token}`}
+                      >
+                        Open Telegram desktop app
+                      </a>
+                    </div>
+                  </div>
                 </div>
                 <p className="muted small">
                   Nothing opened? In Telegram search <b>@{bot}</b> and send this message:{' '}
@@ -170,4 +184,11 @@ export function TelegramSettings() {
       </button>
     </div>
   );
+}
+
+function qrSvg(text: string) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
 }

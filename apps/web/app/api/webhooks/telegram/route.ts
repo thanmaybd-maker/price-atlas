@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import {
   handleTelegramUpdate,
+  sendTelegram,
   telegramConfigured,
   telegramSecretValid,
 } from '../../../../../../packages/notifications/telegram';
@@ -22,7 +23,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid update.' }, { status: 400 });
   }
   try {
-    return NextResponse.json((await handleTelegramUpdate(input)) || { ok: true });
+    const reply = await handleTelegramUpdate(input);
+    if (!reply) return NextResponse.json({ ok: true });
+    // Send the reply through the Bot API so a failure is visible; if that fails, hand it
+    // back in the webhook response, which Telegram also delivers.
+    try {
+      await sendTelegram(String(reply.chat_id), reply.text);
+      return NextResponse.json({ ok: true });
+    } catch {
+      return NextResponse.json(reply);
+    }
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof ZodError ? 'Invalid update.' : 'Update processing failed.' },

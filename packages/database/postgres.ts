@@ -396,7 +396,16 @@ export async function importScraped(
           imageUrl: scraped.imageUrl,
         },
         Date.now() +
-          Number(tracked ? process.env.COLLECTION_INTERVAL_MINUTES || 60 : catalogInterval) * 60000,
+          // An unavailable tracked listing is rechecked every 6 h, not hourly, so a
+          // discontinued product cannot drain the paid fallback allowance.
+          Number(
+            tracked
+              ? scraped.itemPrice === null
+                ? 360
+                : process.env.COLLECTION_INTERVAL_MINUTES || 60
+              : catalogInterval,
+          ) *
+            60000,
         scraped.observedAt,
         catalogInterval,
       ],
