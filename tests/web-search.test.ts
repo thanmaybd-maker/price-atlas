@@ -37,3 +37,18 @@ it('turns store-limited web search results into verified-later product candidate
   delete process.env.FIRECRAWL_API_KEY;
   expect((await firecrawlProductSearch('x', f)).reason).toBe('unconfigured');
 });
+
+import { parseFlipkartSearch } from '../packages/jobs/web-search';
+it('reads product cards and listed prices from a Flipkart search page', () => {
+  const html = `<a href="https://www.flipkart.com/hp-15-laptop/p/itmc37f7386f2ddb?pid=COMHRMHWBHPHPZV6&amp;lid=X"><img alt="HP 15 AMD Athlon 8 GB/512 GB SSD Laptop" src="x"/><div>₹45,490</div></a>
+  <a href="/acer-aspire-3/p/itma6a6812aa712e?pid=COMH4B6CGTPNVJW9&amp;x=1"><div>Acer</div><div>₹40,990</div></a>
+  <a href="https://www.flipkart.com/hp-15-laptop/p/itmc37f7386f2ddb?pid=COMHRMHWBHPHPZV6">dupe</a>`;
+  const out = parseFlipkartSearch(html);
+  expect(out).toHaveLength(2);
+  expect(out[0]).toMatchObject({
+    store: 'Flipkart',
+    title: 'HP 15 AMD Athlon 8 GB/512 GB SSD Laptop',
+    quotedRupees: 45490,
+  });
+  expect(out[1].quotedRupees).toBe(40990);
+});

@@ -87,7 +87,7 @@ export function GeminiFinds({ query }: { query: string }) {
                   <span className="muted small">
                     {c.store}
                     {c.quotedRupees != null &&
-                      ` · web search says ${inr(c.quotedRupees)} · not yet checked`}
+                      ` · listed at ${inr(c.quotedRupees)} · not yet checked`}
                   </span>
                 </div>
                 <Link
@@ -102,7 +102,7 @@ export function GeminiFinds({ query }: { query: string }) {
           </ul>
           <p className="fine-print">
             {result.via === 'web-search'
-              ? 'Store pages found by web search for Gemini. '
+              ? 'Live store results plus Gemini suggestions. '
               : result.grounded === false
                 ? 'Links suggested by Gemini. '
                 : 'Store pages found by Gemini with Google Search. '}
