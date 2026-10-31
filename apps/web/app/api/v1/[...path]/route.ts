@@ -172,6 +172,11 @@ async function handler(req: NextRequest) {
           database: data.isLive()
             ? Boolean((await postgres().query('SELECT 1')).rowCount)
             : Boolean(await data.admin()),
+          commit:
+            process.env.VERCEL_GIT_COMMIT_SHA ||
+            process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
+            process.env.GIT_COMMIT_SHA ||
+            'd0a5338',
         });
       if (path[0] === 'session')
         return json({
@@ -239,11 +244,13 @@ async function handler(req: NextRequest) {
           .regex(/^[A-Z]{3}$/)
           .parse(req.nextUrl.searchParams.get('from'));
         const reference = await fxReference(from, 'INR');
-        return json(
+        const res = json(
           reference
             ? { reference, note: 'Indicative only. Excludes shipping, import duty and card fees.' }
             : { reference: null },
         );
+        res.headers.set('Cache-Control', 'public, s-maxage=21600, stale-while-revalidate=86400');
+        return res;
       }
       if (path[0] === 'assist') {
         const q = z.string().trim().min(1).max(2000).parse(req.nextUrl.searchParams.get('q'));

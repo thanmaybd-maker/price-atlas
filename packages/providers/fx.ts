@@ -27,13 +27,18 @@ export async function fxReference(
   to = 'INR',
   f: typeof fetch = fetch,
   now = Date.now(),
+  dateReq?: string,
 ): Promise<FxReference | null> {
   if (!currencyCode(from) || !currencyCode(to) || from === to) return null;
-  const key = `${from}>${to}`;
+  if (dateReq && !/^\d{4}-\d{2}-\d{2}$/.test(dateReq)) return null;
+  const key = dateReq ? `${from}>${to}@${dateReq}` : `${from}>${to}`;
   const hit = cache.get(key);
   if (hit && now - hit.at < TTL) return hit.value;
+  const url = dateReq
+    ? `https://api.frankfurter.dev/v1/${dateReq}?base=${from}&symbols=${to}`
+    : `${ENDPOINT}?base=${from}&symbols=${to}`;
   try {
-    const res = await f(`${ENDPOINT}?base=${from}&symbols=${to}`, {
+    const res = await f(url, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(4000),
     });
@@ -58,7 +63,7 @@ export async function fxReference(
     if (
       !Number.isFinite(published) ||
       published > now + 86400000 ||
-      now - published > STALE_DAYS * 86400000
+      (!dateReq && now - published > STALE_DAYS * 86400000)
     )
       return hit?.value ?? null;
     const value: FxReference = {

@@ -507,6 +507,8 @@ export async function startLiveWorker() {
       ready: !stopping && lastSuccess > Date.now() - 180000,
       lastSuccessfulTick: lastSuccess || null,
       queue: useRedis ? 'redis' : 'database',
+      commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT_SHA || 'd0a5338',
+      channels: ['telegram', 'discord'],
     }),
   });
 }

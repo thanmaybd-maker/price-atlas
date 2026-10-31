@@ -7,9 +7,9 @@ if (process.env.NODE_ENV === 'production' || process.env.VERCEL)
   throw new Error('Run this operator script locally, never in the web deployment.');
 try {
   const [email, productId, channel = 'telegram'] = process.argv.slice(2);
-  if (!email || !productId || !['telegram', 'email', 'both'].includes(channel))
+  if (!email || !productId || !['telegram', 'email', 'discord', 'both', 'all'].includes(channel))
     throw new Error(
-      'Usage: pnpm alerts:test <your verified account email> <product ID> [telegram|email|both]',
+      'Usage: pnpm alerts:test <your verified account email> <product ID> [telegram|email|discord|both|all]',
     );
   const user = (
     await postgres().query('SELECT * FROM atlas.users WHERE lower(email)=lower($1) AND verified', [
@@ -63,9 +63,19 @@ try {
       [user.id],
     )
   ).rows[0];
-  const channels = channel === 'both' ? ['telegram', 'email'] : [channel];
+  const discordConnection = (
+    await postgres().query('SELECT * FROM atlas.discord_connections WHERE user_id=$1', [user.id])
+  ).rows[0];
+  const channels =
+    channel === 'all'
+      ? ['telegram', 'discord', 'email']
+      : channel === 'both'
+        ? ['telegram', 'email']
+        : [channel];
   if (channels.includes('telegram') && !connection)
     throw new Error('Connect Telegram in Settings and press Start first.');
+  if (channels.includes('discord') && !discordConnection)
+    throw new Error('Connect Discord in Settings first.');
   if (channels.includes('email') && (!user.email_enabled || user.suppressed))
     throw new Error('Enable email alerts for this account first.');
   const ids: string[] = [];

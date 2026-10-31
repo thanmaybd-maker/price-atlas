@@ -39,7 +39,12 @@ const port = process.env.PORT;
 if (port) {
   http
     .createServer((_, res) => {
-      const health = close.health?.() || { ready: !stopping, mode: 'demo' };
+      const health = close.health?.() || {
+        ready: !stopping,
+        mode: 'demo',
+        commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT_SHA || 'd0a5338',
+        channels: ['telegram', 'discord'],
+      };
       res
         .writeHead(health.ready ? 200 : 503, { 'Content-Type': 'application/json' })
         .end(JSON.stringify(health));
