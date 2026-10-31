@@ -51,6 +51,7 @@ import {
   type Rule,
   type Category,
 } from '@domain/index';
+import { landedCost } from '../../../packages/domain/landed-cost';
 import { ProductArt } from './product-art';
 import { PriceChart } from './chart';
 import { LiveLogin } from './live-login';
@@ -175,6 +176,36 @@ function relative(at: number) {
       : mins < 2880
         ? `Checked ${Math.floor(mins / 60)}h ago`
         : `Checked ${Math.floor(mins / 1440)} days ago`;
+}
+/** Item price, GST inside it, delivery and the estimated checkout total. */
+function LandedLine({
+  offer,
+  category,
+  wide = false,
+}: {
+  offer: Offer;
+  category: Product['category'];
+  wide?: boolean;
+}) {
+  const c = landedCost(offer, category);
+  return (
+    <span className={wide ? 'landed landed-wide' : 'landed'}>
+      <span>
+        {c.gstRate
+          ? `Includes ≈${money(c.gstPaise)} GST (${c.gstRate}%)`
+          : 'No GST on this category'}
+      </span>
+      <span title={c.deliveryNote}>
+        {c.deliveryPaise === null
+          ? 'Delivery: shown at checkout'
+          : c.deliveryPaise === 0
+            ? 'Free delivery'
+            : `+ ${money(c.deliveryPaise)} delivery`}
+        {offer.charges > 0 ? ` · + ${money(offer.charges)} store fees` : ''}
+      </span>
+      {c.totalPaise !== null && <strong>You pay ≈ {money(c.totalPaise)}</strong>}
+    </span>
+  );
 }
 // Pipeline bookkeeping kept on the product for evidence, not shopper-facing specs.
 const HIDDEN_SPECS = new Set([
@@ -1944,6 +1975,9 @@ export default function Atlas({
                     : `${itemRank.offers.length} matching offer${itemRank.offers.length === 1 ? '' : 's'}`}
                 </span>
               </div>
+              {itemRank.winners[0] && (
+                <LandedLine offer={itemRank.winners[0]} category={p.category} wide />
+              )}
               <p>
                 <span className="live-dot" />
                 {po[0] ? relative(po[0].observedAt) : 'Awaiting observation'} ·{' '}
@@ -2062,11 +2096,7 @@ export default function Atlas({
                     ? money(o.itemPrice)
                     : `Last ${money(o.itemPrice)}`}
                 </strong>
-                {o.shipping !== null && (
-                  <span>
-                    {o.shipping === 0 ? 'Free delivery' : `+ ${money(o.shipping)} delivery`}
-                  </span>
-                )}
+                <LandedLine offer={o} category={p.category} />
                 {r.winners.some((w) => w.id === o.id) && primaryOffers.length > 1 && (
                   <span className="best-label">
                     {r.winners.length > 1 ? 'Equal lowest' : 'Lowest price'}
