@@ -21,7 +21,7 @@ describe('keepa', () => {
       { at: dayStart(-2), paise: null },
     ]);
   });
-  it('turns change points into one price per India day, carrying the price forward', () => {
+  it('uses dated change points only, preserving gaps and the actual minimum timestamp', () => {
     const points = [
       { at: dayStart(-5) + 3600000, paise: 50000 },
       { at: dayStart(-3) + 3600000, paise: 45000 },
@@ -29,13 +29,11 @@ describe('keepa', () => {
       { at: dayStart(-2) + 3600000, paise: null },
     ];
     const d = dailyFromSeries(points, 6, now);
-    expect(d.map((x) => [Math.round((x.day - dayStart(0)) / DAY), x.paise])).toEqual(
-      [
-        [-5, 50000],
-        [-4, 50000],
-        [-3, 45000],
-      ],
-    );
+    expect(d.map((x) => [Math.round((x.day - dayStart(0)) / DAY), x.paise])).toEqual([
+      [-5, 50000],
+      [-3, 45000],
+    ]);
+    expect(d[1].observedAt).toBe(dayStart(-3) + 3600000);
   });
   it('anchors the unit to the live price and refuses a mismatch', () => {
     expect(unitScale(7699000, 7699000)).toBe(1);
@@ -43,9 +41,23 @@ describe('keepa', () => {
     expect(unitScale(1000, 7699000)).toBeNull();
     expect(unitScale(null, 7699000)).toBeNull();
   });
+  it('does not backfill an old change across the window or admit future and unavailable points', () => {
+    expect(
+      dailyFromSeries(
+        [
+          { at: dayStart(-10), paise: 100 },
+          { at: dayStart(-2), paise: null },
+          { at: dayStart(1), paise: 200 },
+          { at: dayStart(-1), paise: -10 },
+        ],
+        7,
+        now,
+      ),
+    ).toEqual([]);
+  });
   it('writes history-only rows that can never become a live offer or alert', () => {
     const [row] = keepaObservations({ id: 'amazon-x', productId: 'p', url: 'u' }, [
-      { day: dayStart(-1), paise: 100 },
+      { day: dayStart(-1), paise: 100, observedAt: dayStart(-1) + 3600000 },
     ]);
     expect(row.offer).toMatchObject({
       historyAllowed: true,
@@ -54,6 +66,6 @@ describe('keepa', () => {
       source: 'keepa',
       store: 'Amazon',
     });
-    expect(row.observedAt).toBe(dayStart(0) - 60000);
+    expect(row.observedAt).toBe(dayStart(-1) + 3600000);
   });
 });

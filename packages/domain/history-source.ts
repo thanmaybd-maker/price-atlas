@@ -32,6 +32,7 @@ export function archiveEvidence(offer: Offer) {
 }
 
 export function historySourceLabel(offer: Offer) {
+  if (offer.source === 'keepa') return 'Keepa dated price change; not a live Price Atlas check';
   return archiveEvidence(offer)
     ? 'Internet Archive capture; not a live Price Atlas check'
     : 'Recorded observation; verify at checkout';
