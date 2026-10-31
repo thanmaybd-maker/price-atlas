@@ -567,15 +567,17 @@ async function handler(req: NextRequest) {
           return json({ ok: false, reason: 'rate_limited' }, 429);
         return json(await sendDiscordTest(user.id));
       }
-      if (req.method === 'PUT') {
+      if (req.method === 'PUT' || (req.method === 'POST' && req.nextUrl.searchParams.get('connect') === '1')) {
         if (await limited(`discord-connect:${user.id}`, 5).catch(() => false))
           return json({ ok: false, reason: 'rate_limited' }, 429);
         const b = z.object({ url: z.string().trim().max(300) }).parse(await req.json());
         const result = await connectDiscord(user.id, b.url);
         if (result.ok) {
-          after(async () => {
-            await deliverDiscord().catch(() => 0);
-          });
+          try {
+            await deliverDiscord();
+          } catch {
+            console.error('Initial Discord delivery failed');
+          }
         }
         return json(result, result.ok ? 200 : 400);
       }
@@ -628,6 +630,26 @@ async function handler(req: NextRequest) {
       });
       return error ? json({ error: 'The code was invalid or expired.' }, 400) : json({ ok: true });
     }
+    if (path[0] === 'observations') {
+      const threeDaysAgo = Date.now() - 3 * 86400000;
+      if (data.isLive()) {
+        const rows = (
+          await postgres().query(
+            `SELECT to_char(to_timestamp(observed_at / 1000), 'YYYY-MM-DD') AS day,
+                    COUNT(*)::int AS observations,
+                    COUNT(DISTINCT product_id)::int AS products,
+                    COUNT(DISTINCT store)::int AS stores
+             FROM atlas.observations
+             WHERE observed_at >= $1
+             GROUP BY 1
+             ORDER BY 1 DESC`,
+            [threeDaysAgo],
+          )
+        ).rows;
+        return json({ ok: true, days: rows });
+      }
+      return json({ ok: true, days: [] });
+    }
     if (path[0] === 'watches') {
       if (req.method === 'POST') {
         const b = z
@@ -646,17 +668,14 @@ async function handler(req: NextRequest) {
     }
     if (path[0] === 'rules') {
       if (req.method === 'POST' || req.method === 'PATCH') {
-        const rule = await data.saveRule(user.id, ruleSchema.parse(await req.json()), true);
-        after(async () => {
-          try {
-            await data.evaluateProduct(rule.productId);
-            await data.dispatch();
-            await deliverTelegram().catch(() => 0);
-            await deliverDiscord().catch(() => 0);
-          } catch {
-            console.error('Deferred in-app dispatch failed', { requestId });
-          }
-        });
+        const rule = await data.saveRule(user.id, ruleSchema.parse(await req.json()), false);
+        try {
+          await data.dispatch();
+          await deliverTelegram().catch(() => 0);
+          await deliverDiscord().catch(() => 0);
+        } catch {
+          console.error('In-app alert dispatch failed', { requestId });
+        }
         return json({ rule }, 201);
       }
       if (req.method === 'DELETE') {
@@ -715,4 +734,4 @@ async function handler(req: NextRequest) {
     );
   }
 }
-export { handler as GET, handler as POST, handler as PATCH, handler as DELETE };
+export { handler as GET, handler as POST, handler as PATCH, handler as DELETE, handler as PUT };

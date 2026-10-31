@@ -115,6 +115,10 @@ h2 {
     inset 0 1px 0 var(--v2-glint),
     0 8px 18px -8px var(--v2-green-glow);
 }
+.primary:disabled {
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
 .search-box {
   height: 64px;
   border-radius: 18px;

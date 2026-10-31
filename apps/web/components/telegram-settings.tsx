@@ -166,7 +166,7 @@ export function TelegramSettings() {
       </div>
       {status?.connected && (
         <button className="primary" disabled={busy} onClick={() => void sendTest()}>
-          Send test message
+          {busy ? 'Sending test…' : 'Send test message'}
         </button>
       )}
       <button

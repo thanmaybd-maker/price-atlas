@@ -35,6 +35,9 @@ export function DiscordSettings() {
       if (j.ok === false)
         setNote(reasons[j.reason] || `Discord did not accept it (${j.reason || res.status}).`);
       return j;
+    } catch {
+      setNote('Connection request failed. Check your network connection.');
+      return { ok: false };
     } finally {
       setBusy(false);
     }
@@ -45,7 +48,7 @@ export function DiscordSettings() {
         <strong>Discord price alerts</strong>
         <p className="muted small">
           {connected
-            ? 'Connected. Alerts post to your Discord channel.'
+            ? 'Connected. Alerts post directly to your Discord channel.'
             : 'Free. In Discord: channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL, then paste it here.'}
         </p>
         {!connected && (
@@ -53,10 +56,14 @@ export function DiscordSettings() {
             className="detail-actions"
             onSubmit={(e) => {
               e.preventDefault();
+              if (!url.trim()) {
+                setNote('Paste a Discord webhook URL into the field first.');
+                return;
+              }
               void call('PUT', '', { url }).then((j) => {
-                if (j.ok) {
+                if (j?.ok) {
                   setUrl('');
-                  setNote('Connected. Check your channel for the confirmation message.');
+                  setNote('Connected! Check your Discord channel for the confirmation message.');
                   void load();
                 }
               });
@@ -66,30 +73,53 @@ export function DiscordSettings() {
               aria-label="Discord webhook URL"
               placeholder="https://discord.com/api/webhooks/…"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                if (note) setNote('');
+              }}
               style={{ flex: 1, minWidth: 240 }}
             />
-            <button className="primary" disabled={busy || !url.trim()}>
+            {typeof navigator !== 'undefined' && navigator.clipboard && (
+              <button
+                type="button"
+                className="outline-button"
+                style={{ padding: '8px 12px', fontSize: 12 }}
+                onClick={async () => {
+                  try {
+                    const text = await navigator.clipboard.readText();
+                    if (text) setUrl(text.trim());
+                  } catch {}
+                }}
+              >
+                Paste
+              </button>
+            )}
+            <button
+              type="submit"
+              className="primary"
+              disabled={busy || !url.trim()}
+              title={!url.trim() ? 'Paste a webhook URL to enable' : 'Connect this Discord channel'}
+            >
               {busy ? 'Checking…' : 'Connect Discord'}
             </button>
           </form>
         )}
         {note && (
-          <p role="status" className="small">
+          <p role="status" className="small" style={{ marginTop: 8, fontWeight: 500 }}>
             {note}
           </p>
         )}
       </div>
       {connected && (
-        <div className="detail-actions">
+        <div className="detail-actions" style={{ marginTop: 8 }}>
           <button
             className="primary"
             disabled={busy}
             onClick={() =>
-              void call('POST', '?test=1').then((j) => j.ok && setNote('Test alert posted.'))
+              void call('POST', '?test=1').then((j) => j?.ok && setNote('Test alert posted to your channel!'))
             }
           >
-            Send test alert
+            {busy ? 'Posting…' : 'Send test alert'}
           </button>
           <button
             className="outline-button"

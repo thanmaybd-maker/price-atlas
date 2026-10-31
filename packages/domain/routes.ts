@@ -39,6 +39,7 @@ export function knownApiPath(parts: string[]) {
       'export',
       'imports',
       'discovery',
+      'observations',
       'telegram',
       'discord',
       'preferences',
