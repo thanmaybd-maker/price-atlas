@@ -4,6 +4,7 @@ it('deep-links the right free trackers for each store', () => {
   expect(trackersFor('https://www.amazon.in/dp/b0gr16t68f').map((t) => t.name)).toEqual([
     'Keepa',
     'BuyHatke',
+    'PriceHistory.ai',
     'PriceBefore',
   ]);
   expect(trackersFor('https://www.amazon.in/dp/B0GR16T68F')[0].href).toBe(
