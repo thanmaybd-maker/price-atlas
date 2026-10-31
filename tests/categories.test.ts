@@ -44,3 +44,18 @@ it('gives general products their own main categories', () => {
   expect(isIsbn13('9789390085255')).toBe(true);
   expect(isIsbn13('9789390085256')).toBe(false);
 });
+
+import { categoryFor as categoryForLaptop } from '../packages/matching/index';
+import { it as itLaptop, expect as expectLaptop } from 'vitest';
+itLaptop('files laptops from phone brands and suffix nouns as laptops', () => {
+  expectLaptop(
+    categoryForLaptop(
+      'MOTOROLA Motobook 60 Full Metal WUXGA OLED Intel Core 5 210H - (16 GB/512 GB SSD/Windows 11 Home) 14IRH10R Thin and Light Laptop',
+      {},
+    ),
+  ).toBe('laptops');
+  expectLaptop(
+    categoryForLaptop('ASUS ExpertBook P1 with 1 Yr ADP Intel Core 5 210H (16 GB/512 GB SSD)', {}),
+  ).toBe('laptops');
+  expectLaptop(categoryForLaptop('Motorola Edge 50 Fusion 5G (8GB RAM, 256GB)', {})).toBe('phones');
+});

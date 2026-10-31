@@ -22,7 +22,7 @@ import { knownApiPath } from '../../../../../../packages/domain/routes';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import { assistQuery } from '../../../../../../packages/providers/gemini';
 import { discoverWithGemini } from '../../../../../../packages/providers/gemini-discover';
-import { firecrawlProductSearch } from '../../../../../../packages/jobs/web-search';
+import { firecrawlProductSearch, flipkartSearch } from '../../../../../../packages/jobs/web-search';
 import { applyIntent, parseQueryIntent } from '../../../../../../packages/domain/query-intent';
 import { fxReference } from '../../../../../../packages/providers/fx';
 import {
@@ -198,21 +198,31 @@ async function handler(req: NextRequest) {
               reason: 'limited',
             });
         }
-        const found = await discoverWithGemini(q);
-        // Gemini without live search can't know new products; fall back to a store-limited
-        // web search. Links are still verified by fetching the store page.
-        if (found.available && !found.candidates.length && found.reason !== 'limited') {
-          const web = await firecrawlProductSearch(q).catch(() => ({
-            candidates: [],
-            reason: 'error',
-          }));
-          if (web.candidates.length)
+        // Gemini (model knowledge, links may be stale) and Flipkart's live search page run
+        // together; live store results go first. Every link is verified on click before a
+        // price is saved.
+        const [found, live] = await Promise.all([
+          discoverWithGemini(q),
+          flipkartSearch(q).catch(() => []),
+        ]);
+        if (found.available && found.reason !== 'limited') {
+          let extra = live;
+          if (!found.candidates.length && !live.length)
+            extra = (
+              await firecrawlProductSearch(q).catch(() => ({ candidates: [], reason: 'error' }))
+            ).candidates;
+          if (extra.length) {
+            const seen = new Set(extra.map((c) => c.url));
             return json({
               ...found,
-              candidates: web.candidates,
+              candidates: [...extra, ...found.candidates.filter((c) => !seen.has(c.url))].slice(
+                0,
+                8,
+              ),
               reason: undefined,
               via: 'web-search',
             });
+          }
         }
         return json(found);
       }

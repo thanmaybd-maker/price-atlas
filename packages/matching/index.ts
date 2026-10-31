@@ -112,8 +112,18 @@ export function categoryFor(title: string, attributes: Record<string, string>): 
     )
   )
     return 'accessories';
+  // A computer with an SSD named a laptop anywhere in the title is a laptop, even when the
+  // brand also makes phones (Motorola Motobook) or the noun sits after "with".
+  if (
+    /\b(?:laptop|notebook|chromebook)\b/i.test(title) &&
+    /\b(?:ssd|emmc|windows 11|chrome os|macos)\b/i.test(title)
+  )
+    return 'laptops';
   const devices: [Category, RegExp][] = [
-    ['laptops', /\b(?:laptop|notebook|macbook)\b/i],
+    [
+      'laptops',
+      /\b(?:laptop|notebook|macbook|chromebook|expertbook|vivobook|zenbook|ideapad|thinkpad|thinkbook|motobook|inspiron|vostro|latitude|pavilion|omnibook|probook|elitebook|galaxy book\d*)\b/i,
+    ],
     [
       'tablets',
       /\b(?:tablet|ipad|galaxy tab|(?:motorola|redmi|oneplus|xiaomi) pad|lenovo tab|pad\s+\d+)\b/i,
