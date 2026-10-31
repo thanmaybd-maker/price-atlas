@@ -109,4 +109,16 @@ describe('native amounts and conversion', () => {
     };
     expect(eligible(base, NOW)).toBe(false);
   });
+  it('supports dated historical lookups from Frankfurter', async () => {
+    let requestedUrl = '';
+    const f = (async (url: string | URL | Request) => {
+      requestedUrl = String(url);
+      return new Response(
+        JSON.stringify({ base: 'USD', date: '2026-10-15', rates: { INR: 83.95 } }),
+      );
+    }) as typeof fetch;
+    const r = await fxReference('USD', 'INR', f, NOW, '2026-10-15');
+    expect(requestedUrl).toBe('https://api.frankfurter.dev/v1/2026-10-15?base=USD&symbols=INR');
+    expect(r).toMatchObject({ from: 'USD', to: 'INR', rate: 83.95, date: '2026-10-15' });
+  });
 });

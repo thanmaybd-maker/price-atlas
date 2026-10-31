@@ -1,6 +1,6 @@
 # PRICE ATLAS
 
-Price Atlas supports Amazon.in, Flipkart, Meesho, Croma, Nykaa, Reliance Digital, Myntra, AJIO, iHerb and B&H through a shared retailer registry. It stores observed prices in PostgreSQL and supports verified Supabase accounts, saved products, target rules, and email/Telegram alert delivery. The public web app is [price-atlas-ashen.vercel.app](https://price-atlas-ashen.vercel.app). See the [teacher checklist](docs/TEACHER-TEST-CHECKLIST.md) for repeatable verification and external-service limitations.
+Price Atlas supports Amazon.in, Flipkart, Meesho, Croma, Nykaa, Reliance Digital, Myntra, AJIO, iHerb and B&H through a shared retailer registry. It stores observed prices in PostgreSQL and supports verified Supabase accounts, saved products, target rules, and in-app, Telegram, and Discord alert delivery (email requires a verified custom domain). The public web app is [price-atlas-ashen.vercel.app](https://price-atlas-ashen.vercel.app). See the [teacher checklist](docs/TEACHER-TEST-CHECKLIST.md) for repeatable verification and external-service limitations.
 
 Start with [live scraper setup](docs/SCRAPING.md), [Telegram activation](docs/TELEGRAM.md), and [verification results](docs/LIVE-VERIFICATION.md). Public signup is supported. Retailer tracking enables 30-day observed history, alerts and exact matching by default; an explicit policy override can disable them. No historical prices are invented.
 
@@ -33,7 +33,7 @@ pnpm start
 
 Search any product name/model or paste a direct supported retailer product URL. Public live lookup checks retailer search pages, verifies product details and adds successful results to the catalog; it is not limited to seeded products or electronics. Search can find mice, books, kitchen appliances and other product types. Unsupported or blocked pages produce explicit partial/unavailable results. Sign in with verified email or Google to save a product or target. Missing shipping is shown as unknown; bank/exchange discounts do not reduce ranking prices. Separate store listings require decisive variant evidence before matching.
 
-Settings controls email opt-in, Telegram connection, notification preferences, MFA, export, sign-out and account deletion. Telegram links expire after ten minutes and require pressing Start in the bot. Disconnect in Settings or send `/stop` in Telegram. Email's sandbox sender is restricted to supported recipients; Telegram avoids the email-domain requirement, but cannot guarantee delivery.
+Settings controls email opt-in, Telegram connection, Discord price alerts, notification preferences, MFA, export, sign-out and account deletion. Telegram links expire after ten minutes and require pressing Start in the bot. Discord alerts connect via incoming channel webhooks with a test button. Disconnect in Settings or send `/stop` in Telegram. Email's sandbox sender is restricted to supported recipients; Telegram and Discord avoid the email-domain requirement, but cannot guarantee delivery.
 
 Operators with an approved account and MFA can review matches, anomalies and uncertain Telegram sends, pause sources, and retry collection jobs. No fabricated source agreement is supplied by the app.
 
@@ -73,7 +73,7 @@ See the [15-perspective audit](docs/PROJECT-AUDIT.md) for completed optional fea
 | `packages/database`        | PostgreSQL migrations/RLS and separate SQLite demo backend           |
 | `packages/providers`       | Retailer parsing, proxy transports, validation and capabilities      |
 | `packages/jobs`            | BullMQ dispatch, persistent leases, quotas and collection retries    |
-| `packages/notifications`   | Resend and Telegram delivery, account linking and opt-out            |
+| `packages/notifications`   | Resend, Telegram, and Discord delivery, account linking and opt-out  |
 | `tests`, `scripts`, `docs` | Verification, operations and setup                                   |
 
 The worker requires continuous hosting for reliable polling. A free Render web service can sleep, even with a health listener. Source permissions, account/provider settings and actual recipient delivery are reported separately from tests and API acceptance. Never commit `.env` or expose server credentials through `NEXT_PUBLIC_*` settings.

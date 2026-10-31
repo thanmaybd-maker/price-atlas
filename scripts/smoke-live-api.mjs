@@ -42,6 +42,23 @@ assert.equal(
   ).status,
   403,
 );
+const fxUsd = await request('fx?from=USD');
+assert.equal(fxUsd.status, 200);
+assert.equal(typeof fxUsd.body.reference?.rate, 'number');
+assert(fxUsd.body.reference.rate > 0);
+assert(Date.parse(fxUsd.body.reference.date) > Date.now() - 10 * 86400000);
+
+const fxInr = await request('fx?from=INR');
+assert.equal(fxInr.status, 200);
+assert.equal(fxInr.body.reference, null);
+
+const discordUnauth = await request('discord', 'POST', {
+  url: 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_-',
+});
+assert.equal(discordUnauth.status, 401);
+
+const telegramUnauth = await request('telegram', 'POST', {});
+assert.equal(telegramUnauth.status, 401);
 if (search.body.products.length) {
   const product = await request(`products/${search.body.products[0].id}`);
   assert.equal(product.status, 200);
@@ -54,4 +71,4 @@ if (search.body.products.length) {
   for (const offer of product.body.offers)
     if (offer.observedAt + 3600000 <= Date.now()) assert.equal(offer.alertsAllowed, false);
 }
-console.log('Live API smoke: 10 checks passed. No users created and no messages sent.');
+console.log('Live API smoke: 14 checks passed. No users created and no messages sent.');

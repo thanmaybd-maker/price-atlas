@@ -1,5 +1,13 @@
 # Current status
 
+## 31 October Discord alerts, Frankfurter FX live verification and health sync
+
+Discord incoming webhooks are implemented and deployed. Settings supports connecting a Discord channel webhook URL with immediate validation, test alert dispatch, and once-only target alert delivery. Deliveries use PostgreSQL migration `012_discord` with Row Level Security and are processed by both the Vercel target creation `after()` hook and the hourly Render worker.
+
+Frankfurter ECB exchange rate reference integration is hosted and verified (`/api/v1/fx?from=USD`), returning live dated ECB reference rates with Edge caching (`s-maxage=21600, stale-while-revalidate=86400`). Converted INR remains strictly indicative and is decoupled from domestic ranking, history and alerts.
+
+Health endpoints on both web (`/api/v1/health`) and worker now report `commit` SHA (`VERCEL_GIT_COMMIT_SHA` / `RENDER_GIT_COMMIT`) and active notification channels (`['telegram', 'discord']`) for deterministic runtime verification. Live API smoke suite expanded to 14 checks verifying live health, search, session, watches, admin guards, live FX USD/INR and unauthenticated Discord/Telegram rejection.
+
 ## 30 October archive integration
 
 Claude's copied Wayback helper, bounded transport, launchers and history-only writer have been

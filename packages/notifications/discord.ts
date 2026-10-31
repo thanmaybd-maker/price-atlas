@@ -9,7 +9,7 @@ export const validDiscordWebhook = (url: string) => WEBHOOK.test(url.trim());
 
 let ensured: Promise<void> | null = null;
 /** Same DDL as migrations/012_discord.sql, so the feature works before `pnpm migrate` runs. */
-function ensureTables() {
+export function ensureTables() {
   ensured ||= postgres()
     .query(
       `CREATE TABLE IF NOT EXISTS atlas.discord_connections (user_id uuid PRIMARY KEY REFERENCES atlas.users(id) ON DELETE CASCADE, webhook_url text NOT NULL, connected_at bigint NOT NULL);

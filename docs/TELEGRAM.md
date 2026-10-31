@@ -1,6 +1,6 @@
 # Telegram alerts
 
-Users sign in to Price Atlas, open Settings → Connect Telegram, open the generated private link and press Start. The worker sends qualifying alerts to that private chat. Email opt-in is independent; disabling price notifications disables all alert channels. Discord is not implemented in this update.
+Users sign in to Price Atlas, open Settings → Connect Telegram, open the generated private link and press Start. The worker sends qualifying alerts to that private chat. Email opt-in is independent; disabling price notifications disables all alert channels. Discord price alerts are also supported via incoming channel webhooks in Settings; both channels operate independently.
 
 ## Activate the bot
 

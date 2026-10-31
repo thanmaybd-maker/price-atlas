@@ -20,6 +20,8 @@ Use the live site, with browser developer tools open. Recorded prices retain the
 | Account               | Sign in with Google                                             | Complete Google consent as the human account owner; return to Price Atlas. Save/watch survives reload.                                   | 0                 |
 | Alert                 | Set an item-price target if delivery is unknown                 | Rule persists; only fresh accepted matching domestic observations can qualify.                                                           | 0                 |
 | Telegram              | Settings → Connect → open bot → Start                           | Link binds to the signed-in account. Actual test delivery requires the recipient's explicit authorization.                               | 0                 |
+| Discord               | Settings → Discord price alerts → Connect Webhook → Send test   | Validates Discord webhook URL, requires HTTP 204 confirmation on test alert, posts target price alerts.                                  | 0                 |
+| Cross-border FX       | Open international item (e.g., iHerb Cetaphil or B&H)           | Shows native currency plus indicative INR reference from Frankfurter ECB rates; excluded from domestic rankings.                         | 0                 |
 | Export/delete         | Settings export and account deletion                            | Account-scoped actions require sign-in and same-origin requests. Confirm deletion only on a disposable evaluator account.                | 0                 |
 
 ## Limits and presentation readiness
