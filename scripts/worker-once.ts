@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { postgres, maintenance, collect } from '../packages/database/postgres';
 import { runCollectionJob, deliverNotifications } from '../packages/jobs/index';
+import { deliverDiscord } from '../packages/notifications/discord';
 import { deliverTelegram } from '../packages/notifications/telegram';
 import { deliverTestAlerts } from '../packages/notifications/test-alerts';
 try {
@@ -20,6 +21,7 @@ try {
   const deliveries = await Promise.allSettled([
     deliverNotifications(),
     deliverTelegram(),
+    deliverDiscord(),
     deliverTestAlerts(),
   ]);
   console.log(

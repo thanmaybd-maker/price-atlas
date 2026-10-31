@@ -58,6 +58,7 @@ import { LiveLogin } from './live-login';
 import { Operations } from './operations';
 import { Mfa } from './mfa';
 import { TelegramSettings } from './telegram-settings';
+import { DiscordSettings } from './discord-settings';
 import { RingHero } from './ring-hero';
 import { SearchFlower } from './search-flower';
 import { WeekLedger } from './week-ledger';
@@ -2490,6 +2491,7 @@ export default function Atlas({
                 {demo ? 'Local demo profile · browser session' : session.user.email}
               </p>
               {!demo && <TelegramSettings />}
+              {!demo && <DiscordSettings />}
               {!demo && (
                 <div className="setting-row">
                   <div>

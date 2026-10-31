@@ -1,3 +1,10 @@
+import {
+  connectDiscord,
+  deliverDiscord,
+  disconnectDiscord,
+  discordStatus,
+  sendDiscordTest,
+} from '../../../../../../packages/notifications/discord';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { publicCatalog, publicHistory } from '@/lib/public-data';
 import { z } from 'zod';
@@ -522,6 +529,25 @@ async function handler(req: NextRequest) {
         return json({ ok: true });
       }
     }
+    if (path[0] === 'discord' && data.isLive()) {
+      if (req.method === 'GET') return json(await discordStatus(user.id));
+      if (req.method === 'POST' && req.nextUrl.searchParams.get('test') === '1') {
+        if (await limited(`discord-test:${user.id}`, 3).catch(() => false))
+          return json({ ok: false, reason: 'rate_limited' }, 429);
+        return json(await sendDiscordTest(user.id));
+      }
+      if (req.method === 'PUT') {
+        if (await limited(`discord-connect:${user.id}`, 5).catch(() => false))
+          return json({ ok: false, reason: 'rate_limited' }, 429);
+        const b = z.object({ url: z.string().trim().max(300) }).parse(await req.json());
+        const result = await connectDiscord(user.id, b.url);
+        return json(result, result.ok ? 200 : 400);
+      }
+      if (req.method === 'DELETE') {
+        await disconnectDiscord(user.id);
+        return json({ ok: true });
+      }
+    }
     if (path[0] === 'mfa' && req.method === 'POST' && data.isLive()) {
       const b = z
         .object({
@@ -589,6 +615,7 @@ async function handler(req: NextRequest) {
           try {
             await data.evaluateProduct(rule.productId);
             await data.dispatch();
+            await deliverDiscord().catch(() => 0);
           } catch {
             console.error('Deferred in-app dispatch failed', { requestId });
           }
