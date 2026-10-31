@@ -13,6 +13,16 @@ it('accepts only Discord webhook URLs', () => {
     ),
   ).toBe(true);
   expect(
+    validDiscordWebhook(
+      'https://discord.com/api/webhooks/123456789012/abcdefghijklmnopqrstuvwxyz_-12/',
+    ),
+  ).toBe(true);
+  expect(
+    validDiscordWebhook(
+      'https://discord.com/api/webhooks/123456789012/abcdefghijklmnopqrstuvwxyz_-12?wait=true',
+    ),
+  ).toBe(true);
+  expect(
     validDiscordWebhook('https://evil.com/api/webhooks/123456789012/abcdefghijklmnopqrstuvwxyz'),
   ).toBe(false);
   expect(

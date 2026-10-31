@@ -43,6 +43,7 @@ import {
   createTelegramLink,
   disconnectTelegram,
   reviewTelegramDelivery,
+  deliverTelegram,
 } from '../../../../../../packages/notifications/telegram';
 import { STORE_NAMES, parseRetailUrl, rank } from '@domain/index';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
@@ -565,6 +566,11 @@ async function handler(req: NextRequest) {
           return json({ ok: false, reason: 'rate_limited' }, 429);
         const b = z.object({ url: z.string().trim().max(300) }).parse(await req.json());
         const result = await connectDiscord(user.id, b.url);
+        if (result.ok) {
+          after(async () => {
+            await deliverDiscord().catch(() => 0);
+          });
+        }
         return json(result, result.ok ? 200 : 400);
       }
       if (req.method === 'DELETE') {
@@ -639,6 +645,7 @@ async function handler(req: NextRequest) {
           try {
             await data.evaluateProduct(rule.productId);
             await data.dispatch();
+            await deliverTelegram().catch(() => 0);
             await deliverDiscord().catch(() => 0);
           } catch {
             console.error('Deferred in-app dispatch failed', { requestId });

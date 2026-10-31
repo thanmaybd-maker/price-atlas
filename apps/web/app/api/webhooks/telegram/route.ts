@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import {
+  deliverTelegram,
   handleTelegramUpdate,
   sendTelegram,
   telegramConfigured,
@@ -29,8 +30,10 @@ export async function POST(req: NextRequest) {
     // back in the webhook response, which Telegram also delivers.
     try {
       await sendTelegram(String(reply.chat_id), reply.text);
+      void deliverTelegram().catch(() => 0);
       return NextResponse.json({ ok: true });
     } catch {
+      void deliverTelegram().catch(() => 0);
       return NextResponse.json(reply);
     }
   } catch (error) {
