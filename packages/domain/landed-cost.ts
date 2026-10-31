@@ -48,7 +48,7 @@ export type LandedCost = {
 export function landedCost(offer: Offer, category: Category): LandedCost {
   const item = offer.itemPrice;
   const rate = gstRate(category, item);
-  const gst = Math.round((item * rate) / (100 + rate));
+  const gst = Math.round((item * rate) / (100 + rate) / 100) * 100; // whole rupees
   let delivery: number | null;
   let note: string;
   if (offer.shipping !== null) {
