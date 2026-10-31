@@ -96,7 +96,7 @@ export async function offers(productId?: string): Promise<Offer[]> {
     await postgres().query(
       `SELECT o.data FROM atlas.current_offers c JOIN atlas.observations o ON o.id=c.observation_id JOIN atlas.listings l ON l.id=c.listing_id JOIN atlas.provider_state s ON s.store=l.store WHERE l.match_state='accepted' AND s.paused=0 ${productId ? 'AND o.product_id=$1' : ''}
        UNION ALL
-       SELECT x.data FROM (SELECT DISTINCT ON (o.listing_id) o.data FROM atlas.observations o JOIN atlas.listings l ON l.id=o.listing_id JOIN atlas.provider_state s ON s.store=l.store WHERE l.match_state='accepted' AND s.paused=0 AND o.observed_at>$${productId ? 2 : 1} AND coalesce(o.data->>'source','')<>'wayback' AND o.observed_at>=coalesce(l.last_success,0) AND NOT EXISTS(SELECT 1 FROM atlas.current_offers c WHERE c.listing_id=o.listing_id) ${productId ? 'AND o.product_id=$1' : ''} ORDER BY o.listing_id,o.observed_at DESC) x WHERE (x.data->>'stock')::boolean AND (x.data->>'itemPrice')::bigint>0`,
+       SELECT x.data FROM (SELECT DISTINCT ON (o.listing_id) o.data FROM atlas.observations o JOIN atlas.listings l ON l.id=o.listing_id JOIN atlas.provider_state s ON s.store=l.store WHERE l.match_state='accepted' AND s.paused=0 AND o.observed_at>$${productId ? 2 : 1} AND coalesce(o.data->>'source','') NOT IN ('wayback','keepa') AND o.observed_at>=coalesce(l.last_success,0) AND NOT EXISTS(SELECT 1 FROM atlas.current_offers c WHERE c.listing_id=o.listing_id) ${productId ? 'AND o.product_id=$1' : ''} ORDER BY o.listing_id,o.observed_at DESC) x WHERE (x.data->>'stock')::boolean AND (x.data->>'itemPrice')::bigint>0`,
       productId ? [productId, Date.now() - 14 * 86400000] : [Date.now() - 14 * 86400000],
     )
   ).rows.map((r) => {

@@ -1,3 +1,4 @@
+import { backfillKeepaForUrl } from './keepa-backfill';
 import {
   boundedLimit,
   MAX_TOTAL_REQUESTS_PER_DAY,
@@ -252,6 +253,7 @@ export async function runCollectionJob(id: string) {
   if (!job) return;
   try {
     const result = await importScraped(await collectPage(job.payload.url), job.payload.runKey);
+    await backfillKeepaForUrl(job.payload.url).catch(() => null);
     await tx(async (c) => {
       await c.query("UPDATE atlas.jobs SET state='complete',lease_until=NULL WHERE id=$1", [id]);
       await c.query(

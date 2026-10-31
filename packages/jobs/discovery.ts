@@ -1,3 +1,4 @@
+import { backfillKeepaForUrl } from './keepa-backfill';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   postgres,
@@ -141,6 +142,8 @@ export async function discoverProducts(
       allowPaid,
     );
     const imported = await importScraped(scraped, `lookup-${randomUUID()}`);
+    // New Amazon products get their real past prices at once (no-op without a Keepa key).
+    await backfillKeepaForUrl(destination).catch(() => null);
     return imported.productId;
   };
   try {
