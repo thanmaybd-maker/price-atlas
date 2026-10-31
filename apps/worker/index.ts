@@ -42,7 +42,7 @@ if (port) {
       const health = close.health?.() || {
         ready: !stopping,
         mode: 'demo',
-        commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT_SHA || 'd0a5338',
+        commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT_SHA || 'unknown',
         channels: ['telegram', 'discord'],
       };
       res
