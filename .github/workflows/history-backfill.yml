@@ -8,7 +8,7 @@ on:
     inputs:
       limit:
         description: Listings to probe in the archive
-        default: '200'
+        default: '20'
   schedule:
     - cron: '41 21 * * *' # 03:11 IST daily
 permissions:
@@ -24,6 +24,7 @@ jobs:
       APP_MODE: live
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+      LISTING_LIMIT: ${{ inputs.limit || '20' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,14 +33,24 @@ jobs:
       - run: npm install --global pnpm@11.19.0
       - run: pnpm install --frozen-lockfile
       - name: Check configuration
-        run: test -n "$DATABASE_URL" || (echo "Add the DATABASE_URL repository secret." && exit 1)
+        run: |
+          test -n "$DATABASE_URL" || (echo "Add the DATABASE_URL repository secret." && exit 1)
+          [[ "$LISTING_LIMIT" =~ ^[0-9]+$ ]] && (( LISTING_LIMIT >= 1 && LISTING_LIMIT <= 200 )) || (echo "Limit must be an integer from 1 to 200." && exit 1)
       - name: Internet Archive dry run (validated, no writes)
-        run: pnpm backfill:wayback --limit=${{ inputs.limit || '200' }} --per=20 --days=30 --max-requests=2500
+        id: archive
+        continue-on-error: true
+        run: pnpm backfill:wayback --limit="$LISTING_LIMIT" --days=30 --max-requests=100
       - name: Save validated archive prices as history
+        if: steps.archive.outcome == 'success'
         run: pnpm backfill:wayback --apply
       - name: Keepa amazon.in history
         if: env.KEEPA_API_KEY != ''
         run: pnpm backfill:keepa
+      - name: Report archive failure
+        if: always() && steps.archive.outcome == 'failure'
+        run: |
+          echo "Archive check failed. No archive prices were applied. Inspect the uploaded report."
+          exit 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
