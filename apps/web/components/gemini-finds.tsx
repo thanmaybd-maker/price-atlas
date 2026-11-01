@@ -16,6 +16,8 @@ type Result = {
   otherVariants?: Candidate[];
   sources: { title: string; uri: string }[];
   reason?: string;
+  stage?: 'queued' | 'researching';
+  queuePosition?: number;
 };
 const inr = (rupees: number) =>
   new Intl.NumberFormat('en-IN', {
@@ -56,8 +58,22 @@ export function GeminiFinds({ query }: { query: string }) {
     if (query.trim().length < 2 || /^https?:\/\//i.test(query)) return;
     const controller = new AbortController();
     let active = true;
-    const timer = setTimeout(() => controller.abort(), 360000);
     let retry: ReturnType<typeof setTimeout>;
+    const timer = setTimeout(() => {
+      clearTimeout(retry);
+      controller.abort();
+      if (active)
+        setState((previous) => ({
+          for: query,
+          result: {
+            provider: previous.result?.provider || 'antigravity',
+            available: true,
+            candidates: [],
+            sources: [],
+            reason: 'timeout',
+          },
+        }));
+    }, 360000);
     setState({ for: query, result: null });
     const check = () =>
       fetch(`/api/v1/ai-discover?q=${encodeURIComponent(query)}`, {
@@ -72,8 +88,11 @@ export function GeminiFinds({ query }: { query: string }) {
           });
           if (j?.provider === 'antigravity' && j.reason === 'pending')
             retry = setTimeout(check, 4000);
-          else if (j?.provider === 'antigravity' && j.candidates.length)
-            window.dispatchEvent(new CustomEvent('atlas:research-ready', { detail: { query } }));
+          else {
+            clearTimeout(timer);
+            if (j?.provider === 'antigravity' && (j.candidates.length || j.otherVariants?.length))
+              window.dispatchEvent(new CustomEvent('atlas:research-ready', { detail: { query } }));
+          }
         })
         .catch(
           () =>
@@ -112,7 +131,9 @@ export function GeminiFinds({ query }: { query: string }) {
         />
         <h2>
           {result?.reason === 'pending'
-            ? 'Checking additional retailers…'
+            ? result.stage === 'queued'
+              ? 'Search queued'
+              : 'Checking additional retailers…'
             : result
               ? 'Where it’s sold'
               : 'Searching the web for this product…'}
@@ -225,7 +246,9 @@ export function GeminiFinds({ query }: { query: string }) {
         <p className="muted small" role="status">
           {result.provider === 'antigravity'
             ? result.reason === 'pending'
-              ? 'Background research is running. You can use the recorded results above while it checks more stores.'
+              ? result.stage === 'queued'
+                ? `Your search is waiting for the research worker (position ${result.queuePosition || 1}). Recorded results remain available.`
+                : 'Background research is running. You can use the recorded results above while it checks more stores.'
               : result.reason === 'offline'
                 ? 'Background research is unavailable. Recorded products and store search still work.'
                 : result.reason === 'limited'
