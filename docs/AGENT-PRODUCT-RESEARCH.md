@@ -14,7 +14,7 @@ npx -y pnpm@11.19.0 research:worker
 
 The worker checks CLI sign-in before announcing readiness, sends a short heartbeat and processes one shared job at a time. The website polls in the background and refreshes product results when leads are ready. If the machine is off, the queue is busy, a source fails or the daily allowance is reached, the page explains that state and keeps ordinary results available. With this feature enabled, these requests use Antigravity rather than the Gemini API.
 
-Defaults: 20 attempts per UTC day, at most 8 queued jobs, 3 web searches per research run, and a 24-hour shared lead cache. Failures count as attempts and have a 15-minute retry cooldown. `AGENT_RESEARCH_DAILY_LIMIT` can set a limit from 1 to 100. Google account limits still apply independently.
+Defaults: 100 automatic attempts per UTC day, at most 8 queued jobs, a target of ten listing links per query, four planned web searches per conversation (six-call hard limit), and a 24-hour shared lead cache. Failures count as attempts and have a 15-minute retry cooldown. `AGENT_RESEARCH_DAILY_LIMIT` can set a limit from 1 to 100. Google account limits still apply independently.
 
 ## Run on your PC
 
@@ -55,10 +55,12 @@ No Google credentials are copied to Render or Vercel. The deployed website and e
 - A temporary shopping-only profile excludes default coding components and exposes `search_web`. The CLI is requested to use sandbox mode and must report request-review permissions. Application database, scraper and messaging secrets are excluded from its child environment. Google credentials are managed by the official CLI.
 - Actual tool events are checked and unexpected tools abort the session. CLI 1.3.6 reports the full global registry in `init.tools` even with a custom profile, so the connector checks the selected profile, permission mode and actual calls rather than treating that inventory as an execution log.
 - Queries are passed as process arguments, not composed into shell commands.
-- Research has a 120-second CLI limit and a 130-second process deadline. The complete operator job has a 250-second limit and a five-minute exclusive lease. Parsing accepts at most 24 leads; redirect resolution handles at most eight.
+- Research has a 180-second CLI limit and a 190-second process deadline. The complete operator job has a 330-second limit and a six-minute exclusive lease. Parsing accepts at most 40 leads; redirect resolution handles at most 40 with four concurrent requests.
 - Google grounding links are resolved with manual redirects. Only Google's exact public redirect endpoint is contacted; its destination must be a supported HTTPS product URL. Arbitrary redirect targets are never followed.
 - The final complete JSON frame is used when the CLI concatenates formatting retries. A timeout, denied action or malformed response never counts as success. `--debug` saves the private model result under the ignored `data/agent-research/` directory for diagnosis.
 - Unsupported URLs, duplicates and unrequested accessories are discarded. Wrong models, packs, storage, bindings or sizes do not enter the matching lead set.
 - Removing `--publish` provides a dry run. Publishing produces ordinary first-party page observations only when verification succeeds; it never backdates history.
 
 See [the source review](HARNESS-SEARCH-ASSESSMENT.md) for upstream architecture and documentation.
+
+The daily allowance counts research jobs, not returned products. Cache hits consume no new job. One conversation can use several model/tool calls, so it still consumes Google account quota. Result count is evidence-dependent; the app never pads a result to reach ten. Matching offers and other variants are shown separately, retailer order rotates for visibility, and every supported retailer is selectable. Store URL slugs replace contradictory generated labels where available; these remain provisional until the page is verified.

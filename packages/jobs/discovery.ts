@@ -191,14 +191,22 @@ export async function discoverProducts(
         store,
         url: retailerSearchUrl(store, searchPhrase),
       }));
-      data.productIds.push(...scoped.slice(0, 12).map((p) => p.id));
+      data.productIds.push(...scoped.slice(0, 40).map((p) => p.id));
+      const researched = await cachedAgentResearch(q).catch(() => null);
+      if (effectiveScope === 'all')
+        plannedStores = [
+          ...new Set([...plannedStores, ...(researched?.candidates.map((c) => c.store) || [])]),
+        ];
       const recordedStores = new Set(
         currentOffers
           .filter((o) => data.productIds.includes(o.productId) && eligible(o))
           .map((o) => o.store),
       );
       const uncheckedStores = plannedStores.filter(
-        (store) => options.searchMore || !recordedStores.has(store),
+        (store) =>
+          options.searchMore ||
+          !recordedStores.has(store) ||
+          Boolean(researched?.candidates.some((c) => c.store === store)),
       );
       for (const store of plannedStores.filter((store) => !uncheckedStores.includes(store)))
         data.sources.push({ store, method: 'recorded-catalog', status: 'complete' });
@@ -206,7 +214,6 @@ export async function discoverProducts(
         data.message =
           'Showing recorded catalog matches and retailer check outcomes. Open a retailer link to verify checkout details.';
       if (uncheckedStores.length) {
-        const researched = await cachedAgentResearch(q).catch(() => null);
         await beforeNetwork();
         await Promise.all(
           uncheckedStores.map(async (store) => {
@@ -273,7 +280,7 @@ export async function discoverProducts(
               data.candidates.push(...relevant.slice(0, 6));
               let imported = false;
               let failure: unknown;
-              for (const selected of relevant.slice(0, 2)) {
+              for (const selected of relevant.slice(0, researched ? 4 : 2)) {
                 try {
                   const id = await importUrl(selected.url);
                   const p = await findProduct(id);
@@ -285,7 +292,7 @@ export async function discoverProducts(
                   ) {
                     data.productIds.push(id);
                     imported = true;
-                    break;
+                    if (!researched) break;
                   }
                 } catch (error) {
                   failure = error;

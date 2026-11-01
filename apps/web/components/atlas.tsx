@@ -1300,19 +1300,17 @@ export default function Atlas({
             </div>
             {!demo && (
               <div className="retailer-chips-row" role="group" aria-label="Filter by retailer">
-                {(['all', 'Amazon', 'Flipkart', 'Nykaa', 'Croma', 'Myntra'] as const).map(
-                  (store) => (
-                    <button
-                      key={store}
-                      type="button"
-                      className={`retailer-chip ${searchStore === store ? 'active' : ''}`}
-                      onClick={() => navigateFilter('store', store)}
-                      aria-pressed={searchStore === store}
-                    >
-                      {store === 'all' ? 'All Retailers' : store}
-                    </button>
-                  ),
-                )}
+                {(['all', ...STORE_NAMES] as const).map((store) => (
+                  <button
+                    key={store}
+                    type="button"
+                    className={`retailer-chip ${searchStore === store ? 'active' : ''}`}
+                    onClick={() => navigateFilter('store', store)}
+                    aria-pressed={searchStore === store}
+                  >
+                    {store === 'all' ? 'All Retailers' : store}
+                  </button>
+                ))}
               </div>
             )}
             <div className="filter-bar">
@@ -1395,15 +1393,9 @@ export default function Atlas({
                 onDone={() => setBloom(false)}
               />
             )}
-            {searchText &&
-              !/^https?:\/\//i.test(searchText) &&
-              effectiveStore === 'all' &&
-              (filtered.length < 3 ||
-                new Set(
-                  offers
-                    .filter((o) => eligible(o) && shownIds.has(o.productId))
-                    .map((o) => o.store),
-                ).size < 2) && <GeminiFinds key={searchText} query={searchText} />}
+            {searchText && !/^https?:\/\//i.test(searchText) && effectiveStore === 'all' && (
+              <GeminiFinds key={searchText} query={searchText} />
+            )}
             {filtered.length ? (
               <div className="product-grid">
                 {filtered

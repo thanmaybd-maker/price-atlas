@@ -10,7 +10,9 @@ try {
   const raw = await readFile(process.argv[2], 'utf8');
   if (raw.length > 128000) throw new Error('Report exceeds size limit.');
   const report = reviewAgentReport(JSON.parse(raw));
-  openedDatabase = Boolean(report.candidates.length && process.env.DATABASE_URL);
+  openedDatabase = Boolean(
+    (report.candidates.length || report.otherVariants.length) && process.env.DATABASE_URL,
+  );
   const result = await publishAgentResearch(report);
   console.log(
     JSON.stringify({

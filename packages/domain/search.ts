@@ -67,7 +67,7 @@ export function matchesQuery(
   // Host computers must not acquire that standalone-card synonym.
   const graphicsBoard =
     /\b(?:rtx|gtx)[ -]?\d{3,4}\b/i.test(text) &&
-    /\bGDDR[3-9]\b/i.test(text) &&
+    /\b(?:GDDR[3-9]|\d+\s*GB)\b/i.test(text) &&
     !/\b(?:laptop|notebook|desktop|computer|pc)\b/i.test(text);
   const haystack = normalizeQuery(`${text} ${graphicsBoard ? 'graphics card gpu' : ''}`);
   const tokens = new Set(haystack.split(' '));
