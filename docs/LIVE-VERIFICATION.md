@@ -1,4 +1,18 @@
-# Verification — 4 October 2026
+# Live verification record
+
+The sections below are dated snapshots. Later evidence supersedes earlier pending checks; this document does not claim complete retailer or history coverage.
+
+## Release checks — 1 November 2026
+
+- The user completed `backup:restore-drill`: 30 application tables and 4,582 rows restored into an isolated PGlite engine, with counts and hashes verified. Production was read-only and notifications were not replayed. This covers the `atlas` application schema; managed Supabase Auth, Storage, server roles and provider configuration remain outside that drill.
+- Supabase migration `atlas_014_hardening` is applied. The app helper has `search_path=pg_catalog, atlas`, and all eleven named foreign-key indexes are present.
+- TinyFish is configured in Vercel Production and Render. A live check retrieved an exact Flipkart listing but no verified price; availability of the provider does not guarantee price extraction.
+- Twenty-seven real product requests tested only emergency keys against Amazon Sony headphones, a Flipkart iPhone and Nykaa Minimalist serum. All three Firecrawl emergency keys extracted Amazon and Nykaa prices; each received a Flipkart verification page. All eighteen ScrapingBee requests returned HTTP 403 with an explicit account suspension for email-domain abuse. A successful usage/balance response therefore does not establish permission to scrape. No diagnostic result was imported or used for alerts.
+- These diagnostic requests reported nine provider credits charged; the shared app limiter conservatively reserved fifty-one. Primary keys were excluded. The complete sanitized returns and browser capture remain in the user's ignored `data/` directory.
+- The six confirmed suspended ScrapingBee emergency credentials are disabled in shared provider-key state so collection does not keep trying them. Primary credentials were not changed. A read-only usage response must not be used as evidence that an account suspension is resolved.
+- Both history workflows completed, but success does not imply complete seven-day or thirty-day histories. Archived dates remain separately sourced history; collection gaps are not filled by estimates.
+
+## Verification — 4 October 2026
 
 - PostgreSQL and TCP Redis connectivity succeeded; Supabase Auth settings returned HTTP 200.
 - Migration `001_live` applied to the dedicated `atlas` schema. Existing application schemas were not changed.
@@ -34,14 +48,14 @@ The Telegram hosted-secret check still rejects the local secret; webhook registr
 
 Run in the signed-in browser against `https://price-atlas-ashen.vercel.app`, through the same API the UI calls. The account was returned to its original state afterwards (1 existing target, alerts on, email preference on).
 
-| Check | Result |
-|---|---|
-| Save target (Sony WH-1000XM5, item price ≤ ₹20,500) | 201, rule stored |
-| Reload (fresh session read) | Rule present, target ₹20,500, enabled |
-| Edit target to ₹20,100, reload | Target ₹20,100 after reload |
-| Alert on save | In-app alert **delivered** immediately (₹19,989 at Amazon ≤ target), and again for the edited version |
-| Opt out (Price notifications off) | Preference stored (0); a new qualifying change while opted out was **suppressed** |
-| Opt back in | Preference stored (1) |
-| Delete test target | 200; gone after reload |
+| Check                                               | Result                                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Save target (Sony WH-1000XM5, item price ≤ ₹20,500) | 201, rule stored                                                                                      |
+| Reload (fresh session read)                         | Rule present, target ₹20,500, enabled                                                                 |
+| Edit target to ₹20,100, reload                      | Target ₹20,100 after reload                                                                           |
+| Alert on save                                       | In-app alert **delivered** immediately (₹19,989 at Amazon ≤ target), and again for the edited version |
+| Opt out (Price notifications off)                   | Preference stored (0); a new qualifying change while opted out was **suppressed**                     |
+| Opt back in                                         | Preference stored (1)                                                                                 |
+| Delete test target                                  | 200; gone after reload                                                                                |
 
 Not covered here: backup/restore (needs a direct Postgres connection and `pg_dump`, not reachable from the test environment).
