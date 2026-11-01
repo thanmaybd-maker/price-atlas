@@ -118,3 +118,49 @@ test('offline research has an honest fallback and does not keep polling', async 
   expect(polls).toBe(1);
   await page.screenshot({ path: 'data/agent-research-desktop.png', fullPage: true });
 });
+
+test('queued research shows its position and ends the spinner at its deadline', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.route('**/api/v1/assist?*', (route) => route.fulfill({ json: { available: false } }));
+  await page.route('**/api/v1/discovery', (route) =>
+    route.fulfill({
+      json: {
+        state: 'complete',
+        offers: [],
+        candidates: [],
+        products: [],
+        sources: [],
+      },
+    }),
+  );
+  await page.route('**/api/v1/ai-discover?*', (route) =>
+    route.fulfill({
+      json: {
+        provider: 'antigravity',
+        available: true,
+        candidates: [],
+        sources: [],
+        reason: 'pending',
+        stage: 'queued',
+        queuePosition: 2,
+      },
+    }),
+  );
+  await page.goto('/search?q=Queue+Deadline+QX993');
+  const skip = page.getByRole('button', { name: 'Skip Animation', exact: true });
+  if (await skip.isVisible()) await skip.click();
+  await expect(page.getByRole('heading', { name: 'Search queued' })).toBeVisible();
+  await expect(page.getByText(/waiting for the research worker \(position 2\)/)).toBeVisible();
+  await page.clock.fastForward(360001);
+  await expect(
+    page.getByText(
+      'Background research could not finish. You can still paste a product link to check it.',
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Additional retailer research' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+});

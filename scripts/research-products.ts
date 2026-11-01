@@ -40,7 +40,7 @@ if (!query || query.length < 2 || query.length > 160 || /^https?:/i.test(query))
       `Shopper query: ${JSON.stringify(query)}`,
       'Collect ten real product-page links across relevant supported retailers: Amazon India, Flipkart, Croma, Reliance Digital, Nykaa, Myntra, AJIO, Meesho, iHerb India and B&H. Include several products/variants and aim for three or more retailers when indexed evidence exists. Use up to four searches, then output the accumulated links. Never invent listings to meet the target.',
       'Prefer multiple retailers for the same exact model. Include separately titled variants when useful: storage, shade, size, pack, binding, condition. Never combine their prices.',
-      'Use the second search for a different retailer than the first. Prefer Amazon India, Flipkart and the relevant specialist store. Do not spend all searches on one retailer.',
+      'Search plan: first search the query with (site:amazon.in OR site:flipkart.com); second search relevant Indian specialist retailers (Croma/Reliance Digital for electronics, Nykaa for beauty, Myntra/AJIO/Meesho for fashion); third search another uncovered Indian retailer. Only the fourth search may check cross-border iHerb or B&H if relevant. Keep domestic results from ALL searches in the final JSON. Return at most two cross-border listings; do not fill the target with foreign results when Indian evidence is absent.',
       'Use web search evidence, not guessed URLs. Do not return search pages. Do not provide prices, stock, taxes or delivery claims. Return an empty list when evidence is absent.',
       'Google grounding redirect URLs are accepted: copy the exact link and its associated result title. Do not invent a direct retailer URL when only a grounding link is available.',
       'Return JSON only: {"products":[{"title":"exact listing title including variant","url":"https://retailer/product"}]}',
@@ -85,7 +85,9 @@ if (!query || query.length < 2 || query.length > 160 || /^https?:/i.test(query))
     let verification: Awaited<ReturnType<typeof discoverProducts>> = null;
     if (publish && (report.candidates.length || report.otherVariants.length)) {
       openedDatabase = true;
-      verification = (await publishAgentResearch(report)).lookup;
+      verification = (
+        await publishAgentResearch(report, { verify: !process.argv.includes('--links-only') })
+      ).lookup;
     }
     console.log(
       JSON.stringify({
