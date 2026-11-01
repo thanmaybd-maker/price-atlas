@@ -217,15 +217,44 @@ export async function fetchProductWithBudget(
 // Scheduled checks try the free direct fetch first. Flipkart and Amazon often answer a
 // datacenter IP with 429/403, so a refused direct fetch falls back to the paid provider
 // pool (Firecrawl) inside the shared daily credit budget instead of losing the day's check.
-async function collectPage(url: string) {
-  const viaFirecrawl = () =>
-    fetchProductWithBudget(
-      url,
-      20000,
-      undefined,
-      { transport: 'firecrawl', apiKey: process.env.FIRECRAWL_API_KEY },
+// A runner without Firecrawl keys (the Render worker) asks the web app, which has them, to
+// fetch a refused page. The web app only does so for a job that is running right now.
+const WEB_ORIGIN = () =>
+  (process.env.ATLAS_WEB_ORIGIN || 'https://price-atlas-ashen.vercel.app').replace(/\/$/, '');
+async function viaWebApp(jobId: string): Promise<ScrapedProduct> {
+  const res = await fetch(`${WEB_ORIGIN()}/api/v1/collect-assist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jobId }),
+    signal: AbortSignal.timeout(58000),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    product?: ScrapedProduct;
+    code?: string;
+    error?: string;
+  };
+  if (!res.ok || !body.product)
+    throw new ScrapeError(
+      body.code || 'provider_unavailable',
+      body.error || 'Paid fallback through the web app failed.',
       true,
     );
+  return body.product;
+}
+async function collectPage(url: string, jobId?: string) {
+  const keyed = Boolean(process.env.FIRECRAWL_API_KEY);
+  const paid = () =>
+    keyed
+      ? fetchProductWithBudget(
+          url,
+          20000,
+          undefined,
+          { transport: 'firecrawl', apiKey: process.env.FIRECRAWL_API_KEY },
+          true,
+        )
+      : jobId && process.env.ATLAS_WEB_ASSIST !== 'false'
+        ? viaWebApp(jobId)
+        : null;
   try {
     const direct = await fetchProductWithBudget(url, undefined, undefined, {
       transport: 'direct',
@@ -233,17 +262,36 @@ async function collectPage(url: string) {
     });
     // A direct page without a readable price is usually a degraded bot page, not a real
     // "unavailable": confirm through Firecrawl before it replaces the last known price.
-    if (direct.itemPrice === null && process.env.FIRECRAWL_API_KEY)
-      return await viaFirecrawl().catch(() => direct);
-    return direct;
+    const confirm = direct.itemPrice === null ? paid() : null;
+    return confirm ? await confirm.catch(() => direct) : direct;
   } catch (error) {
     const refused =
       error instanceof ScrapeError &&
       ['rate_limited', 'blocked', 'http_error', 'empty', 'network'].includes(error.code) &&
       !(error instanceof SourceLimitError);
-    if (!refused || !process.env.FIRECRAWL_API_KEY) throw error;
-    return viaFirecrawl();
+    const fallback = refused ? paid() : null;
+    if (!fallback) throw error;
+    return fallback;
   }
+}
+/** Web-app side of the assist: Firecrawl fetch for a job that is running now. */
+export async function assistCollection(jobId: string) {
+  const job = (
+    await postgres().query(
+      "SELECT payload FROM atlas.jobs WHERE id=$1 AND state='running' AND lease_until>$2",
+      [jobId, Date.now()],
+    )
+  ).rows[0];
+  if (!job) throw new ScrapeError('invalid_query', 'No running collection job with that id.');
+  if (!process.env.FIRECRAWL_API_KEY)
+    throw new ScrapeError('configuration', 'Firecrawl is not configured here.');
+  return fetchProductWithBudget(
+    job.payload.url,
+    20000,
+    undefined,
+    { transport: 'firecrawl', apiKey: process.env.FIRECRAWL_API_KEY },
+    true,
+  );
 }
 export async function runCollectionJob(id: string) {
   const claimed = await postgres().query(
@@ -253,7 +301,7 @@ export async function runCollectionJob(id: string) {
   const job = claimed.rows[0];
   if (!job) return;
   try {
-    const result = await importScraped(await collectPage(job.payload.url), job.payload.runKey);
+    const result = await importScraped(await collectPage(job.payload.url, id), job.payload.runKey);
     await backfillKeepaForUrl(job.payload.url).catch(() => null);
     await tx(async (c) => {
       await c.query("UPDATE atlas.jobs SET state='complete',lease_until=NULL WHERE id=$1", [id]);

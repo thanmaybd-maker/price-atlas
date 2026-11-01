@@ -1,3 +1,4 @@
+import { assistCollection } from '../../../../../../packages/jobs/index';
 import {
   connectDiscord,
   deliverDiscord,
@@ -377,6 +378,13 @@ async function handler(req: NextRequest) {
         },
         422,
       );
+    }
+    if (req.method === 'POST' && path[0] === 'collect-assist' && data.isLive()) {
+      // Firecrawl fetch on behalf of a key-less worker, only for a job running right now;
+      // the shared daily credit budget still applies.
+      const b = z.object({ jobId: z.string().min(8).max(100) }).parse(await req.json());
+      const product = await assistCollection(b.jobId);
+      return json({ product });
     }
     if (req.method === 'POST' && path[0] === 'discovery' && data.isLive()) {
       const body = z

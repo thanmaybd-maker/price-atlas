@@ -715,6 +715,7 @@ it('reserves premium credits across sources and defers jobs without counting a r
 });
 it('backs off a terminal blocked listing for a day instead of scraping it every minute', async () => {
   process.env.SCRAPER_PROVIDER = 'direct';
+  process.env.ATLAS_WEB_ASSIST = 'false';
   const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
     new Response('<title>Phone</title><button id="retry_btn">Retry</button>', {
       headers: { 'content-type': 'text/html' },
@@ -743,6 +744,7 @@ it('backs off a terminal blocked listing for a day instead of scraping it every 
   } finally {
     fetcher.mockRestore();
     delete process.env.SCRAPER_PROVIDER;
+    delete process.env.ATLAS_WEB_ASSIST;
   }
 });
 it('discovers a custom product, imports verified details, and reuses shared search results without scraping again', async () => {
@@ -1249,6 +1251,47 @@ it('a scheduled check refused by the retailer (429) is completed through Firecra
     ]);
     await runCollectionJob(id);
     expect(hosts).toEqual(['www.amazon.in', 'api.firecrawl.dev']);
+    expect((await db.query('SELECT state FROM atlas.jobs WHERE id=$1', [id])).rows[0].state).toBe(
+      'complete',
+    );
+  } finally {
+    fetcher.mockRestore();
+    process.env = saved;
+  }
+});
+it('a key-less worker gets a refused page through the web app assist for its running job', async () => {
+  const saved = { ...process.env };
+  Object.assign(process.env, { SCRAPER_PROVIDER: 'direct', ATLAS_WEB_ORIGIN: 'https://web.test' });
+  delete process.env.FIRECRAWL_API_KEY;
+  delete process.env.FIRECRAWL_FALLBACK_API_KEYS;
+  const calls: string[] = [];
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = new URL(String(input));
+    calls.push(url.host + url.pathname);
+    if (url.host === 'web.test') {
+      const { jobId } = JSON.parse(String(init?.body));
+      const running = (await db.query('SELECT state FROM atlas.jobs WHERE id=$1', [jobId])).rows[0];
+      expect(running.state).toBe('running');
+      const { parseProductHtml } = await import('../packages/providers/scraper');
+      return Response.json({
+        product: parseProductHtml(html(), 'https://www.amazon.in/dp/B000000099'),
+      });
+    }
+    return new Response('Too many requests', { status: 429 });
+  });
+  try {
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    const id = 'collect-assist-1';
+    await db.query("INSERT INTO atlas.jobs VALUES($1,'collect',$2,'pending',0,NULL,0,NULL,0)", [
+      id,
+      {
+        listingId: 'amazon-b000000099',
+        url: 'https://www.amazon.in/dp/B000000099',
+        runKey: 'assist',
+      },
+    ]);
+    await runCollectionJob(id);
+    expect(calls).toEqual(['www.amazon.in/dp/B000000099', 'web.test/api/v1/collect-assist']);
     expect((await db.query('SELECT state FROM atlas.jobs WHERE id=$1', [id])).rows[0].state).toBe(
       'complete',
     );
