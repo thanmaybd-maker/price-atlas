@@ -31,6 +31,7 @@ export function knownApiPath(parts: string[]) {
       'session',
       'assist',
       'ai-discover',
+      'collect-assist',
       'fx',
       'search',
       'suggestions',
