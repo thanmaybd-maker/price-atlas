@@ -13,6 +13,7 @@ type Result = {
   grounded?: boolean;
   via?: string;
   candidates: Candidate[];
+  otherVariants?: Candidate[];
   sources: { title: string; uri: string }[];
   reason?: string;
 };
@@ -55,7 +56,7 @@ export function GeminiFinds({ query }: { query: string }) {
     if (query.trim().length < 2 || /^https?:\/\//i.test(query)) return;
     const controller = new AbortController();
     let active = true;
-    const timer = setTimeout(() => controller.abort(), 240000);
+    const timer = setTimeout(() => controller.abort(), 360000);
     let retry: ReturnType<typeof setTimeout>;
     setState({ for: query, result: null });
     const check = () =>
@@ -126,6 +127,20 @@ export function GeminiFinds({ query }: { query: string }) {
       )}
       {result && result.candidates.length > 0 && (
         <>
+          <p className="fine-print">
+            {result.candidates.length + (result.otherVariants?.length || 0)} listing links across{' '}
+            {
+              new Set([...result.candidates, ...(result.otherVariants || [])].map((c) => c.store))
+                .size
+            }{' '}
+            retailers:{' '}
+            {[
+              ...new Set(
+                [...result.candidates, ...(result.otherVariants || [])].map((c) => c.store),
+              ),
+            ].join(', ')}
+            . Prices are checked separately.
+          </p>
           <ul className="gemini-list">
             {result.candidates.map((c, i) => (
               <li key={c.url} style={{ animationDelay: `${i * 70}ms` }}>
@@ -133,6 +148,7 @@ export function GeminiFinds({ query }: { query: string }) {
                   <strong>{c.title}</strong>
                   <span className="muted small">
                     {c.store}
+                    {result.provider === 'antigravity' && ' · live price unverified'}
                     {c.quotedRupees != null &&
                       ` · listed at ${inr(c.quotedRupees)} · not yet checked`}
                   </span>
@@ -177,6 +193,33 @@ export function GeminiFinds({ query }: { query: string }) {
             </details>
           )}
         </>
+      )}
+      {result && Boolean(result.otherVariants?.length) && (
+        <details className="gemini-sources" open>
+          <summary>Other variants and pack sizes ({result.otherVariants!.length})</summary>
+          <p className="fine-print">
+            Different variants stay separate. Live prices are unverified until checked.
+          </p>
+          <ul className="gemini-list">
+            {result.otherVariants!.map((c) => (
+              <li key={c.url}>
+                <div>
+                  <strong>{c.title}</strong>
+                  <span className="muted small">
+                    {c.store} · different variant · price unverified
+                  </span>
+                </div>
+                <Link
+                  prefetch={false}
+                  className="outline-button"
+                  href={`/search?q=${encodeURIComponent(c.url)}`}
+                >
+                  Check this variant <ArrowRight size={14} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {result && !result.candidates.length && (
         <p className="muted small" role="status">

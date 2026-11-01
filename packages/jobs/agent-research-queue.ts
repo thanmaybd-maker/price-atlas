@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 import { postgres, tx } from '../database/postgres';
 import { normalizeQuery } from '../domain/search';
 import { cachedAgentResearch } from './agent-research-cache';
+import { RESEARCH_DAILY_JOBS } from '../domain/research-limits';
+import { retailerRoundRobin } from '../providers/agent-research';
 
 const heartbeatKey = 'agent-worker-v1';
-const prefix = 'agent-job-v1:';
+const prefix = 'agent-job-v2:';
 const dayKey = () => 'agent-usage-v1:' + new Date().toISOString().slice(0, 10);
-const cap = () => Math.min(100, Math.max(1, Number(process.env.AGENT_RESEARCH_DAILY_LIMIT) || 20));
+const cap = () =>
+  Math.min(100, Math.max(1, Number(process.env.AGENT_RESEARCH_DAILY_LIMIT) || RESEARCH_DAILY_JOBS));
 const jobKey = (q: string) => prefix + createHash('sha256').update(normalizeQuery(q)).digest('hex');
 const valid = (q: string) => q.length >= 2 && q.length <= 160 && !/^https?:/i.test(q);
 
@@ -23,6 +26,7 @@ export async function requestAgentResearch(query: string, beforeEnqueue?: () => 
     available: true,
     query,
     candidates: [] as { title: string; url: string; store: string; quotedRupees: null }[],
+    otherVariants: [] as { title: string; url: string; store: string; quotedRupees: null }[],
     sources: [] as { title: string; uri: string }[],
   };
   if (!valid(query)) return { ...base, reason: 'not_applicable' };
@@ -31,13 +35,22 @@ export async function requestAgentResearch(query: string, beforeEnqueue?: () => 
   if (report)
     return {
       ...base,
-      candidates: report.candidates.map((c) => ({
+      candidates: retailerRoundRobin(report.candidates).map((c) => ({
         title: c.title,
         url: c.url,
         store: c.store,
         quotedRupees: null,
       })),
-      sources: report.candidates.map((c) => ({ title: c.title, uri: c.url })),
+      otherVariants: retailerRoundRobin(report.otherVariants).map((c) => ({
+        title: c.title,
+        url: c.url,
+        store: c.store,
+        quotedRupees: null,
+      })),
+      sources: [...report.candidates, ...report.otherVariants].map((c) => ({
+        title: c.title,
+        uri: c.url,
+      })),
       via: 'agent-research',
       reason: report.candidates.length ? undefined : 'none_found',
     };
@@ -66,7 +79,7 @@ export async function requestAgentResearch(query: string, beforeEnqueue?: () => 
     if (row) return 'pending';
     const waiting = (
       await c.query(
-        "SELECT count(*) n FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v1:%' AND state='pending' AND expires_at>$1",
+        "SELECT count(*) n FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v2:%' AND state='pending' AND expires_at>$1",
         [now],
       )
     ).rows[0];
@@ -87,7 +100,7 @@ export async function claimResearchJob() {
     const now = Date.now();
     const active = (
       await c.query(
-        "SELECT query_key FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v1:%' AND state='pending' AND expires_at>$1 AND (data->>'leaseUntil')::bigint>$1 LIMIT 1",
+        "SELECT query_key FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v2:%' AND state='pending' AND expires_at>$1 AND (data->>'leaseUntil')::bigint>$1 LIMIT 1",
         [now],
       )
     ).rows.length;
@@ -99,7 +112,7 @@ export async function claimResearchJob() {
     if (used >= cap()) return null;
     const row = (
       await c.query(
-        "SELECT query_key,data FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v1:%' AND state='pending' AND expires_at>$1 ORDER BY expires_at LIMIT 1 FOR UPDATE",
+        "SELECT query_key,data FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v2:%' AND state='pending' AND expires_at>$1 ORDER BY expires_at LIMIT 1 FOR UPDATE",
         [now],
       )
     ).rows[0];
@@ -117,7 +130,7 @@ export async function claimResearchJob() {
     );
     await c.query('UPDATE atlas.search_cache SET data=$2 WHERE query_key=$1', [
       row.query_key,
-      { ...row.data, leaseUntil: now + 5 * 60000 },
+      { ...row.data, leaseUntil: now + 6 * 60000 },
     ]);
     return { key: row.query_key as string, query: row.data.query as string };
   });

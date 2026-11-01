@@ -1,0 +1,3 @@
+export const RESEARCH_LISTING_LIMIT = 40;
+export const RESEARCH_SEARCH_CALLS = 6;
+export const RESEARCH_DAILY_JOBS = 100;

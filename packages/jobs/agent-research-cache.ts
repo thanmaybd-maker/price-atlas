@@ -33,5 +33,9 @@ export async function cachedAgentResearch(query: string): Promise<AgentResearch 
   )
     return null;
   // Revalidate on read: cached output can never bypass today's URL/variant guards.
-  return parseAgentResearch(query, { products: r.candidates }, r.researchedAt);
+  return parseAgentResearch(
+    query,
+    { products: [...r.candidates, ...(r.otherVariants || [])] },
+    r.researchedAt,
+  );
 }

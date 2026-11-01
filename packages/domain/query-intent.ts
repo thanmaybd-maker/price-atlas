@@ -50,8 +50,6 @@ const PURE_CATEGORY = new Set([
   'earbuds',
   'monitor',
   'monitors',
-  'lipstick',
-  'lipsticks',
   'serum',
   'serums',
   'sunscreen',

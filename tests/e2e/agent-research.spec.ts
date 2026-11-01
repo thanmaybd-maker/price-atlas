@@ -57,6 +57,17 @@ test('background research polls without blocking search and refreshes matching p
             : [],
         sources: [],
         reason: polls > 1 ? undefined : 'pending',
+        otherVariants:
+          polls > 1
+            ? [
+                {
+                  title: 'Queue Fixture QX991 Pack of 2',
+                  store: 'Meesho',
+                  url: 'https://www.meesho.com/item/p/de4nwt',
+                  quotedRupees: null,
+                },
+              ]
+            : [],
       },
     });
   });
@@ -69,6 +80,9 @@ test('background research polls without blocking search and refreshes matching p
   await expect(page.getByText('Antigravity research', { exact: true })).toBeVisible();
   await expect(page.getByText('Store links found by Antigravity.', { exact: false })).toBeVisible();
   expect(polls).toBe(2);
+  await expect(page.getByText('Other variants and pack sizes (1)')).toBeVisible();
+  await expect(page.getByText('Queue Fixture QX991 Pack of 2', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reliance Digital', exact: true })).toBeVisible();
   await page.screenshot({ path: 'data/agent-research-mobile.png', fullPage: true });
 });
 
