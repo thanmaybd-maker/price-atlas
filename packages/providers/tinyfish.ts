@@ -115,3 +115,67 @@ export async function fetchWithTinyFish(
   }
   return productFromFetch(url, r);
 }
+
+/**
+ * A retailer's own search results page through TinyFish (free tier): product links in page
+ * order, with the listing title where the page gives one ("## Title" blocks on Amazon) or
+ * a title from the URL slug. Prices here are only hints; the product page is still verified.
+ */
+export function parseTinyFishSearch(
+  store: string,
+  text: string,
+  links: string[],
+  limit = 24,
+): { title: string; url: string; store: string }[] {
+  const headings = [...text.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1].replace(/\\/g, '').trim());
+  const seen = new Set<string>();
+  const out: { title: string; url: string; store: string }[] = [];
+  for (const raw of links) {
+    let id;
+    try {
+      id = canonicalRetailUrl(raw);
+    } catch {
+      continue;
+    }
+    if (id.store !== store || seen.has(id.externalId)) continue;
+    seen.add(id.externalId);
+    const slug = decodeURIComponent(new URL(raw).pathname.split('/').filter(Boolean)[0] || '')
+      .replace(/[-_]+/g, ' ')
+      .trim();
+    const title = headings[out.length] || slug;
+    if (title.length < 4) continue;
+    out.push({ title: title.slice(0, 300), url: id.url, store });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export async function tinyFishSearch(
+  searchUrl: string,
+  store: string,
+  timeoutMs = 20000,
+  f: typeof fetch = fetch,
+) {
+  const key = process.env.TINYFISH_API_KEY;
+  if (!key) return [];
+  const res = await f('https://api.fetch.tinyfish.ai', {
+    method: 'POST',
+    headers: { 'X-API-Key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      urls: [searchUrl],
+      format: 'markdown',
+      links: true,
+      include_selectors: ['main', '#search', '#container', '#app', 'body'],
+      ttl: 3600,
+      per_url_timeout_ms: timeoutMs,
+    }),
+    signal: AbortSignal.timeout(timeoutMs + 5000),
+  });
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    return [];
+  }
+  const body = (await res.json()) as { results?: { text?: string; links?: string[] }[] };
+  const r = body.results?.[0];
+  return r ? parseTinyFishSearch(store, r.text || '', r.links || []) : [];
+}

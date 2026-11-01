@@ -47,3 +47,29 @@ describe('TinyFish fetch parsing', () => {
     delete process.env.TINYFISH_API_KEY;
   });
 });
+
+import { parseTinyFishSearch } from '../packages/providers/tinyfish';
+it('reads product links and titles from a retailer search page in order', () => {
+  const out = parseTinyFishSearch(
+    'Amazon',
+    '## PNY GeForce RTX 5090 Epic-X\n\n₹15,34,285\n\n## NVD GeForce RTX 5090 Windforce\n\n₹7,48,888',
+    [
+      'https://www.amazon.in/PNY-GeForce/dp/B0DTJFSSZG/ref=sr_1_1?x=1',
+      'https://www.amazon.in/PNY-GeForce/dp/B0DTJFSSZG/ref=sr_1_1?x=1#customerReviews',
+      'https://www.amazon.in/GeForce-Windforce/dp/B0GMRSMNGB/ref=sr_1_6',
+      'https://www.flipkart.com/x/p/itm1?pid=AAAAAAAAAAAAAAAA',
+    ],
+  );
+  expect(out).toEqual([
+    {
+      title: 'PNY GeForce RTX 5090 Epic-X',
+      url: 'https://www.amazon.in/dp/B0DTJFSSZG',
+      store: 'Amazon',
+    },
+    {
+      title: 'NVD GeForce RTX 5090 Windforce',
+      url: 'https://www.amazon.in/dp/B0GMRSMNGB',
+      store: 'Amazon',
+    },
+  ]);
+});
