@@ -512,6 +512,18 @@ export async function evaluateProduct(productId: string) {
     for (const row of rules.rows) {
       const rule = row.data as Rule;
       if ((rule as Rule & { archived?: boolean }).archived) continue;
+      // An episode whose alert never reached the user (suppressed before delivery) must not
+      // block the next alert: reopen it so the next fresh qualifying check alerts again.
+      if (rule.activeEpisode) {
+        const reached = await c.query(
+          "SELECT 1 FROM atlas.notifications WHERE event_key=$1 AND state='delivered' LIMIT 1",
+          [`${rule.id}:${rule.version}:${rule.episode}`],
+        );
+        if (!reached.rows.length) {
+          rule.activeEpisode = false;
+          rule.lastEvidence = null;
+        }
+      }
       const result = evaluate(rule, current);
       await c.query('UPDATE atlas.rules SET data=$1 WHERE id=$2', [result.state, rule.id]);
       if (result.trigger)
