@@ -6,6 +6,7 @@ export const normalizeQuery = (value: string) =>
   value
     .normalize('NFKC')
     .toLowerCase()
+    .replace(/\b(?:face\s*wash|facial\s+cleanser|cleansers)\b/g, 'cleanser')
     .replace(/\b97[89](?:[\s-]*\d){10}\b/g, (isbn) => {
       const digits = isbn.replace(/[\s-]/g, '');
       return isIsbn13(digits) ? digits : isbn;

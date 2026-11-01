@@ -15,7 +15,7 @@ test('lookup animation can be skipped while the factual search response is still
     await route.fulfill({ json: { state: 'complete', ...facts, candidates: [], sources: [] } });
   });
   await page.goto('/search?q=Casio', { waitUntil: 'domcontentloaded' });
-  const skip = page.getByRole('button', { name: 'Show recorded results' });
+  const skip = page.getByRole('button', { name: 'Skip Animation', exact: true });
   await expect(skip).toBeEnabled();
   await skip.click();
   await expect(page.locator('.v2-flower')).toHaveCount(0);

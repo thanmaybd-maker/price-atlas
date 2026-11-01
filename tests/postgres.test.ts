@@ -28,6 +28,7 @@ import {
   reserveSource,
   runCollectionJob,
   fetchProductWithBudget,
+  assistCollection,
 } from '../packages/jobs/index';
 import {
   createTelegramLink,
@@ -1269,9 +1270,12 @@ it('a key-less worker gets a refused page through the web app assist for its run
     const url = new URL(String(input));
     calls.push(url.host + url.pathname);
     if (url.host === 'web.test') {
-      const { jobId } = JSON.parse(String(init?.body));
-      const running = (await db.query('SELECT state FROM atlas.jobs WHERE id=$1', [jobId])).rows[0];
+      const { jobId, assistToken } = JSON.parse(String(init?.body));
+      const running = (await db.query('SELECT state,payload FROM atlas.jobs WHERE id=$1', [jobId]))
+        .rows[0];
       expect(running.state).toBe('running');
+      expect(assistToken).toMatch(/^[a-f0-9-]{36}$/);
+      expect(running.payload.assistToken).toBe(assistToken);
       const { parseProductHtml } = await import('../packages/providers/scraper');
       return Response.json({
         product: parseProductHtml(html(), 'https://www.amazon.in/dp/B000000099'),
@@ -1295,6 +1299,42 @@ it('a key-less worker gets a refused page through the web app assist for its run
     expect((await db.query('SELECT state FROM atlas.jobs WHERE id=$1', [id])).rows[0].state).toBe(
       'complete',
     );
+  } finally {
+    fetcher.mockRestore();
+    process.env = saved;
+  }
+});
+
+it('collection assist rejects a guessed job id and a replay before spending provider credits', async () => {
+  const saved = { ...process.env };
+  process.env.FIRECRAWL_API_KEY = 'fixture-assist-capability';
+  const fetcher = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(Response.json({ success: true, data: { rawHtml: html() } }));
+  const id = 'assist-capability-guard';
+  const token = randomUUID();
+  try {
+    await db.query("INSERT INTO atlas.jobs VALUES($1,'collect',$2,'running',0,$3,1,NULL,0)", [
+      id,
+      {
+        listingId: 'amazon-b000000001',
+        url: 'https://www.amazon.in/dp/B000000001',
+        runKey: 'capability',
+        assistToken: token,
+      },
+      Date.now() + 120000,
+    ]);
+    await expect(assistCollection(id)).rejects.toMatchObject({ code: 'invalid_query' });
+    await expect(assistCollection(id, randomUUID())).rejects.toMatchObject({
+      code: 'invalid_query',
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    await assistCollection(id, token);
+    const calls = fetcher.mock.calls.length;
+    expect(calls).toBeGreaterThan(0);
+    await expect(assistCollection(id, token)).rejects.toMatchObject({ code: 'invalid_query' });
+    expect(fetcher.mock.calls).toHaveLength(calls);
   } finally {
     fetcher.mockRestore();
     process.env = saved;

@@ -372,7 +372,7 @@ export function parseProductHtml(
   )
     throw new ScrapeError(
       'blocked',
-      'The retailer returned a verification page. Configure a supported collection provider.',
+      'The retailer returned a verification page. Its live price could not be verified; check the store directly or try again later.',
     );
   const canonical = $('link[rel="canonical"]').attr('href');
   if (canonical) {

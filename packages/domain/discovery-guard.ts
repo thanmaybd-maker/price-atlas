@@ -1,8 +1,11 @@
 import { normalizeQuery, bundleMismatch } from './search';
 import { variantSignature, compareVariants } from './variant-guard';
+import { parseQueryIntent } from './query-intent';
 
 // Discovery is a lead, not an offer; explicit identity conflicts still disqualify it.
 export function discoveryConflict(title: string, query: string) {
+  const intent = parseQueryIntent(query);
+  query = intent.text || intent.category || query;
   const name = normalizeQuery(title);
   const requested = normalizeQuery(query);
   const tokens = new Set(name.split(' '));

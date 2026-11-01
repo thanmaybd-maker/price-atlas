@@ -1,12 +1,16 @@
-import type { Offer } from '@domain/index';
+import { eligible, type Offer } from '../../../packages/domain/index';
 
 export function OfferEvidence({ offer, basis }: { offer: Offer; basis: 'item' | 'delivered' }) {
   const validTime = Number.isFinite(offer.observedAt) && offer.observedAt > 0;
+  const checked = eligible(offer);
   return (
-    <div className="offer-verification-container">
-      <span className="verified-badge">✓ Verified • INR • Source: {offer.store}</span>
+    <div className="offer-verification-container" data-testid="offer-evidence">
+      <span className={`verified-badge${checked ? '' : ' is-unverified'}`}>
+        {checked ? '✓ Checked item price' : 'Recorded price · verify on store'} • {offer.currency} •
+        Source: {offer.store}
+      </span>
       <details className="evidence-debug-accordion">
-        <summary className="evidence-debug-summary">Debug source proof</summary>
+        <summary className="evidence-debug-summary">Price source and verification</summary>
         <dl>
           <dt>Observed</dt>
           <dd>

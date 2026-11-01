@@ -1,4 +1,5 @@
 import { deliverDiscord } from '../notifications/discord';
+import { randomUUID } from 'node:crypto';
 import { backfillKeepaForUrl } from './keepa-backfill';
 import {
   boundedLimit,
@@ -221,11 +222,11 @@ export async function fetchProductWithBudget(
 // fetch a refused page. The web app only does so for a job that is running right now.
 const WEB_ORIGIN = () =>
   (process.env.ATLAS_WEB_ORIGIN || 'https://price-atlas-ashen.vercel.app').replace(/\/$/, '');
-async function viaWebApp(jobId: string): Promise<ScrapedProduct> {
+async function viaWebApp(jobId: string, assistToken: string): Promise<ScrapedProduct> {
   const res = await fetch(`${WEB_ORIGIN()}/api/v1/collect-assist`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jobId }),
+    body: JSON.stringify({ jobId, assistToken }),
     signal: AbortSignal.timeout(58000),
   });
   const body = (await res.json().catch(() => ({}))) as {
@@ -241,7 +242,7 @@ async function viaWebApp(jobId: string): Promise<ScrapedProduct> {
     );
   return body.product;
 }
-async function collectPage(url: string, jobId?: string) {
+async function collectPage(url: string, jobId?: string, assistToken?: string) {
   const keyed = Boolean(process.env.FIRECRAWL_API_KEY);
   const paid = () =>
     keyed
@@ -252,8 +253,8 @@ async function collectPage(url: string, jobId?: string) {
           { transport: 'firecrawl', apiKey: process.env.FIRECRAWL_API_KEY },
           true,
         )
-      : jobId && process.env.ATLAS_WEB_ASSIST !== 'false'
-        ? viaWebApp(jobId)
+      : jobId && assistToken && process.env.ATLAS_WEB_ASSIST !== 'false'
+        ? viaWebApp(jobId, assistToken)
         : null;
   try {
     const direct = await fetchProductWithBudget(url, undefined, undefined, {
@@ -275,11 +276,13 @@ async function collectPage(url: string, jobId?: string) {
   }
 }
 /** Web-app side of the assist: Firecrawl fetch for a job that is running now. */
-export async function assistCollection(jobId: string) {
+export async function assistCollection(jobId: string, assistToken?: string) {
+  if (!assistToken || !/^[a-f0-9-]{36}$/.test(assistToken))
+    throw new ScrapeError('invalid_query', 'No valid running-job capability.');
   const job = (
     await postgres().query(
-      "SELECT payload FROM atlas.jobs WHERE id=$1 AND state='running' AND lease_until>$2",
-      [jobId, Date.now()],
+      "UPDATE atlas.jobs SET payload=payload-'assistToken' WHERE id=$1 AND state='running' AND lease_until>$2 AND payload->>'assistToken'=$3 RETURNING payload",
+      [jobId, Date.now(), assistToken],
     )
   ).rows[0];
   if (!job) throw new ScrapeError('invalid_query', 'No running collection job with that id.');
@@ -295,16 +298,22 @@ export async function assistCollection(jobId: string) {
 }
 export async function runCollectionJob(id: string) {
   const claimed = await postgres().query(
-    "UPDATE atlas.jobs SET state='running',attempts=attempts+1,lease_until=$2 WHERE id=$1 AND state='pending' AND available_at<=$3 RETURNING *",
-    [id, Date.now() + 120000, Date.now()],
+    "UPDATE atlas.jobs SET state='running',attempts=attempts+1,lease_until=$2,payload=payload || jsonb_build_object('assistToken',$4::text) WHERE id=$1 AND state='pending' AND available_at<=$3 RETURNING *",
+    [id, Date.now() + 120000, Date.now(), randomUUID()],
   );
   const job = claimed.rows[0];
   if (!job) return;
   try {
-    const result = await importScraped(await collectPage(job.payload.url, id), job.payload.runKey);
+    const result = await importScraped(
+      await collectPage(job.payload.url, id, job.payload.assistToken),
+      job.payload.runKey,
+    );
     await backfillKeepaForUrl(job.payload.url).catch(() => null);
     await tx(async (c) => {
-      await c.query("UPDATE atlas.jobs SET state='complete',lease_until=NULL WHERE id=$1", [id]);
+      await c.query(
+        "UPDATE atlas.jobs SET state='complete',lease_until=NULL,payload=payload-'assistToken' WHERE id=$1",
+        [id],
+      );
       await c.query(
         "UPDATE atlas.runs SET observations=observations+$2,status='running' WHERE id=$1",
         [job.payload.runKey, result.observations],
@@ -340,7 +349,7 @@ export async function runCollectionJob(id: string) {
           : Math.min(3600000, 60000 * 2 ** job.attempts);
     await tx(async (c) => {
       await c.query(
-        'UPDATE atlas.jobs SET state=$2,available_at=$3,lease_until=NULL,last_error=$4,attempts=attempts-$5 WHERE id=$1',
+        "UPDATE atlas.jobs SET state=$2,available_at=$3,lease_until=NULL,last_error=$4,attempts=attempts-$5,payload=payload-'assistToken' WHERE id=$1",
         [id, retryable ? 'pending' : 'failed', Date.now() + delay, code, deferred ? 1 : 0],
       );
       await c.query('UPDATE atlas.listings SET failures=failures+$3,next_check=$2 WHERE id=$1', [

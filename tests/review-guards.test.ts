@@ -5,6 +5,17 @@ import { catalogCard } from '../packages/domain/catalog-card';
 import { compareVariants, variantSignature } from '../packages/domain/variant-guard';
 import type { Product, Offer } from '../packages/domain/index';
 import { compareAttributes } from '../packages/matching/index';
+import { parseQueryIntent } from '../packages/domain/query-intent';
+import { matchesQuery } from '../packages/domain/search';
+
+it('treats a shopping budget as a price filter rather than a conflicting product model', () => {
+  const title = 'Cetaphil Gentle Skin Cleanser 125ml';
+  expect(discoveryConflict(title, 'cetaphil facewash under 500')).toBe(false);
+  expect(discoveryConflict(title, 'cetaphil facewash 500ml under 500')).toBe(true);
+  const intent = parseQueryIntent('cetaphil facewash under 500');
+  expect(intent.maxPaise).toBe(50000);
+  expect(matchesQuery({ name: title, brand: 'Cetaphil', subtitle: '' }, intent.text)).toBe(true);
+});
 
 it('books match on valid ISBN across ISBN/GTIN fields and preserve binding and edition', () => {
   const book = {
