@@ -8,6 +8,18 @@ import { compareAttributes } from '../packages/matching/index';
 import { parseQueryIntent } from '../packages/domain/query-intent';
 import { matchesQuery } from '../packages/domain/search';
 
+it('matches RTX spacing and graphic-card wording without substituting another GPU model', () => {
+  const gpu = {
+    name: 'MSI GeForce RTX 5060 8G Shadow 2X OC Graphic Card',
+    brand: 'MSI',
+    subtitle: '',
+  };
+  expect(matchesQuery(gpu, 'rtx 5060')).toBe(true);
+  expect(matchesQuery(gpu, 'rtx5060')).toBe(true);
+  expect(matchesQuery(gpu, 'RTX 5060 graphics card')).toBe(true);
+  expect(matchesQuery(gpu, 'RTX 5070')).toBe(false);
+});
+
 it('treats a shopping budget as a price filter rather than a conflicting product model', () => {
   const title = 'Cetaphil Gentle Skin Cleanser 125ml';
   expect(discoveryConflict(title, 'cetaphil facewash under 500')).toBe(false);
