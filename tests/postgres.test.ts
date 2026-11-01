@@ -1323,6 +1323,42 @@ it('allows free checks after 1000 requests without reopening exhausted paid cred
   }
 });
 
+it('allows the requested 200-credit daily cap and refuses spending above it', async () => {
+  const saved = { ...process.env };
+  const day = new Date().toISOString().slice(0, 10);
+  const previous = (await db.query('SELECT * FROM atlas.collection_budget WHERE day=$1', [day]))
+    .rows[0];
+  process.env.SCRAPER_REQUESTS_PER_DAY = '3000';
+  process.env.SCRAPER_CREDITS_PER_DAY = '200';
+  process.env.SCRAPER_CREDITS_PER_MONTH = '3600';
+  try {
+    await db.query(
+      'INSERT INTO atlas.collection_budget(day,requests,credits) VALUES($1,1000,199) ON CONFLICT(day) DO UPDATE SET requests=1000,credits=199',
+      [day],
+    );
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    await expect(
+      reserveSource('Amazon', { transport: 'firecrawl', apiKey: 'fixture-never-called' }),
+    ).resolves.toBeUndefined();
+    await expect(
+      reserveSource('Amazon', { transport: 'firecrawl', apiKey: 'fixture-never-called' }),
+    ).rejects.toMatchObject({ code: 'daily_budget' });
+    expect(
+      (await db.query('SELECT credits FROM atlas.collection_budget WHERE day=$1', [day])).rows[0]
+        .credits,
+    ).toBe(200);
+  } finally {
+    process.env = saved;
+    if (previous)
+      await db.query('UPDATE atlas.collection_budget SET requests=$2,credits=$3 WHERE day=$1', [
+        day,
+        previous.requests,
+        previous.credits,
+      ]);
+    else await db.query('DELETE FROM atlas.collection_budget WHERE day=$1', [day]);
+  }
+});
+
 it('publishes source links without holding the research queue for store verification', async () => {
   const q = 'QuickPublish QP991';
   const report = parseAgentResearch(q, {
