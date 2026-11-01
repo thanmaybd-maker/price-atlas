@@ -349,8 +349,13 @@ export async function deliverNotifications(
       best !== null &&
       (rule.operator === 'lte' ? best <= rule.target : best < rule.target);
     if (!allowed) {
+      // The email pass runs later than the in-app dispatch; a price that has merely aged past
+      // the one-hour alert freshness must not retract an alert already delivered in-app (and
+      // with it the Telegram and Discord copies). Only the email copy is dropped.
       await postgres().query(
-        "UPDATE atlas.notifications SET state='suppressed',email_state='suppressed' WHERE id=$1",
+        n.state === 'delivered'
+          ? "UPDATE atlas.notifications SET email_state='suppressed' WHERE id=$1"
+          : "UPDATE atlas.notifications SET state='suppressed',email_state='suppressed' WHERE id=$1",
         [n.id],
       );
       continue;
