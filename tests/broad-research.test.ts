@@ -2,6 +2,21 @@ import { it, expect } from 'vitest';
 import { parseAgentResearch, retailerRoundRobin } from '../packages/providers/agent-research';
 import { resolveResearchLinks } from '../packages/providers/agent-payload';
 import { parseQueryIntent } from '../packages/domain/query-intent';
+import { compareVariants, variantSignature } from '../packages/domain/variant-guard';
+
+it('treats unspecified RAM as reviewable and memory ordering as equivalent, while rejecting conflicting RAM', () => {
+  expect(
+    compareVariants(variantSignature('Phone 12GB 256GB'), variantSignature('Phone 256GB')).decision,
+  ).toBe('review');
+  expect(
+    compareVariants(variantSignature('Phone 12GB 256GB'), variantSignature('Phone 256GB 12GB'))
+      .decision,
+  ).not.toBe('rejected');
+  expect(
+    compareVariants(variantSignature('Phone 12GB 256GB'), variantSignature('Phone 8GB 256GB'))
+      .decision,
+  ).toBe('rejected');
+});
 
 it('keeps beauty subtypes instead of broadening every lipstick search to all beauty products', () => {
   expect(parseQueryIntent('Maybelline lipstick under 500').text).toBe('maybelline lipstick');
@@ -67,4 +82,12 @@ it('keeps related storage variants separate while rejecting other phone models',
   expect(report.candidates).toHaveLength(16);
   expect(report.otherVariants).toHaveLength(16);
   expect(report.otherVariants.every((c) => c.title.includes('S25 Ultra'))).toBe(true);
+});
+
+it('retains other colours in the variant group rather than losing them as lexical mismatches', () => {
+  const r = parseAgentResearch('Samsung S25 Ultra Black', {
+    products: [{ title: 'Samsung S25 Ultra Silver', url: 'https://www.amazon.in/dp/B0BROAD001' }],
+  });
+  expect(r.candidates).toHaveLength(0);
+  expect(r.otherVariants).toHaveLength(1);
 });

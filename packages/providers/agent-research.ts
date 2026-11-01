@@ -67,6 +67,10 @@ export function parseAgentResearch(query: string, raw: unknown, now = Date.now()
       '',
     )
     .replace(/\bsize\s+[a-z0-9]+\b/gi, '')
+    .replace(
+      /\b(?:black|white|blue|red|green|silver|gray|grey|gold|pink|purple|titanium|silverblue|rose)\b/gi,
+      '',
+    )
     .replace(/\s+/g, ' ')
     .trim();
   for (const value of (raw as { products: unknown[] }).products.slice(0, RESEARCH_LISTING_LIMIT)) {
@@ -91,15 +95,19 @@ export function parseAgentResearch(query: string, raw: unknown, now = Date.now()
         status: 'DISCOVERY_UNVERIFIED',
         variant: variantSignature(title),
       };
-      if (discoveryConflict(title, query)) {
+      if (
+        !discoveryConflict(title, query) &&
+        matchesQuery({ name: title, brand: '', subtitle: '' }, phrase)
+      )
+        result.candidates.push(lead);
+      else {
         if (
           family.length >= 2 &&
           !discoveryConflict(title, family) &&
           matchesQuery({ name: title, brand: '', subtitle: '' }, family)
         )
           result.otherVariants.push(lead);
-      } else if (matchesQuery({ name: title, brand: '', subtitle: '' }, phrase))
-        result.candidates.push(lead);
+      }
     } catch {
       /* Unsupported, private or non-product links are discarded. */
     }

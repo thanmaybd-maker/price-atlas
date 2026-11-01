@@ -298,13 +298,9 @@ export async function discoverProducts(
                   failure = error;
                   if (
                     error instanceof ScrapeError &&
-                    [
-                      'daily_budget',
-                      'monthly_budget',
-                      'rate_limited',
-                      'lookup_timeout',
-                      'lookup_budget',
-                    ].includes(error.code)
+                    ['daily_budget', 'monthly_budget', 'rate_limited', 'lookup_timeout'].includes(
+                      error.code,
+                    )
                   )
                     break;
                 }
