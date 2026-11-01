@@ -1,6 +1,6 @@
 # Account-backed AI assistance: assessment
 
-Reviewed 1 November 2026. This is an integration assessment, not an enabled production provider.
+Reviewed 1 November 2026. The supported CLI integration is implemented in [the product research worker](AGENT-PRODUCT-RESEARCH.md); this document records the architectural source review.
 
 ## What Mobile Harness does
 
@@ -31,6 +31,6 @@ The machine running the worker must stay on and authenticated. A phone login doe
 
 Basic retailer discovery now starts immediately with the shopper's original query. Optional Gemini assistance cannot delay it or restart it when a rewrite arrives late. GPU matching accepts Graphic Card / Graphics Cards while preserving model numbers. A held-assist browser test verifies both behaviors. This keeps ordinary search available when an AI provider is slow or exhausted, without requiring a new harness.
 
-## Remaining integration work
+## Integration boundaries
 
-Before enabling an account-backed provider: establish its permitted deployment scope, choose the always-on host and supported authentication, implement a bounded authenticated job interface, enforce concurrency and account usage limits, validate output, and exercise unavailable/quota/timeout paths. Until those exist, the CLI is a local research option rather than a production fallback.
+The implementation uses a signed-in private worker, shared bounded queue, exclusive job lease, daily attempt limit, validated lead cache and ordinary source verification. It does not turn an email address into authentication, copy Google credentials to cloud services, or expose a general-purpose agent endpoint. A cloud-hosted Google session remains a separate deployment prerequisite; the hybrid local-worker/cloud-website path uses the existing signed-in machine.

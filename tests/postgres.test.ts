@@ -23,6 +23,14 @@ import {
 import { deliverTestAlerts } from '../packages/notifications/test-alerts';
 import { parseProductHtml } from '../packages/providers/scraper';
 import { discoverProducts } from '../packages/jobs/discovery';
+import { saveAgentResearch, cachedAgentResearch } from '../packages/jobs/agent-research-cache';
+import { parseAgentResearch } from '../packages/providers/agent-research';
+import {
+  researchHeartbeat,
+  requestAgentResearch,
+  claimResearchJob,
+  finishResearchJob,
+} from '../packages/jobs/agent-research-queue';
 import {
   deliverNotifications,
   reserveSource,
@@ -1177,6 +1185,75 @@ it.each([
     }
   },
 );
+
+it('uses privately researched retailer leads through normal verification without saving agent prices', async () => {
+  const query = 'AtlasResearch ZX881 calculator';
+  const report = parseAgentResearch(query, {
+    products: [
+      {
+        title: 'AtlasResearch ZX881 Calculator',
+        url: 'https://www.amazon.in/dp/B0AGENT881',
+        price: 1,
+      },
+    ],
+  });
+  await saveAgentResearch(report);
+  expect((await cachedAgentResearch(query))?.candidates).toHaveLength(1);
+  const saved = { ...process.env };
+  process.env.SCRAPER_CREDITS_PER_DAY = '0';
+  process.env.SCRAPER_CREDITS_PER_MONTH = '0';
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input) === 'https://www.amazon.in/dp/B0AGENT881')
+      return new Response(
+        html('₹1,234').replace('Test Phone 128 GB', 'AtlasResearch ZX881 Calculator'),
+      );
+    return new Response('<title>No results</title>');
+  });
+  try {
+    const result = await discoverProducts(query, 'Amazon');
+    expect(result?.sources).toContainEqual({
+      store: 'Amazon',
+      method: 'antigravity-research-cache',
+      status: 'complete',
+    });
+    expect(result?.offers[0].itemPrice).toBe(123400);
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes('/s?'))).toBe(false);
+    expect(
+      fetcher.mock.calls.some(([url]) => /firecrawl|scrapingbee|tinyfish/.test(String(url))),
+    ).toBe(false);
+    await saveAgentResearch({ ...report, researchedAt: Date.now() - 25 * 3600000 });
+    expect(await cachedAgentResearch(query)).toBeNull();
+  } finally {
+    fetcher.mockRestore();
+    process.env = saved;
+  }
+});
+
+it('deduplicates background research, grants one lease and enforces a shared daily attempt cap', async () => {
+  const old = process.env.AGENT_RESEARCH_DAILY_LIMIT;
+  process.env.AGENT_RESEARCH_DAILY_LIMIT = '1';
+  try {
+    expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('offline');
+    await researchHeartbeat();
+    expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('pending');
+    expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('pending');
+    expect((await requestAgentResearch('QueueTest QB992')).reason).toBe('pending');
+    const first = await claimResearchJob();
+    expect(first?.query).toBe('QueueTest QB991');
+    expect(await claimResearchJob()).toBeNull();
+    await finishResearchJob(first!.key, 'error');
+    expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('error');
+    expect((await requestAgentResearch('QueueTest QB992')).reason).toBe('limited');
+    expect(await claimResearchJob()).toBeNull();
+  } finally {
+    if (old === undefined) delete process.env.AGENT_RESEARCH_DAILY_LIMIT;
+    else process.env.AGENT_RESEARCH_DAILY_LIMIT = old;
+    await db.query(
+      "DELETE FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v1:%' OR query_key LIKE 'agent-usage-v1:%' OR query_key='agent-worker-v1'",
+    );
+  }
+});
 
 it('features our distinct recorded days before imported history, repeated checks or service plans', async () => {
   const now = Date.now();
