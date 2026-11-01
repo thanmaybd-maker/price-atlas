@@ -99,9 +99,18 @@ beforeAll(async () => {
       'utf8',
     ),
   );
+  // PGlite has one connection, so a transaction client is handed out one at a time (like a
+  // real pool's separate connections, one transaction can't roll back another's writes).
+  let held: Promise<void> = Promise.resolve();
   store.useTestDatabase({
     query,
-    connect: async () => ({ query, release: () => {} }),
+    connect: async () => {
+      const prior = held;
+      let release!: () => void;
+      held = new Promise<void>((done) => (release = done));
+      await prior;
+      return { query, release };
+    },
   } as unknown as Pool);
   await db.exec(
     await readFile(
