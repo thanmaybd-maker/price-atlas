@@ -57,11 +57,12 @@ export function TelegramSettings() {
   async function sendTest() {
     setBusy(true);
     setTest('');
+    setError('');
     try {
       const res = await fetch('/api/v1/telegram?test=1', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       setTest(
-        data.ok
+        res.ok && data.ok === true
           ? 'Test message sent. Check your Telegram chat with the bot.'
           : data.reason === 'blocked'
             ? 'Telegram says the bot is blocked. Unblock it in Telegram, press Start, then try again.'
@@ -70,6 +71,10 @@ export function TelegramSettings() {
               : data.reason === 'rate_limited'
                 ? 'Too many tests. Wait a minute and try again.'
                 : `Telegram did not confirm delivery (${data.reason || `HTTP ${res.status}`}).`,
+      );
+    } catch {
+      setError(
+        'Could not confirm the test message because the connection failed. Check your Telegram chat before trying again; it may already have arrived.',
       );
     } finally {
       setBusy(false);
@@ -166,7 +171,7 @@ export function TelegramSettings() {
       </div>
       {status?.connected && (
         <button className="primary" disabled={busy} onClick={() => void sendTest()}>
-          {busy ? 'Sending test…' : 'Send test message'}
+          {busy ? 'Working…' : 'Send test message'}
         </button>
       )}
       <button

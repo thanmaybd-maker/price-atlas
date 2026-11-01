@@ -53,6 +53,7 @@ import {
   type Category,
 } from '@domain/index';
 import { landedCost } from '../../../packages/domain/landed-cost';
+import { retailerSearchHint } from '../../../packages/domain/retailer-search-hint';
 import { ProductArt } from './product-art';
 import { PriceChart } from './chart';
 import { LiveLogin } from './live-login';
@@ -1487,7 +1488,7 @@ export default function Atlas({
                     : lookup.query === searchText && lookup.busy
                       ? 'Searching supported retailers and verifying product details. This can take a few seconds.'
                       : /^https?:\/\//i.test(searchText)
-                        ? `${lookup.query === searchText && lookup.message ? lookup.message + ' ' : ''}Stores sometimes refuse automated checks for a while. Try again in a minute; the retry uses a stronger connection.`
+                        ? 'This store page could not be verified. Open the retailer to check its price, retry the link, or search by product name to check other stores. A retry may still be blocked.'
                         : searchText
                           ? 'Paste its product link from Amazon, Flipkart, Nykaa, Myntra, Croma or another supported store into the search box and Price Atlas starts tracking it, so you can pin a target. Or open it on a store:'
                           : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
@@ -1506,6 +1507,15 @@ export default function Atlas({
                         >
                           Try this link again
                         </button>
+                        {retailerSearchHint(searchText) && (
+                          <Link
+                            className="outline-button"
+                            prefetch={false}
+                            href={`/search?q=${encodeURIComponent(retailerSearchHint(searchText)!)}`}
+                          >
+                            Search this product at other stores
+                          </Link>
+                        )}
                         <a
                           className="outline-button"
                           href={searchText}
@@ -2630,7 +2640,7 @@ export default function Atlas({
                     <p className="muted small">
                       {session.delivery?.emailAvailable
                         ? 'Send eligible alerts to your verified email.'
-                        : 'Unavailable: no verified sender domain. Use Telegram and in-app alerts.'}
+                        : 'Price-alert email is not configured. Google sign-in and login emails are separate. Use Telegram and in-app alerts.'}
                     </p>
                   </div>
                   <button

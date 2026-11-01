@@ -61,6 +61,9 @@ test('archived history exposes capture proof in both the 30-day table and seven-
     0,
   );
   await expect(page.getByText('Includes Internet Archive captures', { exact: true })).toBeVisible();
+  await page.locator('.hs .do .rx').scrollIntoViewIfNeeded();
+  await page.locator('.hs .do .cell').filter({ hasText: '₹19,489' }).click();
+  await page.mouse.move(0, 0);
   await page.getByText('Includes Internet Archive captures', { exact: true }).click();
   await expect(page.locator('.hs .do .rx')).toContainText('not live checks');
   for (const width of [1440, 390]) {
@@ -112,7 +115,13 @@ test('catalog counts explain their different scopes and source evidence has an a
   await expect(page.getByTestId('catalog-coverage')).toContainText(
     `${current.expansion.verifiedBaseProducts} verified by bulk importer`,
   );
-  const evidence = page.locator('.offer-evidence').first();
+  const catalog = await (await request.get('/api/v1/search')).json();
+  const recorded = catalog.products.find((p: { id: string }) =>
+    catalog.offers.some((o: { productId: string }) => o.productId === p.id),
+  );
+  expect(recorded).toBeTruthy();
+  await page.goto(`/p/${recorded.slug}`, { waitUntil: 'domcontentloaded' });
+  const evidence = page.getByTestId('offer-evidence').first();
   await evidence.locator('summary').click();
   await expect(evidence.getByRole('link', { name: 'Open retailer product page' })).toHaveAttribute(
     'href',
@@ -123,7 +132,7 @@ test('catalog counts explain their different scopes and source evidence has an a
   ).toBeGreaterThan(0);
   await expect(evidence).toContainText('Comparison basis');
   await expect(evidence).toContainText(/Method not recorded|retailer HTML/i);
-  await page.locator('.hs .wa').screenshot({ path: 'data/review-evidence-proof.png' });
+  await evidence.screenshot({ path: 'data/review-evidence-proof.png' });
 });
 
 test('discovery rejects wrong Kobo models and cases and lists all retailer outcomes', async ({
