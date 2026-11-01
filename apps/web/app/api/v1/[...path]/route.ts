@@ -32,6 +32,7 @@ import { knownApiPath } from '../../../../../../packages/domain/routes';
 import { limited } from '../../../../../../packages/jobs/rate-limit';
 import { assistQuery } from '../../../../../../packages/providers/gemini';
 import { discoverWithGemini } from '../../../../../../packages/providers/gemini-discover';
+import { requestAgentResearch } from '../../../../../../packages/jobs/agent-research-queue';
 import { firecrawlProductSearch, flipkartSearch } from '../../../../../../packages/jobs/web-search';
 import { applyIntent, parseQueryIntent } from '../../../../../../packages/domain/query-intent';
 import { fxReference } from '../../../../../../packages/providers/fx';
@@ -202,6 +203,23 @@ async function handler(req: NextRequest) {
       }
       if (path[0] === 'ai-discover') {
         const q = z.string().trim().min(2).max(200).parse(req.nextUrl.searchParams.get('q'));
+        if (process.env.AGENT_RESEARCH_ENABLED === 'true' && data.isLive()) {
+          if (
+            req.headers.get('sec-fetch-site') === 'cross-site' ||
+            (req.headers.get('origin') &&
+              req.headers.get('origin') !== (process.env.APP_ORIGIN || req.nextUrl.origin))
+          )
+            return json({ error: 'Cross-origin request rejected.' }, 403);
+          const who = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
+          return json(
+            await requestAgentResearch(
+              q,
+              async () =>
+                !process.env.REDIS_URL ||
+                !(await limited(`agent-enqueue:${who}`, 6).catch(() => true)),
+            ),
+          );
+        }
         if (process.env.REDIS_URL) {
           const who = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
           if (await limited(`ai-discover:${who}`, 6).catch(() => false))
@@ -264,6 +282,13 @@ async function handler(req: NextRequest) {
       }
       if (path[0] === 'assist') {
         const q = z.string().trim().min(1).max(2000).parse(req.nextUrl.searchParams.get('q'));
+        if (process.env.AGENT_RESEARCH_ENABLED === 'true')
+          return json({
+            provider: 'gemini',
+            available: false,
+            original: q,
+            reason: 'not_applicable',
+          });
         if (process.env.REDIS_URL) {
           const who = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
           if (await limited(`assist:${who}`, 20).catch(() => false))

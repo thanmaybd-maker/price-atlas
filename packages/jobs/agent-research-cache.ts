@@ -24,6 +24,7 @@ export async function cachedAgentResearch(query: string): Promise<AgentResearch 
   if (
     !r ||
     r.provider !== 'antigravity' ||
+    !Array.isArray(r.candidates) ||
     typeof r.query !== 'string' ||
     normalizeQuery(r.query) !== normalizeQuery(query) ||
     !Number.isFinite(r.researchedAt) ||

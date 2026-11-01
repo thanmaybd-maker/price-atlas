@@ -26,6 +26,12 @@ import { discoverProducts } from '../packages/jobs/discovery';
 import { saveAgentResearch, cachedAgentResearch } from '../packages/jobs/agent-research-cache';
 import { parseAgentResearch } from '../packages/providers/agent-research';
 import {
+  researchHeartbeat,
+  requestAgentResearch,
+  claimResearchJob,
+  finishResearchJob,
+} from '../packages/jobs/agent-research-queue';
+import {
   deliverNotifications,
   reserveSource,
   runCollectionJob,
@@ -1221,6 +1227,31 @@ it('uses privately researched retailer leads through normal verification without
   } finally {
     fetcher.mockRestore();
     process.env = saved;
+  }
+});
+
+it('deduplicates background research, grants one lease and enforces a shared daily attempt cap', async () => {
+  const old = process.env.AGENT_RESEARCH_DAILY_LIMIT;
+  process.env.AGENT_RESEARCH_DAILY_LIMIT = '1';
+  try {
+    expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('offline');
+    await researchHeartbeat();
+    expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('pending');
+    expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('pending');
+    expect((await requestAgentResearch('QueueTest QB992')).reason).toBe('pending');
+    const first = await claimResearchJob();
+    expect(first?.query).toBe('QueueTest QB991');
+    expect(await claimResearchJob()).toBeNull();
+    await finishResearchJob(first!.key, 'error');
+    expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('error');
+    expect((await requestAgentResearch('QueueTest QB992')).reason).toBe('limited');
+    expect(await claimResearchJob()).toBeNull();
+  } finally {
+    if (old === undefined) delete process.env.AGENT_RESEARCH_DAILY_LIMIT;
+    else process.env.AGENT_RESEARCH_DAILY_LIMIT = old;
+    await db.query(
+      "DELETE FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v1:%' OR query_key LIKE 'agent-usage-v1:%' OR query_key='agent-worker-v1'",
+    );
   }
 });
 

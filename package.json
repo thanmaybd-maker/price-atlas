@@ -8,6 +8,8 @@
   },
   "scripts": {
     "research:products": "tsx scripts/research-products.ts",
+    "research:publish": "tsx scripts/publish-agent-research.ts",
+    "research:worker": "tsx scripts/agent-research-worker.ts",
     "dev": "next dev apps/web --hostname 127.0.0.1",
     "build": "next build apps/web",
     "start": "next start apps/web",

@@ -22,6 +22,13 @@ export const agentResearchKey = (query: string) =>
 
 // An agent's links are leads only. Never retain its quoted prices or identity assertions.
 export function parseAgentResearch(query: string, raw: unknown, now = Date.now()): AgentResearch {
+  if (
+    typeof query !== 'string' ||
+    query.trim().length < 2 ||
+    query.length > 160 ||
+    /^https?:/i.test(query)
+  )
+    throw new Error('invalid_query');
   if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { products?: unknown }).products))
     throw new Error('Agent response must contain a products array.');
   const result: AgentResearch = {
@@ -63,4 +70,27 @@ export function parseAgentResearch(query: string, raw: unknown, now = Date.now()
     }
   }
   return result;
+}
+
+export function reviewAgentReport(raw: unknown, now = Date.now()): AgentResearch {
+  const r = raw as Partial<AgentResearch> | null;
+  if (
+    !r ||
+    r.provider !== 'antigravity' ||
+    typeof r.query !== 'string' ||
+    !Array.isArray(r.candidates) ||
+    !Array.isArray(r.otherVariants)
+  )
+    throw new Error('invalid_report');
+  if (
+    !Number.isFinite(r.researchedAt) ||
+    r.researchedAt! > now ||
+    now - r.researchedAt! > 24 * 3600000
+  )
+    throw new Error('expired_report');
+  return parseAgentResearch(
+    r.query,
+    { products: [...r.candidates, ...r.otherVariants] },
+    r.researchedAt,
+  );
 }
