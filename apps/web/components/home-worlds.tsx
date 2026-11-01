@@ -443,12 +443,14 @@ function TargetsWorld({
   watches,
   rules,
   onPin,
+  onRemove,
   initialTarget,
 }: {
   products: Product[];
   offers: Offer[];
   watches: Watch[];
   rules: Rule[];
+  onRemove: (ruleId: string) => Promise<void>;
   onPin: (
     p: Product,
     rupees: number,
@@ -458,6 +460,7 @@ function TargetsWorld({
   ) => Promise<boolean>;
   initialTarget?: PinDraft;
 }) {
+  const [removing, setRemoving] = useState('');
   const pool = useMemo(() => {
     const saved = watches
       .map((w) => products.find((p) => p.id === w.product_id))
@@ -730,6 +733,23 @@ function TargetsWorld({
                 const met = now != null && now <= r.target;
                 return (
                   <article key={r.id} className={'sheet k' + ((i % 3) + 1)}>
+                    <button
+                      type="button"
+                      className="sheet-remove"
+                      disabled={removing === r.id}
+                      aria-label={`Remove target ₹${fmt(r.target)} for ${q?.name || 'saved product'}`}
+                      title="Remove this target"
+                      onClick={async () => {
+                        setRemoving(r.id);
+                        try {
+                          await onRemove(r.id);
+                        } finally {
+                          setRemoving('');
+                        }
+                      }}
+                    >
+                      {removing === r.id ? '…' : '×'}
+                    </button>
                     <div className="tg">₹{fmt(r.target)}</div>
                     <div className="nm">{q?.name || 'Saved product'}</div>
                     <dl>
@@ -754,6 +774,11 @@ function TargetsWorld({
                   </article>
                 );
               })}
+            {rules.length > 4 && (
+              <Link prefetch={false} className="note sheets-more" href="/alerts">
+                +{rules.length - 4} more targets · manage all
+              </Link>
+            )}
             {!rules.length && (
               <article className="sheet k1">
                 <div className="tg">₹ —</div>
@@ -1083,12 +1108,14 @@ export function HomeWorlds({
   emailAvailable,
   onSave,
   onPin,
+  onRemoveTarget,
   initialTarget,
 }: {
   products: Product[];
   offers: Offer[];
   watches: Watch[];
   rules: Rule[];
+  onRemoveTarget: (ruleId: string) => Promise<void>;
   notifications: Note[];
   emailAvailable: boolean;
   onSave: (p: Product) => void;
@@ -1181,6 +1208,7 @@ export function HomeWorlds({
         watches={watches}
         rules={rules}
         onPin={onPin}
+        onRemove={onRemoveTarget}
         initialTarget={initialTarget}
       />
       <div className="history-tools">

@@ -4846,3 +4846,26 @@
     transform: translateY(10px);
   }
 }
+.hs .sheet-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hs .sheet-remove:hover,
+.hs .sheet-remove:focus-visible {
+  opacity: 1;
+}
+.hs .sheets-more {
+  align-self: center;
+  text-decoration: underline;
+}
