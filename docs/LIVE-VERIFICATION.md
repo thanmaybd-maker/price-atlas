@@ -29,3 +29,19 @@ Sony WH-1000XM5 Black/new/Bluetooth is matched across Amazon and Flipkart. The h
 The Telegram hosted-secret check still rejects the local secret; webhook registration and actual chat delivery are not verified. No connected Telegram chat exists yet. Test alerts use a separate operator outbox and do not change real rules or observations. A verified Resend domain is still needed for public email recipients. The optional GitHub Actions collector remains disabled until its secrets and enable variable are configured.
 
 ![Verified live matching and history](previews/live-matched-history.png)
+
+## Real-account acceptance — 1 Nov 2026, 11:12 IST (production, signed-in user `573edb81…`)
+
+Run in the signed-in browser against `https://price-atlas-ashen.vercel.app`, through the same API the UI calls. The account was returned to its original state afterwards (1 existing target, alerts on, email preference on).
+
+| Check | Result |
+|---|---|
+| Save target (Sony WH-1000XM5, item price ≤ ₹20,500) | 201, rule stored |
+| Reload (fresh session read) | Rule present, target ₹20,500, enabled |
+| Edit target to ₹20,100, reload | Target ₹20,100 after reload |
+| Alert on save | In-app alert **delivered** immediately (₹19,989 at Amazon ≤ target), and again for the edited version |
+| Opt out (Price notifications off) | Preference stored (0); a new qualifying change while opted out was **suppressed** |
+| Opt back in | Preference stored (1) |
+| Delete test target | 200; gone after reload |
+
+Not covered here: backup/restore (needs a direct Postgres connection and `pg_dump`, not reachable from the test environment).
