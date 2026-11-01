@@ -1,3 +1,4 @@
+import { fetchWithTinyFish, tinyFishConfigured } from '../providers/tinyfish';
 import { deliverDiscord } from '../notifications/discord';
 import { randomUUID } from 'node:crypto';
 import { backfillKeepaForUrl } from './keepa-backfill';
@@ -129,6 +130,22 @@ export async function fetchProductWithBudget(
       if (!(error instanceof ScrapeError)) throw error;
     }
   }
+  // Free real-browser fallback (TinyFish Fetch, 1,000 URLs/day) before any paid credits.
+  if (configured.transport !== 'direct' && tinyFishConfigured()) {
+    await reserveSource(store, { transport: 'direct' });
+    try {
+      const viaTinyFish = await fetchWithTinyFish(
+        url,
+        Math.min(configured.timeoutMs || 25000, 25000),
+      );
+      if (viaTinyFish.itemPrice !== null) return viaTinyFish;
+      partial ||= viaTinyFish;
+    } catch (error) {
+      console.warn(
+        JSON.stringify({ event: 'tinyfish_failed', store, reason: (error as Error).message }),
+      );
+    }
+  }
   const cost = scraperCreditCost(configured);
   if (configured.transport !== 'direct' && allowPaid && !allowPaid(Math.max(1, cost))) {
     if (partial) return partial;
@@ -244,6 +261,18 @@ async function viaWebApp(jobId: string, assistToken: string): Promise<ScrapedPro
 }
 async function collectPage(url: string, jobId?: string, assistToken?: string) {
   const keyed = Boolean(process.env.FIRECRAWL_API_KEY);
+  // Emergency reserve: when every Firecrawl account fails, ScrapingBee (separate accounts)
+  // gets one try within the same per-request credit ceiling.
+  const scrapingBee = (error: unknown) =>
+    process.env.SCRAPINGBEE_API_KEY
+      ? fetchProductWithBudget(
+          url,
+          20000,
+          undefined,
+          { transport: 'scrapingbee', apiKey: process.env.SCRAPINGBEE_API_KEY, renderJs: true },
+          true,
+        )
+      : Promise.reject(error);
   const paid = () =>
     keyed
       ? fetchProductWithBudget(
@@ -252,7 +281,7 @@ async function collectPage(url: string, jobId?: string, assistToken?: string) {
           undefined,
           { transport: 'firecrawl', apiKey: process.env.FIRECRAWL_API_KEY },
           true,
-        )
+        ).catch(scrapingBee)
       : jobId && assistToken && process.env.ATLAS_WEB_ASSIST !== 'false'
         ? viaWebApp(jobId, assistToken)
         : null;
