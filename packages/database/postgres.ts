@@ -154,6 +154,8 @@ export async function history(id: string, days = 30): Promise<Offer[]> {
 }
 export async function historyOverview(selected: string[], days = 30) {
   const now = Date.now();
+  const start =
+    Math.floor((now + 19800000) / 86400000) * 86400000 - 19800000 - (days - 1) * 86400000;
   const permitted = STORE_NAMES.filter(
     (store) => !retailers[store].international && livePolicy(store).history,
   );
@@ -161,16 +163,33 @@ export async function historyOverview(selected: string[], days = 30) {
     ? [...new Set(selected)].slice(0, 4)
     : (
         await postgres().query(
-          "SELECT product_id FROM atlas.observations WHERE observed_at>=$1 AND observed_at<=$2 AND expires_at>$2 AND (data->>'historyAllowed')::boolean AND (data->>'accepted')::boolean AND (data->>'stock')::boolean AND data->>'currency'='INR' AND data->>'condition'='new' AND data->>'store'=ANY($3::text[]) GROUP BY product_id ORDER BY count(DISTINCT floor((observed_at+19800000)/86400000)) DESC,max(observed_at) DESC LIMIT 4",
-          [now - days * 86400000, now, permitted],
+          `WITH recorded_days AS (
+            SELECT o.product_id, floor((o.observed_at+19800000)/86400000)::bigint AS day, max(o.observed_at) AS latest
+            FROM atlas.observations o JOIN atlas.products p ON p.id=o.product_id
+            WHERE o.observed_at>=$1 AND o.observed_at<=$2 AND o.expires_at>$2
+              AND (o.data->>'historyAllowed')::boolean AND (o.data->>'accepted')::boolean AND (o.data->>'stock')::boolean
+              AND o.data->>'currency'='INR' AND o.data->>'condition'='new' AND o.data->>'store'=ANY($3::text[])
+              AND coalesce(o.data->>'source','primary')='primary' AND coalesce(p.data->>'category','')<>'services'
+            GROUP BY o.product_id, floor((o.observed_at+19800000)/86400000)::bigint
+          ), streak_groups AS (
+            SELECT *, day-row_number() OVER (PARTITION BY product_id ORDER BY day) AS streak_group FROM recorded_days
+          ), streaks AS (
+            SELECT product_id, streak_group, count(*) AS length FROM streak_groups GROUP BY product_id,streak_group
+          ), longest AS (
+            SELECT product_id,max(length) AS length FROM streaks GROUP BY product_id
+          )
+          SELECT d.product_id FROM recorded_days d JOIN longest l ON l.product_id=d.product_id
+          GROUP BY d.product_id,l.length
+          ORDER BY count(*) DESC,l.length DESC,max(d.latest) DESC,d.product_id ASC LIMIT 4`,
+          [start, now, permitted],
         )
       ).rows.map((row) => row.product_id as string);
   if (!ids.length) return { products: [] as Product[], history: {} as Record<string, Offer[]> };
   const [products, observations] = await Promise.all([
     postgres().query('SELECT data FROM atlas.products WHERE id=ANY($1::text[])', [ids]),
     postgres().query(
-      "SELECT data FROM atlas.observations WHERE product_id=ANY($1::text[]) AND observed_at>=$2 AND observed_at<=$3 AND expires_at>$3 AND (data->>'historyAllowed')::boolean ORDER BY observed_at",
-      [ids, now - days * 86400000, now],
+      "SELECT data FROM atlas.observations WHERE product_id=ANY($1::text[]) AND observed_at>=$2 AND observed_at<=$3 AND expires_at>$3 AND (data->>'historyAllowed')::boolean AND ($4::boolean OR coalesce(data->>'source','primary')='primary') ORDER BY observed_at",
+      [ids, start, now, selected.length > 0],
     ),
   ]);
   const result: Record<string, Offer[]> = Object.fromEntries(ids.map((id) => [id, []]));

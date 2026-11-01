@@ -79,12 +79,13 @@ test('an explicit guest pin survives a sign-in return and creates exactly one co
 }) => {
   let signedIn = false,
     writes = 0;
+  let savedRule: Record<string, unknown> | undefined;
   await page.route('**/api/v1/session', (route) =>
     route.fulfill({
       json: {
         user: signedIn ? { id: 'fixture-user', name: 'UI fixture', notifications: 1 } : null,
         watches: [],
-        rules: [],
+        rules: savedRule ? [savedRule] : [],
         notifications: [],
         delivery: { emailAvailable: false },
       },
@@ -92,18 +93,19 @@ test('an explicit guest pin survives a sign-in return and creates exactly one co
   );
   await page.route('**/api/v1/rules', (route) => {
     writes++;
+    savedRule = {
+      ...route.request().postDataJSON(),
+      id: 'fixture-return-rule',
+      version: 1,
+      episode: 0,
+      activeEpisode: false,
+      aboveCount: 0,
+      lastTriggeredAt: null,
+    };
     return route.fulfill({
       status: 201,
       json: {
-        rule: {
-          ...route.request().postDataJSON(),
-          id: 'fixture-return-rule',
-          version: 1,
-          episode: 0,
-          activeEpisode: false,
-          aboveCount: 0,
-          lastTriggeredAt: null,
-        },
+        rule: savedRule,
       },
     });
   });

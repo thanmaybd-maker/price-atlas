@@ -1,9 +1,10 @@
 'use client';
 // "Thirty days, drawn as tides." from the design canvas: one ridge per product (home) or per store
 // (product page), lowest recorded price per day, with gaps where nothing was observed.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Offer } from '@domain/index';
 import { dailyHistory } from '../../../packages/domain/daily-history';
+import { historyRecording } from '../../../packages/domain/history-recording';
 import { archiveEvidence } from '../../../packages/domain/history-source';
 import { HistoryCitation } from './history-citation';
 
@@ -32,6 +33,10 @@ export function TidesWorld({
   const [active, setActive] = useState(0);
   const [scrub, setScrub] = useState(-1);
   const N = 30;
+  const tracking = useMemo(
+    () => ridges.slice(0, 4).map((r) => historyRecording(r.obs, basis, N)),
+    [ridges, basis],
+  );
   const geom = ridges.slice(0, 4).map((r, i) => {
     const recorded = dailyHistory(r.obs, basis, N);
     const s = recorded.map((day) => day.price);
@@ -69,7 +74,23 @@ export function TidesWorld({
       prev = j;
     });
     const li = vals.length ? s.indexOf(mn) : -1;
-    return { r, s, recorded, mn, mx, top, amp, X, Y, line, area, bridge, li, has: vals.length > 0 };
+    return {
+      r,
+      s,
+      recorded,
+      tracking: tracking[i],
+      mn,
+      mx,
+      top,
+      amp,
+      X,
+      Y,
+      line,
+      area,
+      bridge,
+      li,
+      has: vals.length > 0,
+    };
   });
   const on = Math.min(active, Math.max(0, geom.length - 1));
   const h = Math.max(140, 34 + geom.length * 104 + 10);
@@ -160,6 +181,10 @@ export function TidesWorld({
                   <text className="fig" x="0" y={g.top + 54}>
                     {g.has ? `₹${fmt(g.mn)} to ₹${fmt(g.mx)}` : 'not observed yet'}
                   </text>
+                  <text className="fig" x="0" y={g.top + 74}>
+                    {g.tracking.recordedDays} Price Atlas days · {g.tracking.longestStreak}{' '}
+                    consecutive
+                  </text>
                   {g.li >= 0 && (
                     <circle
                       className="low"
@@ -202,6 +227,16 @@ export function TidesWorld({
                 </g>
               )}
             </svg>
+          )}
+          {geom[on] && (
+            <p className="small" data-testid="history-recording-streak" aria-live="polite">
+              Price Atlas recorded this product on{' '}
+              <b>{geom[on].tracking.recordedDays} distinct days</b> in this 30-day window. Longest
+              daily streak: <b>{geom[on].tracking.longestStreak} consecutive days</b>
+              {geom[on].tracking.streakStart &&
+                ` (${geom[on].tracking.streakStart} to ${geom[on].tracking.streakEnd}, India dates)`}
+              . Imported history does not count toward these figures.
+            </p>
           )}
           <div className="al-key">
             <span>

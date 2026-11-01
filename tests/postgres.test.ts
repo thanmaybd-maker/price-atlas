@@ -1108,6 +1108,74 @@ it('loads a bounded public history batch with retained timestamps and supports a
       expect(observation.observedAt).toBeLessThanOrEqual(Date.now());
 });
 
+it('features our distinct recorded days before imported history, repeated checks or service plans', async () => {
+  const now = Date.now();
+  const start = Math.floor((now + 19800000) / 86400000) * 86400000 - 19800000;
+  const template = (await store.history(productId, 30))[0];
+  expect(template).toBeTruthy();
+  const base = await store.findProduct(productId);
+  const cases = [
+    { id: 'showcase-four', days: 4, source: 'primary', category: 'phones', repeats: 1 },
+    { id: 'showcase-five', days: 5, source: 'primary', category: 'phones', repeats: 1 },
+    { id: 'showcase-archive', days: 12, source: 'wayback', category: 'phones', repeats: 1 },
+    { id: 'showcase-service', days: 9, source: 'primary', category: 'services', repeats: 1 },
+    { id: 'showcase-repeats', days: 3, source: 'primary', category: 'phones', repeats: 20 },
+  ];
+  try {
+    for (const fixture of cases) {
+      const product = { ...base, id: fixture.id, name: fixture.id, category: fixture.category };
+      await db.query('INSERT INTO atlas.products VALUES($1,$1,$2,$3)', [
+        fixture.id,
+        JSON.stringify(product),
+        now,
+      ]);
+      await db.query(
+        "INSERT INTO atlas.listings(id,product_id,store,external_id,url,evidence,next_check) VALUES($1,$1,'Amazon',$1,'https://www.amazon.in/dp/B09XS7JWHH','{}',$2)",
+        [fixture.id, now],
+      );
+      for (let day = 0; day < fixture.days; day++)
+        for (let check = 0; check < fixture.repeats; check++) {
+          const id = `${fixture.id}-${day}-${check}`,
+            at = start - day * 86400000 + check + 1;
+          const offer = {
+            ...template,
+            id,
+            productId: fixture.id,
+            observedAt: at,
+            source: fixture.source,
+            accepted: true,
+            stock: true,
+            currency: 'INR',
+            condition: 'new',
+            historyAllowed: true,
+          };
+          await db.query('INSERT INTO atlas.observations VALUES($1,$2,$2,$1,$3,$4,$5)', [
+            id,
+            fixture.id,
+            JSON.stringify(offer),
+            at,
+            now + 86400000,
+          ]);
+        }
+    }
+    const result = await store.historyOverview([], 30);
+    expect(result.products[0].id).toBe('showcase-five');
+    expect(result.products.findIndex((p) => p.id === 'showcase-four')).toBeLessThan(
+      result.products.findIndex((p) => p.id === 'showcase-repeats'),
+    );
+    expect(result.products.map((p) => p.id)).not.toContain('showcase-archive');
+    expect(result.products.map((p) => p.id)).not.toContain('showcase-service');
+    expect(
+      (await store.historyOverview(['showcase-archive'], 30)).history['showcase-archive'],
+    ).toHaveLength(12);
+  } finally {
+    const ids = cases.map((fixture) => fixture.id);
+    await db.query('DELETE FROM atlas.observations WHERE product_id=ANY($1::text[])', [ids]);
+    await db.query('DELETE FROM atlas.listings WHERE product_id=ANY($1::text[])', [ids]);
+    await db.query('DELETE FROM atlas.products WHERE id=ANY($1::text[])', [ids]);
+  }
+});
+
 it('a retailer block on Firecrawl basic proxy is retried once through stealth, within the cap', async () => {
   const saved = { ...process.env };
   Object.assign(process.env, {
