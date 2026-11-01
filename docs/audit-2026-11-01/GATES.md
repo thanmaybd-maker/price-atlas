@@ -28,8 +28,8 @@ Workspace: C:/Users/skc/Documents/Codex/price atlas. Preserve the existing paper
       EVIDENCE: Robu.in, MDComputers and Bookswagon primary pages inspected and linked in REPORT.md. These are candidate lanes, not implemented adapters or verified prices. Existing providers, permitted feeds/APIs and staged URL lists compared; source blocks remain explicit.
 - [x] G11: Required versus optional additions prioritized; current limitations and full execution brief retained.
       EVIDENCE: REPORT.md retains balanced 2500-product expansion, Gmail/push, FX, serviceability, recovery and seven actual days as unfinished requirements; no current feature was silently renamed complete. No skills installed or authored without a relevant deliverable.
-- [ ] G12: Changes independently verified, diff reviewed and release status reported accurately.
-      EVIDENCE: pending
+- [x] G12: Changes independently verified, diff reviewed and release status reported accurately.
+      EVIDENCE: Reviewed diff and visual captures. PR #9 merged as f274fe9 after both GitHub CI runs (41275993319, 41275990801) passed. Vercel production READY on that exact commit; live health returned 200 with database:true. A missing collection capability returned 400. Production 390px Dark settings had no page errors or overflow. The original Cetaphil/Amazon budget query returned one 59ml listing at a recorded INR179 item price via direct extraction; delivery is not established by that result. Render's new instance started its health listener and logged successful Amazon/Flipkart observations. Full findings and remaining acceptance requirements remain explicit in REPORT.md.
 - [x] G13: HyperFrames demo assessed after core journeys; any video work, usage limits or deferral reported explicitly.
       EVIDENCE: No HyperFrames project/video was created in this audit. Video remains a later brief deliverable after live data/account/recovery acceptance; usage was not checked and is unknown. CUDA training is inapplicable to this repository.
 

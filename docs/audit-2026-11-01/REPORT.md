@@ -52,3 +52,11 @@ Further required work: balanced resumable imports, server pagination and 2,500-p
 ## Verification
 
 See `GATES.md` and ignored `data/audit-*-20261101.*` outputs for current check results. Unit/browser fixtures do not create live recipients or prove market price changes. The real Telegram test is separately documented above. Publication and post-release checks are recorded in the ledger when observed.
+
+## Release verification
+
+[PR #9](https://github.com/thanmaybd-maker/price-atlas/pull/9) merged as `f274fe9` after both GitHub CI runs succeeded. Vercel production is READY on that exact revision. At 10:44 IST, live health returned HTTP 200, live mode and database connectivity; a collection request without the required capability returned HTTP 400. A production mobile Dark settings check recorded no page errors or horizontal overflow.
+
+The original `cetaphil facewash under 500` query scoped to Amazon now returned one real listing: **Cetaphil Gentle Skin Hydrating Face Wash 59ml**, recorded item price **INR179**, extracted directly from the retailer. This establishes that this query worked at the sampled time; it does not establish delivered price, future stock or success for every product. No notification was sent by this check. Render also reached **live** on the same revision; its new instance started its health listener and logged successful Amazon and Flipkart collection observations during rollout.
+
+Local verification remains **265 tests across 28 files**, successful typecheck/build and **21 passing browser scenarios**. All thirteen audit gates are recorded with evidence; the unfinished product and human-acceptance requirements above remain unfinished.
