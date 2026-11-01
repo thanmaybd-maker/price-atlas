@@ -65,3 +65,31 @@ export function FxNote({
     </span>
   );
 }
+
+/** Big INR estimate for a foreign price ("≈ ₹5,61,000"), falling back to the native price. */
+export function FxPrice({
+  minor,
+  currency,
+  fallback,
+}: {
+  minor: number;
+  currency: string;
+  fallback: string;
+}) {
+  const [ref, setRef] = useState<Reference | null | undefined>(undefined);
+  useEffect(() => {
+    if (!/^[A-Z]{3}$/.test(currency) || currency === 'INR') return;
+    let alive = true;
+    void load(currency).then((r) => alive && setRef(r));
+    return () => {
+      alive = false;
+    };
+  }, [currency]);
+  if (!ref) return <>{fallback}</>;
+  return (
+    <>
+      ≈ {inr(Math.round(minor * ref.rate))}
+      <span className="fx-native"> {fallback}</span>
+    </>
+  );
+}

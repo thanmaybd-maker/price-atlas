@@ -115,6 +115,9 @@ export async function fetchProductWithBudget(
 ) {
   const { store } = canonicalRetailUrl(url);
   const configured = { ...scraperConfig(), ...(timeoutMs ? { timeoutMs } : {}), ...overrides };
+  // One wall-clock budget for the whole chain (direct, TinyFish, paid), so a web request
+  // never outlives the 60 s serverless limit and leaves the page stuck on "Checking".
+  const deadline = Date.now() + Math.min(44000, Math.max(10000, (timeoutMs || 15000) * 2));
   let partial: ScrapedProduct | undefined;
   if (
     !skipDirect &&
@@ -136,7 +139,7 @@ export async function fetchProductWithBudget(
     try {
       const viaTinyFish = await fetchWithTinyFish(
         url,
-        Math.min(configured.timeoutMs || 25000, 25000),
+        Math.max(3000, Math.min(15000, deadline - Date.now() - 12000)),
       );
       if (viaTinyFish.itemPrice !== null) return viaTinyFish;
       partial ||= viaTinyFish;
@@ -160,7 +163,6 @@ export async function fetchProductWithBudget(
   }
   const provider = configured.transport;
   const keys = await availableCredentials(configured.apiKey, provider);
-  const deadline = Date.now() + Math.min(44000, (timeoutMs || 15000) * 2);
   let spent = 0,
     temporaryFailures = 0,
     first = true;

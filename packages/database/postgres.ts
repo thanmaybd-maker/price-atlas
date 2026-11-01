@@ -1,3 +1,4 @@
+import { tidyProduct } from '../domain/tidy';
 import { Pool, type PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
@@ -87,7 +88,7 @@ export async function catalog(): Promise<Product[]> {
     await postgres().query(
       "SELECT data FROM atlas.products p WHERE EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=p.id AND l.match_state<>'rejected') ORDER BY created_at DESC,id",
     )
-  ).rows.map((r) => r.data);
+  ).rows.map((r) => tidyProduct(r.data as Product));
 }
 export async function offers(productId?: string): Promise<Offer[]> {
   // Current offers, plus the latest recorded observation (14 days) for any accepted listing
@@ -115,8 +116,10 @@ export async function offers(productId?: string): Promise<Offer[]> {
   });
 }
 export async function findProduct(id: string) {
-  return (await postgres().query('SELECT data FROM atlas.products WHERE id=$1 OR slug=$1', [id]))
-    .rows[0]?.data as Product | undefined;
+  const data = (
+    await postgres().query('SELECT data FROM atlas.products WHERE id=$1 OR slug=$1', [id])
+  ).rows[0]?.data as Product | undefined;
+  return data && tidyProduct(data);
 }
 export async function reusableListing(url: string) {
   const identity = canonicalRetailUrl(url);

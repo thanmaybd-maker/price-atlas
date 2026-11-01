@@ -16,3 +16,9 @@ it('asks retailer CDNs for card-sized images', () => {
   expect(sizedImage('https://example.com/a.jpg', 300)).toBe('https://example.com/a.jpg');
   expect(sizedImage(undefined, 300)).toBeUndefined();
 });
+
+it('serves B&H images from its public CDN instead of the hot-link-blocked host', () => {
+  expect(sizedImage('https://www.bhphotovideo.com/images/fb/asus_rtx_1909629.jpg', 400)).toBe(
+    'https://static.bhphoto.com/images/fb/asus_rtx_1909629.jpg',
+  );
+});

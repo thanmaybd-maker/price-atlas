@@ -100,7 +100,7 @@ import {
   nearMisses,
   parseQueryIntent,
 } from '../../../packages/domain/query-intent';
-import { FxNote } from './fx-note';
+import { FxNote, FxPrice } from './fx-note';
 import { GeminiBadge, GeminiFinds } from './gemini-finds';
 type User = {
   id: string;
@@ -866,13 +866,26 @@ export default function Atlas({
                           : 'No recent price'}
               </span>
               <strong className="card-price">
-                {p.attributes['Source price'] && !po.length
-                  ? p.attributes['Source price']
-                  : money(
-                      known?.paise ??
-                        lastObserved?.itemPrice ??
-                        (p.basePrice && p.basePrice > 0 ? p.basePrice : null),
+                {p.attributes['Source price'] &&
+                !po.length &&
+                p.attributes['Source currency'] &&
+                p.attributes['Source currency'] !== 'INR' ? (
+                  <FxPrice
+                    minor={Math.round(
+                      Number(String(p.attributes['Source price']).replace(/[^0-9.]/g, '')) * 100,
                     )}
+                    currency={p.attributes['Source currency']}
+                    fallback={p.attributes['Source price']}
+                  />
+                ) : p.attributes['Source price'] && !po.length ? (
+                  p.attributes['Source price']
+                ) : (
+                  money(
+                    known?.paise ??
+                      lastObserved?.itemPrice ??
+                      (p.basePrice && p.basePrice > 0 ? p.basePrice : null),
+                  )
+                )}
               </strong>
               {p.attributes['Source price'] &&
                 !po.length &&
@@ -892,8 +905,11 @@ export default function Atlas({
           </div>
           <div className="card-bottom">
             <span>
-              <i className="store-dot" /> {Math.max(r.offers.length, itemRank.offers.length)}{' '}
-              available offers
+              <i className="store-dot" />{' '}
+              {(() => {
+                const n = Math.max(r.offers.length, itemRank.offers.length);
+                return n === 0 ? 'No current offer' : `${n} available offer${n === 1 ? '' : 's'}`;
+              })()}
             </span>
             <button
               className={compare.includes(p.id) ? 'compare-button active' : 'compare-button'}
@@ -1599,9 +1615,11 @@ export default function Atlas({
                         )}
                       </ul>
                     )}
-                    <Link prefetch={false} className="primary" href="/search">
-                      Clear filters <ArrowRight size={16} />
-                    </Link>
+                    {!lookup.busy && !/^https?:\/\//i.test(searchText) && (
+                      <Link prefetch={false} className="primary" href="/search">
+                        Clear filters <ArrowRight size={16} />
+                      </Link>
+                    )}
                   </div>
                 }
               />
@@ -2158,9 +2176,22 @@ export default function Atlas({
               </span>
               <div>
                 <strong>
-                  {p.attributes['Source price'] && !po.length
-                    ? p.attributes['Source price']
-                    : money(itemRank.lowest ?? lastObserved?.itemPrice)}
+                  {p.attributes['Source price'] &&
+                  !po.length &&
+                  p.attributes['Source currency'] &&
+                  p.attributes['Source currency'] !== 'INR' ? (
+                    <FxPrice
+                      minor={Math.round(
+                        Number(String(p.attributes['Source price']).replace(/[^0-9.]/g, '')) * 100,
+                      )}
+                      currency={p.attributes['Source currency']}
+                      fallback={p.attributes['Source price']}
+                    />
+                  ) : p.attributes['Source price'] && !po.length ? (
+                    p.attributes['Source price']
+                  ) : (
+                    money(itemRank.lowest ?? lastObserved?.itemPrice)
+                  )}
                 </strong>
                 <span className="status-pill">
                   {itemRank.winners.length > 1
