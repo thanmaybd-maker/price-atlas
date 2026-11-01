@@ -1,6 +1,7 @@
 // Discord price alerts through a channel webhook the user pastes in Settings.
 // Free, no bot or domain needed. The URL is a secret: stored server-side, never echoed back.
 import { postgres } from '../database/postgres';
+import { publicOrigin } from './origin';
 import { money } from '../domain/index';
 
 const WEBHOOK =
@@ -123,7 +124,7 @@ export async function sendDiscordTest(userId: string, f: typeof fetch = fetch) {
 /** Sends delivered in-app alerts created after the user connected Discord, once each. */
 export async function deliverDiscord(f: typeof fetch = fetch) {
   await ensureTables();
-  const origin = process.env.EMAIL_LINK_ORIGIN || process.env.APP_ORIGIN || '';
+  const origin = publicOrigin();
   const due = (
     await postgres().query(
       `SELECT n.id,n.data,c.webhook_url FROM atlas.notifications n

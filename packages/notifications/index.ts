@@ -1,3 +1,4 @@
+import { publicOrigin } from './origin';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Resend } from 'resend';
 export function emailDeliveryEnabled() {
@@ -46,7 +47,7 @@ export function verifyUnsubscribe(token: string, now = Date.now()) {
   }
 }
 export function alertText(message: AlertMessage) {
-  const origin = process.env.EMAIL_LINK_ORIGIN || process.env.APP_ORIGIN;
+  const origin = publicOrigin();
   if (!origin || new URL(origin).protocol !== 'https:')
     throw new Error('Email links need an HTTPS APP_ORIGIN.');
   const unsubscribe = `${origin}/unsubscribe?token=${unsubscribeToken(message.userId, message.createdAt + 90 * 86400000)}`;

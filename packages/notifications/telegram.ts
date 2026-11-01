@@ -1,3 +1,4 @@
+import { publicOrigin } from './origin';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { postgres, tx, offers } from '../database/postgres';
 import { money, rank, type Rule } from '../domain/index';
@@ -279,7 +280,7 @@ export async function deliverTelegram(sender: TelegramSender = sendTelegram) {
       );
       continue;
     }
-    const origin = process.env.EMAIL_LINK_ORIGIN || process.env.APP_ORIGIN;
+    const origin = publicOrigin();
     if (!origin || !origin.startsWith('https://')) {
       await postgres().query(
         "UPDATE atlas.telegram_deliveries SET state='pending',next_attempt=$2,last_error='link_configuration' WHERE notification_id=$1",
