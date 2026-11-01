@@ -21,7 +21,7 @@ import {
 } from '../providers/search';
 import { livePolicy } from '../providers/live';
 import { reserveSource, fetchProductWithBudget } from './index';
-import { STORE_NAMES, type Store } from '../domain/index';
+import { STORE_NAMES, eligible, type Store } from '../domain/index';
 import { retailers, storesForCategory, retailerSearchUrl } from '../domain/retailers';
 import { categoryFor } from '../matching/index';
 import { MAX_PAID_CREDITS_PER_REQUEST } from './credit-budget';
@@ -57,7 +57,7 @@ export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
     q,
     url,
     key: createHash('sha256')
-      .update(`retailers-v6:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
+      .update(`retailers-v7:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
       .digest('hex'),
   };
 }
@@ -71,13 +71,18 @@ export async function lookupStatus(value: string, store: Store | 'all' = 'all') 
   ).rows[0];
   if (!row) return null;
   const data = row.data as LookupData;
+  const requestedStore = store === 'all' ? parseQueryIntent(value).store : store;
   const products =
     row.state === 'complete'
       ? (await Promise.all((data.productIds || []).map((id) => findProduct(id)))).filter(Boolean)
       : [];
   const current =
     row.state === 'complete'
-      ? (await offers()).filter((o) => (data.productIds || []).includes(o.productId))
+      ? (await offers()).filter(
+          (o) =>
+            (data.productIds || []).includes(o.productId) &&
+            (!requestedStore || o.store === requestedStore),
+        )
       : [];
   return { state: row.state, ...data, products, offers: current, cached: true };
 }
@@ -88,6 +93,7 @@ export async function discoverProducts(
 ) {
   const { q, url, key } = lookupIdentity(value, scope);
   const intent = parseQueryIntent(q);
+  const effectiveScope = scope === 'all' ? intent.store || scope : scope;
   const searchPhrase = intent.text || intent.category?.replace(/-/g, ' ') || q;
   const claimed = await tx(async (c) => {
     await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`search:${key}`]);
@@ -106,6 +112,7 @@ export async function discoverProducts(
   });
   if (!claimed) return lookupStatus(q, scope);
   const data: LookupData = { productIds: [], candidates: [], sources: [] };
+  let plannedStores: Store[] = [];
   let networkAllowed = false;
   const beforeNetwork = async () => {
     if (networkAllowed) return;
@@ -160,32 +167,47 @@ export async function discoverProducts(
       data.productIds.push(await importUrl(url));
       data.sources.push({ store: identity.store, method: 'product-page', status: 'complete' });
     } else {
-      const stores =
-        scope === 'all'
-          ? storesForCategory(intent.category || categoryFor(searchPhrase, {}))
-          : [scope];
-      data.searchLinks = stores.map((store) => ({
-        store,
-        url: retailerSearchUrl(store, searchPhrase),
-      }));
       const currentOffers = await offers();
       const existing = applyIntent(await catalog(), currentOffers, intent, matchesQuery, {
-        store: scope,
+        store: effectiveScope,
       }).map((row) => row.p);
       const scoped = existing.filter(
         (p) =>
-          scope === 'all' ||
-          p.attributes.Retailer === scope ||
-          currentOffers.some((o) => o.productId === p.id && o.store === scope),
+          effectiveScope === 'all' ||
+          p.attributes.Retailer === effectiveScope ||
+          currentOffers.some((o) => o.productId === p.id && o.store === effectiveScope),
       );
+      const inferredCategory = categoryFor(searchPhrase, {});
+      plannedStores =
+        effectiveScope === 'all'
+          ? storesForCategory(
+              inferredCategory !== 'other'
+                ? inferredCategory
+                : intent.category || scoped[0]?.category || 'other',
+            )
+          : [effectiveScope];
+      data.searchLinks = plannedStores.map((store) => ({
+        store,
+        url: retailerSearchUrl(store, searchPhrase),
+      }));
       data.productIds.push(...scoped.slice(0, 12).map((p) => p.id));
-      if (scoped.length && !options.searchMore)
+      const recordedStores = new Set(
+        currentOffers
+          .filter((o) => data.productIds.includes(o.productId) && eligible(o))
+          .map((o) => o.store),
+      );
+      const uncheckedStores = plannedStores.filter(
+        (store) => options.searchMore || !recordedStores.has(store),
+      );
+      for (const store of plannedStores.filter((store) => !uncheckedStores.includes(store)))
+        data.sources.push({ store, method: 'recorded-catalog', status: 'complete' });
+      if (scoped.length)
         data.message =
-          'Showing recorded catalog matches. Open a direct retailer product URL to verify its latest details.';
-      else {
+          'Showing recorded catalog matches and retailer check outcomes. Open a retailer link to verify checkout details.';
+      if (uncheckedStores.length) {
         await beforeNetwork();
         await Promise.all(
-          stores.map(async (store) => {
+          uncheckedStores.map(async (store) => {
             let candidates: SearchCandidate[] = [],
               method = 'direct';
             let blocked = false;
@@ -251,7 +273,9 @@ export async function discoverProducts(
                   const p = await findProduct(id);
                   if (
                     p &&
-                    applyIntent([p], await offers(), intent, matchesQuery, { store: scope }).length
+                    applyIntent([p], await offers(), intent, matchesQuery, {
+                      store: effectiveScope,
+                    }).length
                   ) {
                     data.productIds.push(id);
                     imported = true;
@@ -311,6 +335,9 @@ export async function discoverProducts(
     }
   }
   data.productIds = [...new Set(data.productIds)];
+  for (const store of plannedStores)
+    if (!data.sources.some((source) => source.store === store))
+      data.sources.push({ store, method: 'not-started', status: 'not_checked' });
   if (url && !data.sources.length) {
     const { store } = canonicalRetailUrl(url);
     data.sources.push({

@@ -40,11 +40,13 @@ export function retailerOutcomes(
               ? 'Discovery observed · price unverified'
               : state === 'complete'
                 ? 'Metadata observed · no verified price'
-                : state
-                  ? `Not checked successfully · ${state.replaceAll('_', ' ')}`
-                  : pending
-                    ? 'Waiting for check results'
-                    : 'Not checked',
+                : state === 'not_checked'
+                  ? 'Not checked'
+                  : state
+                    ? `Not checked successfully · ${state.replaceAll('_', ' ')}`
+                    : pending
+                      ? 'Waiting for check results'
+                      : 'Not checked',
       at: null,
       method: source?.method || 'No source observation',
     };
