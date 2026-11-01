@@ -11,6 +11,7 @@ import {
 } from '../database/postgres';
 import { matchesQuery, normalizeQuery } from '../domain/search';
 import { discoveryConflict } from '../domain/discovery-guard';
+import { parseQueryIntent, applyIntent } from '../domain/query-intent';
 import { canonicalRetailUrl, scrapeSearchHtml, ScrapeError } from '../providers/scraper';
 import {
   parseSearchHtml,
@@ -56,7 +57,7 @@ export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
     q,
     url,
     key: createHash('sha256')
-      .update(`retailers-v5:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
+      .update(`retailers-v6:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
       .digest('hex'),
   };
 }
@@ -86,6 +87,8 @@ export async function discoverProducts(
   options: { searchMore?: boolean; beforeNetwork?: () => Promise<void> } = {},
 ) {
   const { q, url, key } = lookupIdentity(value, scope);
+  const intent = parseQueryIntent(q);
+  const searchPhrase = intent.text || intent.category?.replace(/-/g, ' ') || q;
   const claimed = await tx(async (c) => {
     await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`search:${key}`]);
     const prior = (
@@ -157,10 +160,18 @@ export async function discoverProducts(
       data.productIds.push(await importUrl(url));
       data.sources.push({ store: identity.store, method: 'product-page', status: 'complete' });
     } else {
-      const stores = scope === 'all' ? storesForCategory(categoryFor(q, {})) : [scope];
-      data.searchLinks = stores.map((store) => ({ store, url: retailerSearchUrl(store, q) }));
-      const existing = (await catalog()).filter((p) => matchesQuery(p, q));
-      const currentOffers = scope === 'all' ? [] : await offers();
+      const stores =
+        scope === 'all'
+          ? storesForCategory(intent.category || categoryFor(searchPhrase, {}))
+          : [scope];
+      data.searchLinks = stores.map((store) => ({
+        store,
+        url: retailerSearchUrl(store, searchPhrase),
+      }));
+      const currentOffers = await offers();
+      const existing = applyIntent(await catalog(), currentOffers, intent, matchesQuery, {
+        store: scope,
+      }).map((row) => row.p);
       const scoped = existing.filter(
         (p) =>
           scope === 'all' ||
@@ -184,7 +195,7 @@ export async function discoverProducts(
               try {
                 if (!retailers[store].discoveryFirst) {
                   await reserveSource(store, { transport: 'direct' });
-                  candidates = parseSearchHtml(await scrapeSearchHtml(q, store), store);
+                  candidates = parseSearchHtml(await scrapeSearchHtml(searchPhrase, store), store);
                 }
               } catch (e) {
                 blocked = e instanceof ScrapeError && e.code === 'blocked';
@@ -198,7 +209,7 @@ export async function discoverProducts(
                 method = 'web-search';
                 try {
                   await reserveSource(store, { transport: 'direct' });
-                  candidates = await duckDuckGoProducts(q, store);
+                  candidates = await duckDuckGoProducts(searchPhrase, store);
                 } catch (e) {
                   blocked ||= e instanceof ScrapeError && e.code === 'blocked';
                   if (
@@ -211,9 +222,9 @@ export async function discoverProducts(
               if (!candidates.length && Date.now() < deadline - 16000) {
                 method = 'web-search-rss';
                 await reserveSource(store, { transport: 'direct' });
-                candidates = await bingProducts(q, store);
+                candidates = await bingProducts(searchPhrase, store);
               }
-              const words = normalizeQuery(q)
+              const words = normalizeQuery(searchPhrase)
                 .split(' ')
                 .filter((w) => w.length > 2 && !['the', 'and', 'for', 'buy', 'price'].includes(w));
               const relevant = candidates
@@ -226,7 +237,8 @@ export async function discoverProducts(
                 }))
                 .filter(
                   ({ c, score }) =>
-                    score >= 0.6 || matchesQuery({ name: c.title, brand: '', subtitle: '' }, q),
+                    score >= 0.6 ||
+                    matchesQuery({ name: c.title, brand: '', subtitle: '' }, searchPhrase),
                 )
                 .sort((a, b) => b.score - a.score)
                 .map(({ c }) => c);
@@ -237,7 +249,10 @@ export async function discoverProducts(
                 try {
                   const id = await importUrl(selected.url);
                   const p = await findProduct(id);
-                  if (p && matchesQuery(p, q)) {
+                  if (
+                    p &&
+                    applyIntent([p], await offers(), intent, matchesQuery, { store: scope }).length
+                  ) {
                     data.productIds.push(id);
                     imported = true;
                     break;
@@ -286,6 +301,14 @@ export async function discoverProducts(
       error instanceof ScrapeError
         ? error.message
         : 'Product details could not be verified. Try the direct retailer product URL.';
+    if (url) {
+      const { store } = canonicalRetailUrl(url);
+      data.sources.push({
+        store,
+        method: 'product-page',
+        status: error instanceof ScrapeError ? error.code : 'unavailable',
+      });
+    }
   }
   data.productIds = [...new Set(data.productIds)];
   if (url && !data.sources.length) {

@@ -1,5 +1,9 @@
 # Current status
 
+## 1 November project audit
+
+Current audit findings, source research, real Telegram receipt evidence and remaining requirements are recorded in [the audit report](./audit-2026-11-01/REPORT.md). Its [acceptance ledger](./audit-2026-11-01/GATES.md) distinguishes audit checks from unfinished project features. Earlier dated entries below remain historical snapshots.
+
 ## 31 October Discord alerts, Frankfurter FX live verification and health sync
 
 Discord incoming webhooks are implemented and deployed. Settings supports connecting a Discord channel webhook URL with immediate validation, test alert dispatch, and once-only target alert delivery. Deliveries use PostgreSQL migration `012_discord` with Row Level Security and are processed by both the Vercel target creation `after()` hook and the hourly Render worker.

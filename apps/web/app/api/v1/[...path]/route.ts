@@ -382,8 +382,10 @@ async function handler(req: NextRequest) {
     if (req.method === 'POST' && path[0] === 'collect-assist' && data.isLive()) {
       // Firecrawl fetch on behalf of a key-less worker, only for a job running right now;
       // the shared daily credit budget still applies.
-      const b = z.object({ jobId: z.string().min(8).max(100) }).parse(await req.json());
-      const product = await assistCollection(b.jobId);
+      const b = z
+        .object({ jobId: z.string().min(8).max(100), assistToken: z.string().uuid() })
+        .parse(await req.json());
+      const product = await assistCollection(b.jobId, b.assistToken);
       return json({ product });
     }
     if (req.method === 'POST' && path[0] === 'discovery' && data.isLive()) {
