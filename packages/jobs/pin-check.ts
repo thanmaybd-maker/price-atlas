@@ -29,8 +29,11 @@ export type PinCheck = {
   reason?: string;
 };
 
-export async function livePinCheck(userId: string, rule: Rule): Promise<PinCheck> {
-  const started = Date.now();
+export async function livePinCheck(
+  userId: string,
+  rule: Rule,
+  started = Date.now(),
+): Promise<PinCheck> {
   const listing = (
     await postgres().query(
       "SELECT id,url,store FROM atlas.listings WHERE product_id=$1 AND match_state='accepted' AND ($2='all' OR store=$2) ORDER BY last_success DESC NULLS LAST LIMIT 1",

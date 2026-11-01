@@ -682,6 +682,7 @@ async function handler(req: NextRequest) {
     }
     if (path[0] === 'rules') {
       if (req.method === 'POST' || req.method === 'PATCH') {
+        const pinnedAt = Date.now();
         const rule = await data.saveRule(user.id, ruleSchema.parse(await req.json()), false);
         // Pinning checks the store live, so an alert (or a "now watching" note) arrives in
         // seconds instead of after the hourly schedule. Bounded per user.
@@ -690,7 +691,7 @@ async function handler(req: NextRequest) {
           rule.enabled &&
           !(await limited(`pin-check:${user.id}`, 6).catch(() => false))
         ) {
-          const check = await livePinCheck(user.id, rule).catch(() => null);
+          const check = await livePinCheck(user.id, rule, pinnedAt).catch(() => null);
           if (check) return json({ rule, check }, 201);
         }
         try {
