@@ -325,7 +325,7 @@ export async function discoverProducts(
               const similar = candidates.filter(
                 (c) => searchCards.has(c.url) && !relevant.includes(c),
               );
-              const carded = [...exactCards, ...similar].slice(0, 16);
+              const carded = [...exactCards, ...similar].slice(0, 24);
               const loose = new Set(similar.map((c) => c.url));
               const toVerify = relevant
                 .filter((c) => !searchCards.has(c.url))
