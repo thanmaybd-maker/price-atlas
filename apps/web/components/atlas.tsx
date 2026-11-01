@@ -292,6 +292,14 @@ export default function Atlas({
   const searchText = params.get('q') || '';
   const searchStore = params.get('store') || 'all';
   const exactSearch = params.get('exact') === '1';
+  useEffect(() => {
+    const ready = (event: Event) => {
+      if ((event as CustomEvent<{ query: string }>).detail?.query === searchText)
+        setLookupVersion((v) => v + 1);
+    };
+    window.addEventListener('atlas:research-ready', ready);
+    return () => window.removeEventListener('atlas:research-ready', ready);
+  }, [searchText]);
   // Gemini search assist: a validated spelling/intent fix of the shopper's own words.
   const [assist, setAssist] = useState<{
     for: string;
@@ -1387,9 +1395,15 @@ export default function Atlas({
                 onDone={() => setBloom(false)}
               />
             )}
-            {searchText && !/^https?:\/\//i.test(searchText) && filtered.length < 3 && (
-              <GeminiFinds key={searchText} query={searchText} />
-            )}
+            {searchText &&
+              !/^https?:\/\//i.test(searchText) &&
+              effectiveStore === 'all' &&
+              (filtered.length < 3 ||
+                new Set(
+                  offers
+                    .filter((o) => eligible(o) && shownIds.has(o.productId))
+                    .map((o) => o.store),
+                ).size < 2) && <GeminiFinds key={searchText} query={searchText} />}
             {filtered.length ? (
               <div className="product-grid">
                 {filtered
