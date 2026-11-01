@@ -73,3 +73,28 @@ it('reads product links and titles from a retailer search page in order', () => 
     },
   ]);
 });
+
+import { amazonSearchCards } from '../packages/providers/tinyfish';
+describe('Amazon search cards', () => {
+  it('reads each priced card on its own and skips unpriced ones', () => {
+    const html = `
+      <div data-component-type="s-search-result" data-asin="B0BZP2H373">
+        <h2>Sony</h2><h2>WH-1000XM5 Wireless Headphones - Blue</h2>
+        <img class="s-image" src="https://m.media-amazon.com/images/I/a.jpg">
+        <span class="a-price"><span class="a-offscreen">₹19,989</span></span>
+        <span class="a-price a-text-price"><span class="a-offscreen">₹34,990</span></span>
+      </div>
+      <div data-component-type="s-search-result" data-asin="B0C33XXS56">
+        <h2>Sony WF-1000XM5 Earbuds</h2>
+      </div>`;
+    const cards = amazonSearchCards(html, 1);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      externalId: 'B0BZP2H373',
+      title: 'Sony WH-1000XM5 Wireless Headphones - Blue',
+      itemPrice: 1998900,
+      stock: true,
+      imageUrl: 'https://m.media-amazon.com/images/I/a.jpg',
+    });
+  });
+});

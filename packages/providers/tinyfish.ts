@@ -6,6 +6,7 @@
 // is not an add-on fee, offer or EMI figure. Anything ambiguous yields no price.
 import { canonicalRetailUrl, parseINR, type ScrapedProduct } from './scraper';
 import { variantAttributes } from '../domain/variant-guard';
+import { load } from 'cheerio';
 
 export const tinyFishConfigured = () => Boolean(process.env.TINYFISH_API_KEY);
 
@@ -148,6 +149,87 @@ export function parseTinyFishSearch(
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/**
+ * Priced Amazon search-result cards from the rendered results page. Each card carries its own
+ * ASIN, title, image and the price Amazon prints on that card, so no value is matched across
+ * cards. Cards without a printed price are skipped (they get a product-page check instead).
+ */
+export function amazonSearchCards(html: string, observedAt = Date.now()): ScrapedProduct[] {
+  const $ = load(html);
+  const out: ScrapedProduct[] = [];
+  const seen = new Set<string>();
+  $('[data-component-type="s-search-result"][data-asin]').each((_, e) => {
+    const card = $(e);
+    const asin = card.attr('data-asin') || '';
+    if (!/^[A-Z0-9]{10}$/.test(asin) || seen.has(asin)) return;
+    const headings = [
+      ...new Set(
+        card
+          .find('h2')
+          .toArray()
+          .map((h) => $(h).text().replace(/\s+/g, ' ').trim())
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => b.length - a.length);
+    const name = headings[0] || '';
+    const brand = headings
+      .slice(1)
+      .find((h) => h.length < 80 && !name.toLowerCase().includes(h.toLowerCase()));
+    const title = (brand ? `${brand} ${name}` : name).slice(0, 500);
+    const priceText = card.find('.a-price:not(.a-text-price) .a-offscreen').first().text();
+    const itemPrice = parseINR(priceText);
+    if (title.length < 4 || !itemPrice) return;
+    seen.add(asin);
+    const image = card.find('img.s-image').attr('src') || null;
+    const identity = canonicalRetailUrl(`https://www.amazon.in/dp/${asin}`);
+    out.push({
+      ...identity,
+      title,
+      imageUrl: image && /^https:\/\//.test(image) ? image : null,
+      itemPrice,
+      shipping: null,
+      charges: 0,
+      stock: true,
+      condition: 'new',
+      seller: '',
+      attributes: variantAttributes(title, { 'Fetch method': 'Amazon search results (TinyFish)' }),
+      observedAt,
+      parserVersion: 'amazon-search-card-v1',
+      status: 'VERIFIED',
+    });
+  });
+  return out;
+}
+
+/** A retailer's rendered search results page as HTML through TinyFish, or null. */
+export async function tinyFishSearchHtml(
+  searchUrl: string,
+  timeoutMs = 20000,
+  includeSelectors?: string[],
+  f: typeof fetch = fetch,
+): Promise<string | null> {
+  const key = process.env.TINYFISH_API_KEY;
+  if (!key) return null;
+  const res = await f('https://api.fetch.tinyfish.ai', {
+    method: 'POST',
+    headers: { 'X-API-Key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      urls: [searchUrl],
+      format: 'html',
+      ttl: 1800,
+      per_url_timeout_ms: timeoutMs,
+      ...(includeSelectors ? { include_selectors: includeSelectors } : {}),
+    }),
+    signal: AbortSignal.timeout(timeoutMs + 5000),
+  });
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
+  const body = (await res.json()) as { results?: { text?: string }[] };
+  return body.results?.[0]?.text || null;
 }
 
 export async function tinyFishSearch(
