@@ -21,6 +21,7 @@ import {
 } from '../providers/search';
 import { livePolicy } from '../providers/live';
 import { reserveSource, fetchProductWithBudget } from './index';
+import { tinyFishConfigured, tinyFishSearch } from '../providers/tinyfish';
 import { STORE_NAMES, eligible, type Store } from '../domain/index';
 import { retailers, storesForCategory, retailerSearchUrl } from '../domain/retailers';
 import { categoryFor } from '../matching/index';
@@ -228,7 +229,22 @@ export async function discoverProducts(
                 if (agentLeads.length) {
                   candidates = agentLeads;
                   method = 'antigravity-research-cache';
-                } else if (!retailers[store].discoveryFirst) {
+                }
+                // The store's own search page through TinyFish (free tier, real browser):
+                // many listings per store instead of one or two.
+                if (candidates.length < 6 && tinyFishConfigured()) {
+                  const listed = (await tinyFishSearch(
+                    retailerSearchUrl(store, searchPhrase),
+                    store,
+                    Math.max(5000, Math.min(20000, deadline - Date.now() - 20000)),
+                  ).catch(() => [])) as SearchCandidate[];
+                  if (listed.length) {
+                    const known = new Set(candidates.map((c) => c.url));
+                    candidates = [...candidates, ...listed.filter((c) => !known.has(c.url))];
+                    method = agentLeads.length ? method : 'tinyfish-search';
+                  }
+                }
+                if (!candidates.length && !retailers[store].discoveryFirst) {
                   await reserveSource(store, { transport: 'direct' });
                   candidates = parseSearchHtml(await scrapeSearchHtml(searchPhrase, store), store);
                 }
@@ -277,33 +293,30 @@ export async function discoverProducts(
                 )
                 .sort((a, b) => b.score - a.score)
                 .map(({ c }) => c);
-              data.candidates.push(...relevant.slice(0, 6));
+              data.candidates.push(...relevant.slice(0, 10));
               let imported = false;
               let failure: unknown;
-              for (const selected of relevant.slice(0, researched ? 4 : 2)) {
-                try {
+              // Verify several listings per store in parallel (each is a real product-page
+              // read) so one search returns many products across retailers.
+              const perStore = effectiveScope === 'all' ? 4 : 10;
+              const settled = await Promise.allSettled(
+                relevant.slice(0, perStore).map(async (selected) => {
+                  if (Date.now() > deadline - 8000) return null;
                   const id = await importUrl(selected.url);
                   const p = await findProduct(id);
-                  if (
-                    p &&
+                  return p &&
                     applyIntent([p], await offers(), intent, matchesQuery, {
                       store: effectiveScope,
                     }).length
-                  ) {
-                    data.productIds.push(id);
-                    imported = true;
-                    if (!researched) break;
-                  }
-                } catch (error) {
-                  failure = error;
-                  if (
-                    error instanceof ScrapeError &&
-                    ['daily_budget', 'monthly_budget', 'rate_limited', 'lookup_timeout'].includes(
-                      error.code,
-                    )
-                  )
-                    break;
-                }
+                    ? id
+                    : null;
+                }),
+              );
+              for (const r of settled) {
+                if (r.status === 'fulfilled' && r.value) {
+                  data.productIds.push(r.value);
+                  imported = true;
+                } else if (r.status === 'rejected') failure = r.reason;
               }
               data.sources.push({
                 store,
