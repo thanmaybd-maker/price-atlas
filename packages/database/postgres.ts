@@ -190,7 +190,11 @@ export async function personal(userId: string) {
   return tx(
     async (c) => ({
       watches: (await c.query('SELECT * FROM atlas.watches ORDER BY created_at DESC')).rows,
-      rules: (await c.query('SELECT data FROM atlas.rules')).rows.map((r) => r.data as Rule),
+      rules: (
+        await c.query(
+          "SELECT data FROM atlas.rules WHERE NOT coalesce((data->>'archived')::boolean,false)",
+        )
+      ).rows.map((r) => r.data as Rule),
       notifications: (
         await c.query(
           'SELECT id,rule_id,data,state,email_state,created_at FROM atlas.notifications ORDER BY created_at DESC LIMIT 100',
@@ -262,7 +266,16 @@ export async function saveRule(userId: string, input: RuleInput, deferEvaluation
 }
 export async function deleteRule(userId: string, id: string) {
   return tx(async (c) => {
-    await c.query('DELETE FROM atlas.rules WHERE id=$1', [id]);
+    // A target that already alerted is archived, not deleted: deleting it would cascade
+    // away its alert (history) and any Telegram/Discord copy still being sent.
+    const alerted = await c.query('SELECT 1 FROM atlas.notifications WHERE rule_id=$1 LIMIT 1', [
+      id,
+    ]);
+    if (alerted.rows.length)
+      await c.query(`UPDATE atlas.rules SET data=data||'{"archived":true}'::jsonb WHERE id=$1`, [
+        id,
+      ]);
+    else await c.query('DELETE FROM atlas.rules WHERE id=$1', [id]);
   }, userId);
 }
 export async function preferences(userId: string, enabled: boolean, emailEnabled?: boolean) {
@@ -368,7 +381,7 @@ export async function importScraped(
     const tracked =
       (
         await c.query(
-          "SELECT 1 FROM atlas.rules WHERE product_id=$1 AND (data->>'enabled')::boolean LIMIT 1",
+          "SELECT 1 FROM atlas.rules WHERE product_id=$1 AND (data->>'enabled')::boolean AND NOT coalesce((data->>'archived')::boolean,false) LIMIT 1",
           [productId],
         )
       ).rows.length > 0;
@@ -498,6 +511,7 @@ export async function evaluateProduct(productId: string) {
     );
     for (const row of rules.rows) {
       const rule = row.data as Rule;
+      if ((rule as Rule & { archived?: boolean }).archived) continue;
       const result = evaluate(rule, current);
       await c.query('UPDATE atlas.rules SET data=$1 WHERE id=$2', [result.state, rule.id]);
       if (result.trigger)
@@ -697,7 +711,7 @@ export async function collect(runKey = `live-${Math.floor(Date.now() / 60000)}`)
     const due = await c.query(
       // Products someone saved or set a target on (and the demo cohort) are checked at least
       // daily even when their catalog cadence is weekly, so their 7-day history has no holes.
-      "SELECT l.id,l.url,l.catalog_interval_minutes,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean) AS tracked,(EXISTS(SELECT 1 FROM atlas.watches w WHERE w.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.products p WHERE p.id=l.product_id AND p.data->>'name' ~* $3)) AS daily FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE s.paused=0 AND l.match_state='accepted' AND (l.next_check<=$1 OR ((EXISTS(SELECT 1 FROM atlas.watches w WHERE w.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.products p WHERE p.id=l.product_id AND p.data->>'name' ~* $3)) AND coalesce(l.last_success,0)<$2 AND l.next_check>$1)) AND NOT EXISTS(SELECT 1 FROM atlas.jobs j WHERE j.payload->>'listingId'=l.id AND j.state IN ('pending','running')) ORDER BY tracked DESC,daily DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
+      "SELECT l.id,l.url,l.catalog_interval_minutes,EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id AND (r.data->>'enabled')::boolean AND NOT coalesce((r.data->>'archived')::boolean,false)) AS tracked,(EXISTS(SELECT 1 FROM atlas.watches w WHERE w.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.products p WHERE p.id=l.product_id AND p.data->>'name' ~* $3)) AS daily FROM atlas.listings l JOIN atlas.provider_state s ON s.store=l.store WHERE s.paused=0 AND l.match_state='accepted' AND (l.next_check<=$1 OR ((EXISTS(SELECT 1 FROM atlas.watches w WHERE w.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.rules r WHERE r.product_id=l.product_id) OR EXISTS(SELECT 1 FROM atlas.products p WHERE p.id=l.product_id AND p.data->>'name' ~* $3)) AND coalesce(l.last_success,0)<$2 AND l.next_check>$1)) AND NOT EXISTS(SELECT 1 FROM atlas.jobs j WHERE j.payload->>'listingId'=l.id AND j.state IN ('pending','running')) ORDER BY tracked DESC,daily DESC,l.next_check LIMIT 100 FOR UPDATE OF l SKIP LOCKED",
       [now, now - 22 * 3600000, process.env.DAILY_COHORT_PATTERN || '^foxtale'],
     );
     for (const l of due.rows) {

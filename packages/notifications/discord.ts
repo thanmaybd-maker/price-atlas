@@ -40,29 +40,79 @@ export function ensureTables() {
   return ensured;
 }
 
-export async function postDiscord(url: string, content: string, f: typeof fetch = fetch) {
-  let res = await f(`${url}?wait=true`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, username: 'Price Atlas', allowed_mentions: { parse: [] } }),
-    signal: AbortSignal.timeout(10000),
-    redirect: 'error',
+type Embed = {
+  title?: string;
+  url?: string;
+  description?: string;
+  color?: number;
+  fields?: { name: string; value: string; inline?: boolean }[];
+  thumbnail?: { url: string };
+  footer?: { text: string };
+  timestamp?: string;
+};
+const GREEN = 0x1f7a4c;
+
+/** Posts text, optionally with one rich embed card. Retries one short Discord rate limit. */
+export async function postDiscord(
+  url: string,
+  content: string,
+  f: typeof fetch = fetch,
+  embed?: Embed,
+) {
+  const body = JSON.stringify({
+    content,
+    embeds: embed ? [embed] : undefined,
+    username: 'Price Atlas',
+    allowed_mentions: { parse: [] },
   });
+  const send = () =>
+    f(`${url}?wait=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: AbortSignal.timeout(10000),
+      redirect: 'error',
+    });
+  let res = await send();
   if (res.status === 429) {
     const retryAfter = Number(res.headers.get('retry-after') || 0);
     if (retryAfter > 0 && retryAfter <= 2) {
       await new Promise((resolve) => setTimeout(resolve, Math.ceil(retryAfter * 1000)));
-      res = await f(`${url}?wait=true`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, username: 'Price Atlas', allowed_mentions: { parse: [] } }),
-        signal: AbortSignal.timeout(10000),
-        redirect: 'error',
-      });
+      res = await send();
     }
   }
   await res.body?.cancel().catch(() => {});
   if (!res.ok) throw new Error(res.status === 404 ? 'webhook_deleted' : `http_${res.status}`);
+}
+
+/** The alert as a Discord card: product, price vs target, savings, store, link. */
+export function alertEmbed(
+  d: {
+    title: string;
+    store: string;
+    price: number;
+    target: number;
+    productId: string;
+    observedAt?: number;
+  },
+  origin: string,
+  imageUrl?: string | null,
+): Embed {
+  const below = d.target - d.price;
+  return {
+    title: d.title.slice(0, 250),
+    url: `${origin}/p/${encodeURIComponent(d.productId)}`,
+    description: `Price hit your target at **${d.store}**.`,
+    color: GREEN,
+    fields: [
+      { name: 'Price now', value: `**${money(d.price)}**`, inline: true },
+      { name: 'Your target', value: money(d.target), inline: true },
+      ...(below > 0 ? [{ name: 'Under target by', value: money(below), inline: true }] : []),
+    ],
+    ...(imageUrl && /^https:\/\//.test(imageUrl) ? { thumbnail: { url: imageUrl } } : {}),
+    footer: { text: 'Price Atlas · prices and stock can change at the store' },
+    ...(d.observedAt ? { timestamp: new Date(d.observedAt).toISOString() } : {}),
+  };
 }
 
 export async function discordStatus(userId: string) {
@@ -81,11 +131,13 @@ export async function connectDiscord(userId: string, rawUrl: string, f: typeof f
   if (!validDiscordWebhook(url)) return { ok: false as const, reason: 'invalid_url' };
   await ensureTables();
   try {
-    await postDiscord(
-      url,
-      '✅ Price Atlas is connected. Price alerts for your targets will appear in this channel.',
-      f,
-    );
+    await postDiscord(url, '', f, {
+      title: 'Price Atlas is connected',
+      description:
+        'Alerts for your price targets will appear in this channel the moment a checked, in-stock price reaches your target.',
+      color: GREEN,
+      footer: { text: 'Manage alerts in Price Atlas → Settings' },
+    });
   } catch (e) {
     return { ok: false as const, reason: (e as Error).message };
   }
@@ -110,11 +162,13 @@ export async function sendDiscordTest(userId: string, f: typeof fetch = fetch) {
   ).rows[0];
   if (!row) return { ok: false, reason: 'not_connected' };
   try {
-    await postDiscord(
-      row.webhook_url,
-      'Price Atlas test alert. No price changed; real alerts arrive when a fresh in-stock offer reaches your target.',
-      f,
-    );
+    await postDiscord(row.webhook_url, '', f, {
+      title: 'Test alert',
+      description:
+        'This is how a price alert looks. No price changed; real alerts arrive when a fresh, in-stock price reaches your target.',
+      color: 0x8e99b8,
+      footer: { text: 'Price Atlas test' },
+    });
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: (e as Error).message };
@@ -142,6 +196,7 @@ export async function deliverDiscord(f: typeof fetch = fetch) {
       price: number;
       target: number;
       productId: string;
+      observedAt?: number;
     };
     // Claim first so a retry never double-posts.
     const claim = await postgres().query(
@@ -150,11 +205,12 @@ export async function deliverDiscord(f: typeof fetch = fetch) {
     );
     if (!claim.rows.length) continue;
     try {
-      await postDiscord(
-        n.webhook_url,
-        `🔔 **${d.title}**\n${d.store}: **${money(d.price)}** (your target ${money(d.target)})${origin ? `\n${origin}/p/${encodeURIComponent(d.productId)}` : ''}\nPrices and stock can change at the store.`,
-        f,
-      );
+      const image = (
+        await postgres()
+          .query("SELECT data->>'imageUrl' AS image FROM atlas.products WHERE id=$1", [d.productId])
+          .catch(() => ({ rows: [] as { image?: string }[] }))
+      ).rows[0]?.image;
+      await postDiscord(n.webhook_url, '🔔 Price alert', f, alertEmbed(d, origin, image));
       await postgres().query(
         "UPDATE atlas.discord_deliveries SET state='sent' WHERE notification_id=$1",
         [n.id],
