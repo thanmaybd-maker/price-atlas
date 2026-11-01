@@ -21,7 +21,8 @@ import {
 } from '../providers/search';
 import { livePolicy } from '../providers/live';
 import { reserveSource, fetchProductWithBudget } from './index';
-import { tinyFishConfigured, tinyFishSearch } from '../providers/tinyfish';
+import { amazonSearchCards, tinyFishConfigured, tinyFishSearchHtml } from '../providers/tinyfish';
+import type { ScrapedProduct } from '../providers/scraper';
 import { STORE_NAMES, eligible, type Store } from '../domain/index';
 import { retailers, storesForCategory, retailerSearchUrl } from '../domain/retailers';
 import { categoryFor } from '../matching/index';
@@ -137,6 +138,8 @@ export async function discoverProducts(
     return true;
   };
   const deadline = Date.now() + 45000;
+  // Priced search-result cards (Amazon), imported without a second page read.
+  const searchCards = new Map<string, ScrapedProduct>();
   const importUrl = async (destination: string) => {
     const cached = await reusableListing(destination);
     if (cached && !options.searchMore) return cached.productId;
@@ -233,11 +236,19 @@ export async function discoverProducts(
                 // The store's own search page through TinyFish (free tier, real browser):
                 // many listings per store instead of one or two.
                 if (candidates.length < 6 && tinyFishConfigured()) {
-                  const listed = (await tinyFishSearch(
+                  const html = await tinyFishSearchHtml(
                     retailerSearchUrl(store, searchPhrase),
-                    store,
-                    Math.max(5000, Math.min(20000, deadline - Date.now() - 20000)),
-                  ).catch(() => [])) as SearchCandidate[];
+                    Math.max(6000, Math.min(25000, deadline - Date.now() - 15000)),
+                    store === 'Amazon' ? ['[data-component-type="s-search-result"]'] : undefined,
+                  ).catch(() => null);
+                  let listed: SearchCandidate[] = [];
+                  if (html) {
+                    try {
+                      listed = parseSearchHtml(html, store, 30);
+                    } catch {}
+                    if (store === 'Amazon')
+                      for (const card of amazonSearchCards(html)) searchCards.set(card.url, card);
+                  }
                   if (listed.length) {
                     const known = new Set(candidates.map((c) => c.url));
                     candidates = [...candidates, ...listed.filter((c) => !known.has(c.url))];
@@ -293,25 +304,50 @@ export async function discoverProducts(
                 )
                 .sort((a, b) => b.score - a.score)
                 .map(({ c }) => c);
-              data.candidates.push(...relevant.slice(0, 10));
+              data.candidates.push(...relevant.slice(0, 12));
               let imported = false;
               let failure: unknown;
-              // Verify several listings per store in parallel (each is a real product-page
-              // read) so one search returns many products across retailers.
-              const perStore = effectiveScope === 'all' ? 4 : 10;
-              const settled = await Promise.allSettled(
-                relevant.slice(0, perStore).map(async (selected) => {
-                  if (Date.now() > deadline - 8000) return null;
-                  const id = await importUrl(selected.url);
+              // Priced result cards become products straight away; other listings are verified
+              // on their product pages in parallel, so one search spans many products and stores.
+              const exactCards = relevant.filter((c) => searchCards.has(c.url));
+              // The retailer's own neighbouring results (other models, other brands it ranked
+              // for this query) fill out the list so a model search also shows alternatives.
+              const similar = candidates.filter(
+                (c) => searchCards.has(c.url) && !relevant.includes(c),
+              );
+              const carded = [...exactCards, ...similar].slice(0, 16);
+              const loose = new Set(similar.map((c) => c.url));
+              const toVerify = relevant
+                .filter((c) => !searchCards.has(c.url))
+                .slice(0, effectiveScope === 'all' ? Math.max(0, 5 - carded.length) + 1 : 10);
+              const keep = async (id: string) => {
+                const p = await findProduct(id);
+                return p &&
+                  applyIntent([p], await offers(), intent, matchesQuery, {
+                    store: effectiveScope,
+                  }).length
+                  ? id
+                  : null;
+              };
+              const settled = await Promise.allSettled([
+                ...carded.map(async (c) => {
+                  const id = (
+                    await importScraped(searchCards.get(c.url)!, `lookup-${randomUUID()}`)
+                  ).productId;
+                  if (!loose.has(c.url)) return keep(id);
                   const p = await findProduct(id);
                   return p &&
-                    applyIntent([p], await offers(), intent, matchesQuery, {
+                    applyIntent([p], await offers(), { ...intent, text: '' }, () => true, {
                       store: effectiveScope,
                     }).length
                     ? id
                     : null;
                 }),
-              );
+                ...toVerify.map(async (selected) => {
+                  if (Date.now() > deadline - 8000) return null;
+                  return keep(await importUrl(selected.url));
+                }),
+              ]);
               for (const r of settled) {
                 if (r.status === 'fulfilled' && r.value) {
                   data.productIds.push(r.value);

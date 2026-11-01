@@ -4,7 +4,7 @@ import type { Store } from '../domain/index';
 import { retailers } from '../domain/retailers';
 import { structuredData, hasType } from './structured-data';
 export type SearchCandidate = { title: string; url: string; store: Store };
-export function parseSearchHtml(html: string, store: Store): SearchCandidate[] {
+export function parseSearchHtml(html: string, store: Store, limit = 8): SearchCandidate[] {
   const $ = load(html);
   if (
     $('#captchacharacters,form[action*="validateCaptcha"],#retry_btn').length ||
@@ -57,7 +57,7 @@ export function parseSearchHtml(html: string, store: Store): SearchCandidate[] {
         add(item.url || item['@id'], item.name);
     }
   }
-  return results.slice(0, 8);
+  return results.slice(0, limit);
 }
 export async function duckDuckGoProducts(
   query: string,
