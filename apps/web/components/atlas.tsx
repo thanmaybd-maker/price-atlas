@@ -317,12 +317,12 @@ export default function Atlas({
       controller.abort();
     };
   }, [page, searchText, exactSearch]);
-  const assistSettled = exactSearch || assist?.for === searchText;
   const assistedQuery =
     !exactSearch && assist?.for === searchText && assist.refined ? assist.refined : '';
-  const discoveryText = assistedQuery || searchText;
+  // Optional AI may suggest words, but must never hold or restart the retailer lookup.
+  const discoveryText = searchText;
   useEffect(() => {
-    if (demo || page !== 'search' || searchText.trim().length < 2 || !assistSettled) return;
+    if (demo || page !== 'search' || searchText.trim().length < 2) return;
     let active = true;
     const controller = new AbortController();
     setLookup({ query: searchText, busy: true, ids: [], message: '', candidates: [] });
@@ -400,7 +400,6 @@ export default function Atlas({
     page,
     searchText,
     discoveryText,
-    assistSettled,
     searchStore,
     params.get('verify'),
     lookupVersion,
