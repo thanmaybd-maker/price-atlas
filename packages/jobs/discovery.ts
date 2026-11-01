@@ -214,6 +214,9 @@ export async function discoverProducts(
       const uncheckedStores = plannedStores.filter(
         (store) =>
           options.searchMore ||
+          // A thin catalog result still checks the stores: one recorded product must not
+          // stop a search from finding the other models and retailers.
+          scoped.length < 12 ||
           !recordedStores.has(store) ||
           Boolean(researched?.candidates.some((c) => c.store === store)),
       );
