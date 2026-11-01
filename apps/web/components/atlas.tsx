@@ -292,6 +292,9 @@ export default function Atlas({
   const searchText = params.get('q') || '';
   const searchStore = params.get('store') || 'all';
   const exactSearch = params.get('exact') === '1';
+  const collectionLimited =
+    lookup.query === searchText &&
+    lookup.sources?.some((s) => ['daily_budget', 'monthly_budget'].includes(s.status));
   useEffect(() => {
     const ready = (event: Event) => {
       if ((event as CustomEvent<{ query: string }>).detail?.query === searchText)
@@ -1524,22 +1527,26 @@ export default function Atlas({
                 title={
                   !demo && lookup.query === searchText && lookup.busy
                     ? 'Checking products…'
-                    : /^https?:\/\//i.test(searchText)
-                      ? 'Couldn’t read that store page this time.'
-                      : searchText
-                        ? `“${searchText}” isn’t tracked yet.`
-                        : 'No exact match this time.'
+                    : collectionLimited
+                      ? 'Collection allowance reached'
+                      : /^https?:\/\//i.test(searchText)
+                        ? 'Couldn’t read that store page this time.'
+                        : searchText
+                          ? `“${searchText}” isn’t tracked yet.`
+                          : 'No exact match this time.'
                 }
                 text={
                   demo
                     ? 'Try a model name, clear a filter, or explore another category. The demo has eight carefully defined variants.'
                     : lookup.query === searchText && lookup.busy
                       ? 'Searching supported retailers and verifying product details. This can take a few seconds.'
-                      : /^https?:\/\//i.test(searchText)
-                        ? 'This store page could not be verified. Open the retailer to check its price, retry the link, or search by product name to check other stores. A retry may still be blocked.'
-                        : searchText
-                          ? 'Paste its product link from Amazon, Flipkart, Nykaa, Myntra, Croma or another supported store into the search box and Price Atlas starts tracking it, so you can pin a target. Or open it on a store:'
-                          : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
+                      : lookup.query === searchText && lookup.message
+                        ? lookup.message
+                        : /^https?:\/\//i.test(searchText)
+                          ? 'This store page could not be verified. Open the retailer to check its price, retry the link, or search by product name to check other stores. A retry may still be blocked.'
+                          : searchText
+                            ? 'Paste its product link from Amazon, Flipkart, Nykaa, Myntra, Croma or another supported store into the search box and Price Atlas starts tracking it, so you can pin a target. Or open it on a store:'
+                            : 'Try a more specific model name, clear a filter, or paste a direct supported retailer product URL.'
                 }
                 action={
                   <div className="empty-actions">

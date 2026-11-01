@@ -1,5 +1,36 @@
 import { test, expect } from '@playwright/test';
 
+test('budget-limited product links show the cause instead of blaming the retailer', async ({
+  page,
+}) => {
+  await page.route('**/api/v1/discovery', (route) =>
+    route.fulfill({
+      json: {
+        state: 'complete',
+        products: [],
+        offers: [],
+        candidates: [],
+        message: 'The daily collection limit has been reached. Tracking resumes tomorrow.',
+        sources: [{ store: 'B&H', method: 'product-page', status: 'daily_budget' }],
+      },
+    }),
+  );
+  const url =
+    'https://www.bhphotovideo.com/c/product/1909629-REG/asus_rog_astral_rtx5090_o32g_white_rog_astral_geforce_rtx.html';
+  await page.goto('/search?q=' + encodeURIComponent(url));
+  const skip = page.getByRole('button', { name: 'Skip Animation', exact: true });
+  if (await skip.isVisible()) await skip.click();
+  await expect(page.getByRole('heading', { name: 'Collection allowance reached' })).toBeVisible();
+  await expect(
+    page
+      .getByText('The daily collection limit has been reached. Tracking resumes tomorrow.', {
+        exact: true,
+      })
+      .last(),
+  ).toBeVisible();
+  await expect(page.getByText(/This store page could not be verified/)).toHaveCount(0);
+});
+
 test('background research polls without blocking search and refreshes matching products', async ({
   page,
 }) => {
