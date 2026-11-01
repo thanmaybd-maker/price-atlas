@@ -248,7 +248,7 @@ export function GeminiFinds({ query }: { query: string }) {
             ? result.reason === 'pending'
               ? result.stage === 'queued'
                 ? `Your search is waiting for the research worker (position ${result.queuePosition || 1}). Recorded results remain available.`
-                : 'Background research is running. You can use the recorded results above while it checks more stores.'
+                : 'Background research is running. Results below are already checked; more appear here as other stores are confirmed.'
               : result.reason === 'offline'
                 ? 'Background research is unavailable. Recorded products and store search still work.'
                 : result.reason === 'limited'

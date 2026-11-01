@@ -2,6 +2,11 @@
 // few hundred pixels, not the 1500px originals (about 120 KB each on Amazon).
 export function sizedImage(url: string | undefined, width: number) {
   if (!url) return url;
+  // B&H blocks hot-linking from www.bhphotovideo.com; the same file is public on its CDN.
+  url = url.replace(
+    /^https:\/\/www\.bhphotovideo\.com\/images\//,
+    'https://static.bhphoto.com/images/',
+  );
   const w = Math.max(64, Math.round(width));
   if (/m\.media-amazon\.com\/images\//.test(url))
     return url.replace(/\._[A-Z]{2}[A-Z0-9_,]*_\.(jpe?g|png|webp)$/i, `._SL${w}_.$1`);
