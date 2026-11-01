@@ -72,3 +72,28 @@ it('throws http_500 on server errors', async () => {
     postDiscord('https://discord.com/api/webhooks/1/x', 'fail', failingFetch),
   ).rejects.toThrow('http_500');
 });
+
+import { alertEmbed } from '../packages/notifications/discord';
+it('builds an alert card with price, target, savings, link and image', () => {
+  const e = alertEmbed(
+    {
+      title: 'iPad Pro',
+      store: 'Flipkart',
+      price: 22509900,
+      target: 25000000,
+      productId: 'flipkart-x',
+    },
+    'https://example.test',
+    'https://img.test/a.jpg',
+  );
+  expect(e.url).toBe('https://example.test/p/flipkart-x');
+  expect(e.fields?.map((f) => f.name)).toEqual(['Price now', 'Your target', 'Under target by']);
+  expect(e.thumbnail?.url).toBe('https://img.test/a.jpg');
+  expect(
+    alertEmbed(
+      { title: 't', store: 's', price: 1, target: 1, productId: 'p' },
+      'https://o',
+      'http://x',
+    ).thumbnail,
+  ).toBeUndefined();
+});
