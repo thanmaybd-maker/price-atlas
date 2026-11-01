@@ -23,6 +23,8 @@ import {
 import { deliverTestAlerts } from '../packages/notifications/test-alerts';
 import { parseProductHtml } from '../packages/providers/scraper';
 import { discoverProducts } from '../packages/jobs/discovery';
+import { saveAgentResearch, cachedAgentResearch } from '../packages/jobs/agent-research-cache';
+import { parseAgentResearch } from '../packages/providers/agent-research';
 import {
   deliverNotifications,
   reserveSource,
@@ -1177,6 +1179,50 @@ it.each([
     }
   },
 );
+
+it('uses privately researched retailer leads through normal verification without saving agent prices', async () => {
+  const query = 'AtlasResearch ZX881 calculator';
+  const report = parseAgentResearch(query, {
+    products: [
+      {
+        title: 'AtlasResearch ZX881 Calculator',
+        url: 'https://www.amazon.in/dp/B0AGENT881',
+        price: 1,
+      },
+    ],
+  });
+  await saveAgentResearch(report);
+  expect((await cachedAgentResearch(query))?.candidates).toHaveLength(1);
+  const saved = { ...process.env };
+  process.env.SCRAPER_CREDITS_PER_DAY = '0';
+  process.env.SCRAPER_CREDITS_PER_MONTH = '0';
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input) === 'https://www.amazon.in/dp/B0AGENT881')
+      return new Response(
+        html('₹1,234').replace('Test Phone 128 GB', 'AtlasResearch ZX881 Calculator'),
+      );
+    return new Response('<title>No results</title>');
+  });
+  try {
+    const result = await discoverProducts(query, 'Amazon');
+    expect(result?.sources).toContainEqual({
+      store: 'Amazon',
+      method: 'antigravity-research-cache',
+      status: 'complete',
+    });
+    expect(result?.offers[0].itemPrice).toBe(123400);
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes('/s?'))).toBe(false);
+    expect(
+      fetcher.mock.calls.some(([url]) => /firecrawl|scrapingbee|tinyfish/.test(String(url))),
+    ).toBe(false);
+    await saveAgentResearch({ ...report, researchedAt: Date.now() - 25 * 3600000 });
+    expect(await cachedAgentResearch(query)).toBeNull();
+  } finally {
+    fetcher.mockRestore();
+    process.env = saved;
+  }
+});
 
 it('features our distinct recorded days before imported history, repeated checks or service plans', async () => {
   const now = Date.now();

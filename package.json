@@ -7,6 +7,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "research:products": "tsx scripts/research-products.ts",
     "dev": "next dev apps/web --hostname 127.0.0.1",
     "build": "next build apps/web",
     "start": "next start apps/web",

@@ -25,6 +25,7 @@ import { STORE_NAMES, eligible, type Store } from '../domain/index';
 import { retailers, storesForCategory, retailerSearchUrl } from '../domain/retailers';
 import { categoryFor } from '../matching/index';
 import { MAX_PAID_CREDITS_PER_REQUEST } from './credit-budget';
+import { cachedAgentResearch } from './agent-research-cache';
 
 export type LookupData = {
   productIds: string[];
@@ -205,17 +206,22 @@ export async function discoverProducts(
         data.message =
           'Showing recorded catalog matches and retailer check outcomes. Open a retailer link to verify checkout details.';
       if (uncheckedStores.length) {
+        const researched = await cachedAgentResearch(q).catch(() => null);
         await beforeNetwork();
         await Promise.all(
           uncheckedStores.map(async (store) => {
             let candidates: SearchCandidate[] = [],
               method = 'direct';
+            const agentLeads = researched?.candidates.filter((c) => c.store === store) || [];
             let blocked = false;
             try {
               if (!livePolicy(store).search)
                 throw new ScrapeError('disabled', 'Search is disabled for this retailer.');
               try {
-                if (!retailers[store].discoveryFirst) {
+                if (agentLeads.length) {
+                  candidates = agentLeads;
+                  method = 'antigravity-research-cache';
+                } else if (!retailers[store].discoveryFirst) {
                   await reserveSource(store, { transport: 'direct' });
                   candidates = parseSearchHtml(await scrapeSearchHtml(searchPhrase, store), store);
                 }
