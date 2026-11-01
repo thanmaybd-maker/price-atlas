@@ -118,17 +118,16 @@ export async function fetchWithTinyFish(
 }
 
 /**
- * A retailer's own search results page through TinyFish (free tier): product links in page
- * order, with the listing title where the page gives one ("## Title" blocks on Amazon) or
- * a title from the URL slug. Prices here are only hints; the product page is still verified.
+ * Product links from a retailer's own search results page through TinyFish (free tier), in
+ * page order. The title comes from the link's own URL slug, never from neighbouring page
+ * text, so a title can't drift onto another listing. The product page is still verified.
  */
 export function parseTinyFishSearch(
   store: string,
-  text: string,
+  _text: string,
   links: string[],
   limit = 24,
 ): { title: string; url: string; store: string }[] {
-  const headings = [...text.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1].replace(/\\/g, '').trim());
   const seen = new Set<string>();
   const out: { title: string; url: string; store: string }[] = [];
   for (const raw of links) {
@@ -139,12 +138,20 @@ export function parseTinyFishSearch(
       continue;
     }
     if (id.store !== store || seen.has(id.externalId)) continue;
-    seen.add(id.externalId);
-    const slug = decodeURIComponent(new URL(raw).pathname.split('/').filter(Boolean)[0] || '')
-      .replace(/[-_]+/g, ' ')
-      .trim();
-    const title = headings[out.length] || slug;
+    let path;
+    try {
+      path = new URL(raw).pathname;
+    } catch {
+      continue;
+    }
+    const slug = path
+      .split('/')
+      .map((part) => decodeURIComponent(part).replace(/\.html?$/i, ''))
+      .filter((part) => /[a-z]{2}/i.test(part) && /[-_]/.test(part) && !/[=]|^ref[_=]/i.test(part))
+      .sort((x, y) => y.length - x.length)[0];
+    const title = (slug || '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
     if (title.length < 4) continue;
+    seen.add(id.externalId);
     out.push({ title: title.slice(0, 300), url: id.url, store });
     if (out.length >= limit) break;
   }
@@ -247,8 +254,8 @@ export async function tinyFishSearch(
       urls: [searchUrl],
       format: 'markdown',
       links: true,
-      include_selectors: ['main', '#search', '#container', '#app', 'body'],
-      ttl: 3600,
+      exclude_selectors: ['header', 'footer', 'nav'],
+      ttl: 1800,
       per_url_timeout_ms: timeoutMs,
     }),
     signal: AbortSignal.timeout(timeoutMs + 5000),

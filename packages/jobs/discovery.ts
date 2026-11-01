@@ -21,7 +21,12 @@ import {
 } from '../providers/search';
 import { livePolicy } from '../providers/live';
 import { reserveSource, fetchProductWithBudget } from './index';
-import { amazonSearchCards, tinyFishConfigured, tinyFishSearchHtml } from '../providers/tinyfish';
+import {
+  amazonSearchCards,
+  tinyFishConfigured,
+  tinyFishSearch,
+  tinyFishSearchHtml,
+} from '../providers/tinyfish';
 import type { ScrapedProduct } from '../providers/scraper';
 import { STORE_NAMES, eligible, type Store } from '../domain/index';
 import { retailers, storesForCategory, retailerSearchUrl } from '../domain/retailers';
@@ -236,19 +241,24 @@ export async function discoverProducts(
                 // The store's own search page through TinyFish (free tier, real browser):
                 // many listings per store instead of one or two.
                 if (candidates.length < 6 && tinyFishConfigured()) {
-                  const html = await tinyFishSearchHtml(
-                    retailerSearchUrl(store, searchPhrase),
-                    Math.max(6000, Math.min(25000, deadline - Date.now() - 15000)),
-                    store === 'Amazon' ? ['[data-component-type="s-search-result"]'] : undefined,
-                  ).catch(() => null);
+                  const searchUrl = retailerSearchUrl(store, searchPhrase);
+                  const wait = Math.max(6000, Math.min(28000, deadline - Date.now() - 15000));
                   let listed: SearchCandidate[] = [];
-                  if (html) {
-                    try {
-                      listed = parseSearchHtml(html, store, 30);
-                    } catch {}
-                    if (store === 'Amazon')
+                  if (store === 'Amazon') {
+                    // Amazon cards carry their own ASIN and printed price.
+                    const html = await tinyFishSearchHtml(searchUrl, wait, [
+                      '[data-component-type="s-search-result"]',
+                    ]).catch(() => null);
+                    if (html) {
+                      try {
+                        listed = parseSearchHtml(html, store, 30);
+                      } catch {}
                       for (const card of amazonSearchCards(html)) searchCards.set(card.url, card);
-                  }
+                    }
+                  } else
+                    listed = (await tinyFishSearch(searchUrl, store, wait).catch(
+                      () => [],
+                    )) as SearchCandidate[];
                   if (listed.length) {
                     const known = new Set(candidates.map((c) => c.url));
                     candidates = [...candidates, ...listed.filter((c) => !known.has(c.url))];

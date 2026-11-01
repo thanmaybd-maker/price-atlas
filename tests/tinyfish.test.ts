@@ -60,18 +60,17 @@ it('reads product links and titles from a retailer search page in order', () => 
       'https://www.flipkart.com/x/p/itm1?pid=AAAAAAAAAAAAAAAA',
     ],
   );
+  // Titles come from each link's own slug, never from nearby headings.
   expect(out).toEqual([
-    {
-      title: 'PNY GeForce RTX 5090 Epic-X',
-      url: 'https://www.amazon.in/dp/B0DTJFSSZG',
-      store: 'Amazon',
-    },
-    {
-      title: 'NVD GeForce RTX 5090 Windforce',
-      url: 'https://www.amazon.in/dp/B0GMRSMNGB',
-      store: 'Amazon',
-    },
+    { title: 'PNY GeForce', url: 'https://www.amazon.in/dp/B0DTJFSSZG', store: 'Amazon' },
+    { title: 'GeForce Windforce', url: 'https://www.amazon.in/dp/B0GMRSMNGB', store: 'Amazon' },
   ]);
+  const bh = parseTinyFishSearch('B&H', '', [
+    'https://www.bhphotovideo.com/c/product/1706394-REG/sony_wh1000xm5_s_wh_1000xm5_noise_canceling_wireless_over_ear.html',
+    'https://www.bhphotovideo.com/c/product/1706394-REG/sony_wh1000xm5_s_wh_1000xm5_noise_canceling_wireless_over_ear.html/reviews',
+  ]);
+  expect(bh).toHaveLength(1);
+  expect(bh[0].title).toBe('sony wh1000xm5 s wh 1000xm5 noise canceling wireless over ear');
 });
 
 import { amazonSearchCards } from '../packages/providers/tinyfish';
