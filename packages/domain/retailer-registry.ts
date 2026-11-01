@@ -122,7 +122,7 @@ export const retailers: Record<Store, Retailer> = {
     productId: (u) =>
       u.pathname.match(/\/(?:p|product)\/(\d{6,16})(?:\/|$)/)?.[1] ||
       u.pathname.match(/\/product\/[^/]+-([a-z0-9]{6,40})(?:\.html)?\/?$/i)?.[1],
-    searchPath: '/search',
+    searchPath: '/products',
     queryParam: 'q',
     searchDomain: 'reliancedigital.in',
     international: false,
