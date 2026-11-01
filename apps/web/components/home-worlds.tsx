@@ -11,6 +11,7 @@ import { HistoryCitation } from './history-citation';
 import { TidesWorld } from './tides-world';
 import { fetchJson } from '../lib/fetch-json';
 import { historyCoverage } from '../../../packages/domain/history-coverage';
+import { historyRecording } from '../../../packages/domain/history-recording';
 import { ExternalHistory } from './external-history';
 import { reducedMotion } from './three-loader';
 import { OfferEvidence } from './offer-evidence';
@@ -1169,11 +1170,15 @@ export function HomeWorlds({
   const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [historyError, setHistoryError] = useState('');
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [historySelection, setHistorySelection] = useState<'coverage' | 'saved'>('coverage');
   const box = useRef<HTMLDivElement>(null);
-  const ids = watches
-    .slice(0, 4)
-    .map((watch) => watch.product_id)
-    .join(',');
+  const ids =
+    historySelection === 'saved'
+      ? watches
+          .slice(0, 4)
+          .map((watch) => watch.product_id)
+          .join(',')
+      : '';
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -1222,10 +1227,12 @@ export function HomeWorlds({
     name: p.name,
     obs: history[p.id] || [],
   }));
-  // The week tray follows whichever product has the most recorded checks; no picker.
+  // Distinct days matter more than repeated checks on the same day.
   const weekProduct =
     [...tideProducts].sort(
-      (a, b) => (history[b.id]?.length || 0) - (history[a.id]?.length || 0),
+      (a, b) =>
+        historyRecording(history[b.id] || [], historyBasis, 7).recordedDays -
+        historyRecording(history[a.id] || [], historyBasis, 7).recordedDays,
     )[0] || null;
   return (
     <div className="hs" ref={box}>
@@ -1248,6 +1255,19 @@ export function HomeWorlds({
         initialTarget={initialTarget}
       />
       <div className="history-tools">
+        <label>
+          History products{' '}
+          <select
+            aria-label="Home history products"
+            value={historySelection}
+            onChange={(event) => setHistorySelection(event.target.value as 'coverage' | 'saved')}
+          >
+            <option value="coverage">Most recorded by Price Atlas</option>
+            <option value="saved" disabled={!watches.length}>
+              My saved products
+            </option>
+          </select>
+        </label>
         <label>
           History price basis{' '}
           <select
@@ -1278,7 +1298,15 @@ export function HomeWorlds({
                 })()}
         </p>
       </div>
-      <TidesWorld ridges={ridges} basis={historyBasis} />
+      <TidesWorld
+        ridges={ridges}
+        basis={historyBasis}
+        lede={
+          historySelection === 'coverage'
+            ? 'Products with the most days of our own recorded prices appear first. Each dot is a real check; gaps stay empty. Pick a product to see its daily streak.'
+            : 'Your saved products and their recorded prices. Imported history stays labelled and does not count toward Price Atlas daily streaks.'
+        }
+      />
       <ExternalHistory
         sourceUrl={
           weekProduct?.attributes['Product URL'] ||
