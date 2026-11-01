@@ -619,8 +619,12 @@ export default function Atlas({
     rupees: number,
     store: string,
     priceBasis: 'delivered' | 'item',
-    ruleId?: string,
+    requestedRuleId?: string,
   ) {
+    // Pinning the same product and store again updates that target instead of stacking a copy.
+    const ruleId =
+      requestedRuleId ||
+      session.rules.find((rule) => rule.productId === p.id && rule.store === store)?.id;
     const result = await api('rules', ruleId ? 'PATCH' : 'POST', {
       ...(ruleId ? { id: ruleId } : {}),
       productId: p.id,
@@ -1021,6 +1025,13 @@ export default function Atlas({
               emailAvailable={Boolean(session.delivery?.emailAvailable)}
               onSave={save}
               onPin={pinTarget}
+              onRemoveTarget={(id) =>
+                perform(async () => {
+                  await api(`rules/${id}`, 'DELETE');
+                  await refresh();
+                  notify('Target removed.');
+                })
+              }
               initialTarget={
                 pinDraft ||
                 (params.get('pin')
