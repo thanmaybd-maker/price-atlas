@@ -97,17 +97,15 @@ describe('applyIntent', () => {
     expect(run('laptop')).toEqual(expect.arrayContaining(['pro', 'neo', 'nothing']));
     expect(run('laptop')).not.toContain('mouse');
   });
-  it('falls back to basePrice for catalog products under budget without fresh scrape', () => {
+  it('never treats an unchecked import price as an in-stock budget match', () => {
     const acer = {
       ...product('acer-aspire', 'Acer Aspire 5 Laptop', 'laptops'),
-      basePrice: 5999000, // 59,990 INR
+      basePrice: 5999000, // price seen at import time, not a current in-stock check
     };
     const res = applyIntent([acer], [], parseQueryIntent('laptop under 1 lakh'), matchesQuery, {
       now: NOW,
     });
-    expect(res).toHaveLength(1);
-    expect(res[0].p.id).toBe('acer-aspire');
-    expect(res[0].price?.paise).toBe(5999000);
+    expect(res).toHaveLength(0);
   });
   it('a store chip shows only that store and prices by it', () => {
     expect(run('', { store: 'Nykaa' })).toEqual(['dewy']);

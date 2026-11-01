@@ -567,7 +567,10 @@ async function handler(req: NextRequest) {
           return json({ ok: false, reason: 'rate_limited' }, 429);
         return json(await sendDiscordTest(user.id));
       }
-      if (req.method === 'PUT' || (req.method === 'POST' && req.nextUrl.searchParams.get('connect') === '1')) {
+      if (
+        req.method === 'PUT' ||
+        (req.method === 'POST' && req.nextUrl.searchParams.get('connect') === '1')
+      ) {
         if (await limited(`discord-connect:${user.id}`, 5).catch(() => false))
           return json({ ok: false, reason: 'rate_limited' }, 429);
         const b = z.object({ url: z.string().trim().max(300) }).parse(await req.json());
@@ -635,10 +638,10 @@ async function handler(req: NextRequest) {
       if (data.isLive()) {
         const rows = (
           await postgres().query(
-            `SELECT to_char(to_timestamp(observed_at / 1000), 'YYYY-MM-DD') AS day,
+            `SELECT to_char(to_timestamp(observed_at / 1000) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS day,
                     COUNT(*)::int AS observations,
                     COUNT(DISTINCT product_id)::int AS products,
-                    COUNT(DISTINCT store)::int AS stores
+                    COUNT(DISTINCT data->>'store')::int AS stores
              FROM atlas.observations
              WHERE observed_at >= $1
              GROUP BY 1
