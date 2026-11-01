@@ -1,3 +1,4 @@
+import { livePinCheck } from '../../../../../../packages/jobs/pin-check';
 import { assistCollection } from '../../../../../../packages/jobs/index';
 import {
   connectDiscord,
@@ -682,6 +683,16 @@ async function handler(req: NextRequest) {
     if (path[0] === 'rules') {
       if (req.method === 'POST' || req.method === 'PATCH') {
         const rule = await data.saveRule(user.id, ruleSchema.parse(await req.json()), false);
+        // Pinning checks the store live, so an alert (or a "now watching" note) arrives in
+        // seconds instead of after the hourly schedule. Bounded per user.
+        if (
+          data.isLive() &&
+          rule.enabled &&
+          !(await limited(`pin-check:${user.id}`, 6).catch(() => false))
+        ) {
+          const check = await livePinCheck(user.id, rule).catch(() => null);
+          if (check) return json({ rule, check }, 201);
+        }
         try {
           await data.dispatch();
           await deliverTelegram().catch(() => 0);

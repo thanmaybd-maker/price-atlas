@@ -648,7 +648,30 @@ export default function Atlas({
     }));
     sessionState.removeItem('atlas-pending-intent');
     setPinDraft(undefined);
-    notify('Target pinned. Only fresh matching checks can trigger it.');
+    const c = result.check as
+      | {
+          checked: boolean;
+          alerted: boolean;
+          price: number | null;
+          inStock: boolean | null;
+          store: string | null;
+        }
+      | undefined;
+    const target = Math.round(rupees * 100);
+    notify(
+      !c
+        ? 'Target pinned. We check it every hour.'
+        : c.alerted
+          ? `Live check: ${money(c.price)} at ${c.store}. Target met, alert sent to your channels.`
+          : !c.checked && c.price == null
+            ? 'Target pinned. The store did not answer just now; we keep checking hourly.'
+            : c.price == null
+              ? 'Target pinned. No price on the store page right now; watching.'
+              : c.inStock === false
+                ? `Live check: ${money(c.price)} at ${c.store}, out of stock. Watching; you'll be alerted when it's back.`
+                : `Live check: ${money(c.price)} at ${c.store}, ${money(Math.max(0, c.price - target))} above your target. Now watching.`,
+    );
+    void refresh();
   }
   async function pinTarget(
     p: Product,
