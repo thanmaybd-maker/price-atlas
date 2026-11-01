@@ -515,11 +515,13 @@ export async function evaluateProduct(productId: string) {
       // An episode whose alert never reached the user (suppressed before delivery) must not
       // block the next alert: reopen it so the next fresh qualifying check alerts again.
       if (rule.activeEpisode) {
-        const reached = await c.query(
-          "SELECT 1 FROM atlas.notifications WHERE event_key=$1 AND state='delivered' LIMIT 1",
+        // Reopen only when that episode's alert was explicitly suppressed; a pending one is
+        // still on its way (reopening it would send a duplicate).
+        const lost = await c.query(
+          "SELECT 1 FROM atlas.notifications WHERE event_key=$1 AND state='suppressed' LIMIT 1",
           [`${rule.id}:${rule.version}:${rule.episode}`],
         );
-        if (!reached.rows.length) {
+        if (lost.rows.length) {
           rule.activeEpisode = false;
           rule.lastEvidence = null;
         }
