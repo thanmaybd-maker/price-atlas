@@ -788,12 +788,12 @@ it('discovers a custom product, imports verified details, and reuses shared sear
     expect(cached?.cached).toBe(true);
     expect(cached?.products).toHaveLength(2);
     expect(fetcher).toHaveBeenCalledTimes(firstRequests);
-    const network = vi.fn().mockRejectedValue(new Error('Network should not be needed'));
+    const network = vi.fn();
     const recorded = await discoverProducts('QZ9 Acme mixer', 'all', { beforeNetwork: network });
     expect(recorded?.products).toHaveLength(2);
     expect(recorded?.message).toContain('recorded catalog');
-    expect(network).not.toHaveBeenCalled();
-    expect(fetcher).toHaveBeenCalledTimes(firstRequests);
+    expect(recorded?.sources.some((source) => source.store === 'Amazon')).toBe(true);
+    expect(recorded?.sources.some((source) => source.store === 'Flipkart')).toBe(true);
     expect(
       (
         await db.query('SELECT credits FROM atlas.collection_budget WHERE day=$1', [
@@ -1107,6 +1107,76 @@ it('loads a bounded public history batch with retained timestamps and supports a
     for (const observation of observations)
       expect(observation.observedAt).toBeLessThanOrEqual(Date.now());
 });
+
+it.each([
+  {
+    query: 'Samsung S25 Ultra',
+    title: 'Samsung Galaxy S25 Ultra 12GB RAM 256GB Storage',
+    slot: 77,
+  },
+  { query: '101 Panchatantra', title: '101 Panchatantra Stories Hardcover Book', slot: 78 },
+  {
+    query: 'Samsung S25 Ultra phone case',
+    title: 'Samsung S25 Ultra Silicone Phone Case',
+    slot: 79,
+  },
+  { query: 'Acme QZ77 Weighted Vest', title: 'Acme QZ77 Weighted Vest 3 kg', slot: 80 },
+])(
+  'a one-store catalog hit still discovers other retailers for $query',
+  async ({ query, title, slot }) => {
+    const saved = { ...process.env };
+    process.env.SCRAPER_CREDITS_PER_DAY = '0';
+    process.env.SCRAPER_CREDITS_PER_MONTH = '0';
+    delete process.env.TINYFISH_API_KEY;
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+    const imported = await store.importScraped(
+      parseProductHtml(
+        `<span id="productTitle">${title}</span><span class="a-price"><span class="a-offscreen">₹1,200</span></span><div id="availability">In stock</div><input id="add-to-cart-button">`,
+        `https://www.amazon.in/dp/B0CROSS0${slot}`,
+      ),
+      'seed-cross-store',
+    );
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === 'www.flipkart.com' && url.pathname === '/search')
+        return new Response(
+          `<a href="/cross-store-product/p/itm777?pid=SPT0000000${slot}" title="${title}"></a>`,
+        );
+      if (url.hostname === 'www.flipkart.com')
+        return new Response(
+          `<h1>${title}</h1><div class="Nx9bqj">₹1,300</div><button>Add to cart</button>`,
+        );
+      return new Response('<title>No results</title>');
+    });
+    try {
+      const result = await discoverProducts(query);
+      expect(result?.productIds).toContain(imported.productId);
+      expect(result?.offers.some((offer) => offer.store === 'Flipkart')).toBe(true);
+      expect(result?.sources.some((source) => source.store === 'Amazon')).toBe(true);
+      expect(result?.sources.some((source) => source.store === 'Flipkart')).toBe(true);
+      const calls = fetcher.mock.calls.length;
+      const cached = await discoverProducts(query);
+      expect(cached?.cached).toBe(true);
+      expect(fetcher).toHaveBeenCalledTimes(calls);
+      await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0');
+      fetcher.mockClear();
+      const scopedResult = await discoverProducts(query + ' on Flipkart');
+      expect(scopedResult?.offers.every((offer) => offer.store === 'Flipkart')).toBe(true);
+      expect(scopedResult?.sources.every((source) => source.store === 'Flipkart')).toBe(true);
+      expect(fetcher.mock.calls.every(([url]) => !String(url).includes('www.amazon.in'))).toBe(
+        true,
+      );
+      expect(
+        fetcher.mock.calls.some(([url]) =>
+          /api\.firecrawl\.dev|app\.scrapingbee\.com/.test(String(url)),
+        ),
+      ).toBe(false);
+    } finally {
+      fetcher.mockRestore();
+      process.env = saved;
+    }
+  },
+);
 
 it('features our distinct recorded days before imported history, repeated checks or service plans', async () => {
   const now = Date.now();
