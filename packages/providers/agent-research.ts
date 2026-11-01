@@ -5,6 +5,8 @@ import { discoveryConflict } from '../domain/discovery-guard';
 import { variantSignature } from '../domain/variant-guard';
 import type { SearchCandidate } from './search';
 import { parseQueryIntent } from '../domain/query-intent';
+import { RESEARCH_LISTING_LIMIT } from '../domain/research-limits';
+import { researchListingTitle } from './agent-payload';
 
 export type AgentLead = SearchCandidate & {
   status: 'DISCOVERY_UNVERIFIED';
@@ -18,7 +20,23 @@ export type AgentResearch = {
   otherVariants: AgentLead[];
 };
 export const agentResearchKey = (query: string) =>
-  'agent-research-v1:' + createHash('sha256').update(normalizeQuery(query)).digest('hex');
+  'agent-research-v2:' + createHash('sha256').update(normalizeQuery(query)).digest('hex');
+
+export function retailerRoundRobin<T extends { store: string }>(rows: T[]): T[] {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const group = groups.get(row.store) || [];
+    group.push(row);
+    groups.set(row.store, group);
+  }
+  const result: T[] = [];
+  while (result.length < rows.length)
+    for (const group of groups.values()) {
+      const row = group.shift();
+      if (row) result.push(row);
+    }
+  return result;
+}
 
 // An agent's links are leads only. Never retain its quoted prices or identity assertions.
 export function parseAgentResearch(query: string, raw: unknown, now = Date.now()): AgentResearch {
@@ -41,17 +59,32 @@ export function parseAgentResearch(query: string, raw: unknown, now = Date.now()
   const seen = new Set<string>();
   const intent = parseQueryIntent(query);
   const phrase = intent.text || intent.category?.replace(/-/g, ' ') || query;
-  for (const value of (raw as { products: unknown[] }).products.slice(0, 24)) {
+  const family = phrase
+    .replace(/\b\d+(?:\.\d+)?\s*(?:gb|tb|ml|kg|g|litres?|liters?)\b/gi, '')
+    .replace(/\b(?:pack|set)\s*(?:of\s*)?\d+\b/gi, '')
+    .replace(
+      /\b(?:paperback|hardcover|hardback|softcover|kindle|spiral|refurbished|renewed|used|open.box)\b/gi,
+      '',
+    )
+    .replace(/\bsize\s+[a-z0-9]+\b/gi, '')
+    .replace(
+      /\b(?:black|white|blue|red|green|silver|gray|grey|gold|pink|purple|titanium|silverblue|rose)\b/gi,
+      '',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+  for (const value of (raw as { products: unknown[] }).products.slice(0, RESEARCH_LISTING_LIMIT)) {
     if (!value || typeof value !== 'object') continue;
     const row = value as { title?: unknown; url?: unknown };
     if (typeof row.title !== 'string' || typeof row.url !== 'string') continue;
-    const title = row.title.replace(/\s+/g, ' ').trim().slice(0, 300);
+    let title = row.title.replace(/\s+/g, ' ').trim().slice(0, 300);
     if (title.length < 4) continue;
     const accessory =
       /\b(?:case|cover|sleeve|protector|replacement|earpads|adapter|charger|cable|stand)\b/i;
     if (accessory.test(title) && !accessory.test(query)) continue;
     try {
       const identity = canonicalRetailUrl(row.url);
+      title = researchListingTitle(title, identity.url);
       const key = `${identity.store}:${identity.externalId}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -62,9 +95,19 @@ export function parseAgentResearch(query: string, raw: unknown, now = Date.now()
         status: 'DISCOVERY_UNVERIFIED',
         variant: variantSignature(title),
       };
-      if (discoveryConflict(title, query)) result.otherVariants.push(lead);
-      else if (matchesQuery({ name: title, brand: '', subtitle: '' }, phrase))
+      if (
+        !discoveryConflict(title, query) &&
+        matchesQuery({ name: title, brand: '', subtitle: '' }, phrase)
+      )
         result.candidates.push(lead);
+      else {
+        if (
+          family.length >= 2 &&
+          !discoveryConflict(title, family) &&
+          matchesQuery({ name: title, brand: '', subtitle: '' }, family)
+        )
+          result.otherVariants.push(lead);
+      }
     } catch {
       /* Unsupported, private or non-product links are discarded. */
     }

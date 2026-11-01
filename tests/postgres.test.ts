@@ -1230,6 +1230,60 @@ it('uses privately researched retailer leads through normal verification without
   }
 });
 
+it('continues with another free listing when one researched page needs paid verification', async () => {
+  const saved = { ...process.env };
+  process.env.SCRAPER_PROVIDER = 'firecrawl';
+  process.env.FIRECRAWL_API_KEY = 'retry-test-key';
+  process.env.SCRAPER_CREDITS_PER_DAY = '0';
+  process.env.SCRAPER_CREDITS_PER_MONTH = '0';
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0,paused=0');
+  const q = 'BudgetRetry QX881';
+  await saveAgentResearch(
+    parseAgentResearch(q, {
+      products: [
+        { title: q, url: 'https://www.amazon.in/dp/B0RETRY001' },
+        { title: q, url: 'https://www.amazon.in/dp/B0RETRY002' },
+      ],
+    }),
+  );
+  const f = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(
+      async (input) =>
+        new Response(
+          String(input).includes('B0RETRY002')
+            ? html('₹1,111').replace('Test Phone 128 GB', q)
+            : '<title>Robot Check</title>',
+        ),
+    );
+  try {
+    const result = await discoverProducts(q, 'Amazon');
+    expect(result?.offers.some((o) => o.itemPrice === 111100)).toBe(true);
+    expect(f.mock.calls.some(([url]) => /firecrawl.dev/.test(String(url)))).toBe(false);
+  } finally {
+    f.mockRestore();
+    process.env = saved;
+  }
+});
+
+it('keeps matching listings and related variants from different retailers through cache and API reads', async () => {
+  const q = 'CacheVariant Phone S25 256GB';
+  const report = parseAgentResearch(q, {
+    products: [
+      { title: 'CacheVariant Phone S25 256GB', url: 'https://www.amazon.in/dp/B0CACHE256' },
+      {
+        title: 'CacheVariant Phone S25 512GB',
+        url: 'https://www.flipkart.com/phone/p/itmabc?pid=MOBCACHE0512',
+      },
+    ],
+  });
+  await saveAgentResearch(report);
+  expect((await cachedAgentResearch(q))?.otherVariants).toHaveLength(1);
+  const result = await requestAgentResearch(q);
+  expect(result.candidates.map((c) => c.store)).toEqual(['Amazon']);
+  expect(result.otherVariants.map((c) => c.store)).toEqual(['Flipkart']);
+});
+
 it('deduplicates background research, grants one lease and enforces a shared daily attempt cap', async () => {
   const old = process.env.AGENT_RESEARCH_DAILY_LIMIT;
   process.env.AGENT_RESEARCH_DAILY_LIMIT = '1';
@@ -1250,7 +1304,7 @@ it('deduplicates background research, grants one lease and enforces a shared dai
     if (old === undefined) delete process.env.AGENT_RESEARCH_DAILY_LIMIT;
     else process.env.AGENT_RESEARCH_DAILY_LIMIT = old;
     await db.query(
-      "DELETE FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v1:%' OR query_key LIKE 'agent-usage-v1:%' OR query_key='agent-worker-v1'",
+      "DELETE FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v2:%' OR query_key LIKE 'agent-usage-v1:%' OR query_key='agent-worker-v1'",
     );
   }
 });

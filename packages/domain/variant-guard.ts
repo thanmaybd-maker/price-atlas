@@ -79,7 +79,15 @@ export function compareVariants(a: VariantSignature, b: VariantSignature) {
     if (x === 'UNKNOWN' && y === 'UNKNOWN') continue;
     if (x == null && y == null) continue;
     if (x == null || y == null || x === 'UNKNOWN' || y === 'UNKNOWN') unknown.push(key);
-    else if (x !== y) conflicts.push(key);
+    else if (key === 'storageOrMemory' && typeof x === 'string' && typeof y === 'string') {
+      const first = new Set(x.split('/')),
+        second = new Set(y.split('/'));
+      const firstInSecond = [...first].every((v) => second.has(v));
+      const secondInFirst = [...second].every((v) => first.has(v));
+      if (firstInSecond && secondInFirst) continue;
+      if (firstInSecond || secondInFirst) unknown.push(key);
+      else conflicts.push(key);
+    } else if (x !== y) conflicts.push(key);
   }
   return {
     decision: conflicts.length ? 'rejected' : unknown.length ? 'review' : 'accepted',
