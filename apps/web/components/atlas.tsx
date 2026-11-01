@@ -88,6 +88,10 @@ import { OfferEvidence } from './offer-evidence';
 import { RetailerOutcomes } from './retailer-outcomes';
 import type { LookupSource } from '../../../packages/domain/retailer-outcomes';
 import { discoveryConflict } from '../../../packages/domain/discovery-guard';
+import {
+  otherRetailerListings,
+  retailerComparisonQuery,
+} from '../../../packages/domain/retailer-comparison';
 import { nativeMoney } from '../../../packages/providers/fx';
 import { retailerSearchUrl } from '../../../packages/domain/retailers';
 import {
@@ -2043,6 +2047,7 @@ export default function Atlas({
   function ProductDetail() {
     if (!current) return null;
     const p = current;
+    const otherListings = otherRetailerListings(p, products, offers);
     const po = offers.filter((o) => o.productId === p.id);
     const international = po.filter((o) => retailers[o.store].international);
     const domestic = po.filter((o) => !retailers[o.store].international);
@@ -2322,6 +2327,29 @@ export default function Atlas({
           <p className="muted">
             No verified domestic offer is currently available for this exact variant.
           </p>
+        )}
+        {!demo && (
+          <section className="chart-panel" aria-label="Other retailer listings and variants">
+            <h3>Check other retailers</h3>
+            <p className="muted">
+              Related listings stay separate until model, size, storage, colour and condition are
+              confirmed. Each price belongs to its own listing.
+            </p>
+            <Link
+              className="outline-button"
+              prefetch={false}
+              href={`/search?q=${encodeURIComponent(retailerComparisonQuery(p))}&store=all`}
+            >
+              Search all retailers for this product
+            </Link>
+            {otherListings.length > 0 && (
+              <div className="product-grid">
+                {otherListings.map((product) => (
+                  <Card key={product.id} p={product} />
+                ))}
+              </div>
+            )}
+          </section>
         )}
         {variantOffers.length > 0 && (
           <section>
