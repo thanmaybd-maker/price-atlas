@@ -192,7 +192,7 @@ export function knownPrice(
     (o) => (o.stock || includeOutOfStock) && o.observedAt > now - 14 * 86400000 && o.itemPrice > 0,
   );
   if (eligibleRecent.length) {
-    eligibleRecent.sort((a, b) => a.itemPrice - b.itemPrice || b.observedAt - a.observedAt);
+    eligibleRecent.sort((a, b) => b.observedAt - a.observedAt || a.itemPrice - b.itemPrice);
     const best = eligibleRecent[0];
     return {
       paise: best.itemPrice,
@@ -225,21 +225,7 @@ export function nearMisses(
         (!intent.category || p.category === intent.category) &&
         (!intent.text || textMatches(p, intent.text)),
     )
-    .map((p) => {
-      const live = knownPrice(p.id, offers, store, options.now, true);
-      const isStoreMatch = !store || store === 'all' || p.attributes?.Retailer === store;
-      const fallback =
-        isStoreMatch && p.basePrice && p.basePrice > 0
-          ? {
-              paise: p.basePrice,
-              store: (p.attributes?.Retailer || 'all') as any,
-              observedAt: options.now || Date.now(),
-              fresh: false,
-              inStock: true,
-            }
-          : null;
-      return { p, price: live ?? fallback };
-    })
+    .map((p) => ({ p, price: knownPrice(p.id, offers, store, options.now, true) }))
     .sort((a, b) => (a.price?.paise ?? Infinity) - (b.price?.paise ?? Infinity))
     .slice(0, 12);
 }
@@ -254,21 +240,7 @@ export function applyIntent(
 ) {
   const store = options.store && options.store !== 'all' ? options.store : intent.store;
   const rows = products
-    .map((p) => {
-      const live = knownPrice(p.id, offers, store, options.now);
-      const isStoreMatch = !store || store === 'all' || p.attributes?.Retailer === store;
-      const fallback =
-        isStoreMatch && p.basePrice && p.basePrice > 0
-          ? {
-              paise: p.basePrice,
-              store: (p.attributes?.Retailer || 'all') as any,
-              observedAt: options.now || Date.now(),
-              fresh: false,
-              inStock: true,
-            }
-          : null;
-      return { p, price: live ?? fallback };
-    })
+    .map((p) => ({ p, price: knownPrice(p.id, offers, store, options.now) }))
     .filter(({ p, price }) => {
       if (intent.category && p.category !== intent.category) {
         // "laptop" also finds a MacBook filed under laptops; keep named matches outside it

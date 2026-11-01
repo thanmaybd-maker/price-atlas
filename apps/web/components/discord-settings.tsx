@@ -116,7 +116,9 @@ export function DiscordSettings() {
             className="primary"
             disabled={busy}
             onClick={() =>
-              void call('POST', '?test=1').then((j) => j?.ok && setNote('Test alert posted to your channel!'))
+              void call('POST', '?test=1').then(
+                (j) => j?.ok && setNote('Test alert posted to your channel!'),
+              )
             }
           >
             {busy ? 'Posting…' : 'Send test alert'}
