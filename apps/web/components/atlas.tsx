@@ -491,28 +491,33 @@ export default function Atlas({
           setToast(e.message);
         });
   }, [page]);
+  // Pinned targets refresh every 20 s so a sent alert shows on its card almost live.
+  const livePins = session.rules.some((r) => r.enabled);
   useEffect(() => {
     let active = true;
-    const stop = visiblePoll(async () => {
-      const result = await api(current ? `products/${current.id}?days=90` : 'offers');
-      if (!active) return;
-      if (current) {
-        setHistory(result.history);
-        setOffers((prior) => [
-          ...result.offers,
-          ...prior.filter((o) => o.productId !== current.id),
-        ]);
-      } else setOffers(result.offers);
-      if (session.user) {
-        const next = await api('session');
-        if (active) setSession(next);
-      }
-    });
+    const stop = visiblePoll(
+      async () => {
+        const result = await api(current ? `products/${current.id}?days=90` : 'offers');
+        if (!active) return;
+        if (current) {
+          setHistory(result.history);
+          setOffers((prior) => [
+            ...result.offers,
+            ...prior.filter((o) => o.productId !== current.id),
+          ]);
+        } else setOffers(result.offers);
+        if (session.user) {
+          const next = await api('session');
+          if (active) setSession(next);
+        }
+      },
+      livePins ? 20000 : 60000,
+    );
     return () => {
       active = false;
       stop();
     };
-  }, [current?.id, session.user?.id]);
+  }, [current?.id, session.user?.id, livePins]);
   useEffect(() => {
     if (!(auth || reportProduct)) return;
     const previous = document.activeElement as HTMLElement;

@@ -193,7 +193,7 @@ export async function personal(userId: string) {
       rules: (await c.query('SELECT data FROM atlas.rules')).rows.map((r) => r.data as Rule),
       notifications: (
         await c.query(
-          'SELECT id,data,state,email_state,created_at FROM atlas.notifications ORDER BY created_at DESC LIMIT 100',
+          'SELECT id,rule_id,data,state,email_state,created_at FROM atlas.notifications ORDER BY created_at DESC LIMIT 100',
         )
       ).rows.map((r) => ({ ...r, ...r.data, created_at: Number(r.created_at) })),
     }),

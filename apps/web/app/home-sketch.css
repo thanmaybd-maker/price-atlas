@@ -4869,3 +4869,25 @@
   align-self: center;
   text-decoration: underline;
 }
+.hs .sheet.is-sent {
+  animation: sent-hs 6s ease-in forwards;
+}
+.hs .state.sent {
+  background: #1f7a4c;
+  color: #fff;
+}
+@keyframes sent-hs {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.25;
+    transform: translateY(8px) rotate(-2deg) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hs .sheet.is-sent {
+    animation: none;
+  }
+}

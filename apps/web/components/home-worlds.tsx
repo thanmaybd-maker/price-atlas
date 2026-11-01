@@ -32,6 +32,8 @@ type Note = {
   state: string;
   created_at: number;
   title: string;
+  rule_id?: string;
+  ruleVersion?: number;
 };
 
 const ICONS: Record<string, string> = {
@@ -444,6 +446,7 @@ function TargetsWorld({
   rules,
   onPin,
   onRemove,
+  notifications,
   initialTarget,
 }: {
   products: Product[];
@@ -451,6 +454,7 @@ function TargetsWorld({
   watches: Watch[];
   rules: Rule[];
   onRemove: (ruleId: string) => Promise<void>;
+  notifications: Note[];
   onPin: (
     p: Product,
     rupees: number,
@@ -461,6 +465,26 @@ function TargetsWorld({
   initialTarget?: PinDraft;
 }) {
   const [removing, setRemoving] = useState('');
+  // Live: once a pinned target's alert has gone out, the sheet says so, then clears itself.
+  const sentFor = (r: Rule) =>
+    notifications.find(
+      (n) =>
+        n.rule_id === r.id &&
+        n.state === 'delivered' &&
+        (n.ruleVersion == null || n.ruleVersion === r.version),
+    );
+  const cleared = useRef(new Set<string>());
+  useEffect(() => {
+    const done = rules.filter((r) => sentFor(r) && !cleared.current.has(r.id));
+    if (!done.length) return;
+    const t = setTimeout(() => {
+      for (const r of done) {
+        cleared.current.add(r.id);
+        void onRemove(r.id).catch(() => cleared.current.delete(r.id));
+      }
+    }, 6000);
+    return () => clearTimeout(t);
+  }, [rules, notifications]);
   const pool = useMemo(() => {
     const saved = watches
       .map((w) => products.find((p) => p.id === w.product_id))
@@ -731,8 +755,12 @@ function TargetsWorld({
                 );
                 const now = lowest(scoped, r.basis);
                 const met = now != null && now <= r.target;
+                const sent = sentFor(r);
                 return (
-                  <article key={r.id} className={'sheet k' + ((i % 3) + 1)}>
+                  <article
+                    key={r.id}
+                    className={'sheet k' + ((i % 3) + 1) + (sent ? ' is-sent' : '')}
+                  >
                     <button
                       type="button"
                       className="sheet-remove"
@@ -762,14 +790,19 @@ function TargetsWorld({
                       <dt>Today</dt>
                       <dd>{now == null ? 'no fresh price' : '₹' + fmt(now)}</dd>
                     </dl>
-                    <span className={met ? 'state met' : 'state wait'}>
-                      {!r.enabled
-                        ? 'paused'
-                        : met
-                          ? 'met, alert queued'
-                          : now == null
-                            ? 'waiting for a fresh check'
-                            : `₹${fmt(now - r.target)} to go`}
+                    <span
+                      className={sent ? 'state sent' : met ? 'state met' : 'state wait'}
+                      role={sent ? 'status' : undefined}
+                    >
+                      {sent
+                        ? `✓ alert sent ${new Date(sent.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })} · clearing`
+                        : !r.enabled
+                          ? 'paused'
+                          : met
+                            ? 'met, alert queued'
+                            : now == null
+                              ? 'waiting for a fresh check'
+                              : `₹${fmt(now - r.target)} to go`}
                     </span>
                   </article>
                 );
@@ -1209,6 +1242,7 @@ export function HomeWorlds({
         rules={rules}
         onPin={onPin}
         onRemove={onRemoveTarget}
+        notifications={notifications}
         initialTarget={initialTarget}
       />
       <div className="history-tools">
