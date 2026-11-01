@@ -25,6 +25,7 @@ import { parseProductHtml } from '../packages/providers/scraper';
 import { discoverProducts } from '../packages/jobs/discovery';
 import { saveAgentResearch, cachedAgentResearch } from '../packages/jobs/agent-research-cache';
 import { parseAgentResearch } from '../packages/providers/agent-research';
+import { publishAgentResearch } from '../packages/jobs/publish-agent-research';
 import {
   researchHeartbeat,
   requestAgentResearch,
@@ -1284,6 +1285,25 @@ it('keeps matching listings and related variants from different retailers throug
   expect(result.otherVariants.map((c) => c.store)).toEqual(['Flipkart']);
 });
 
+it('publishes source links without holding the research queue for store verification', async () => {
+  const q = 'QuickPublish QP991';
+  const report = parseAgentResearch(q, {
+    products: [{ title: q, url: 'https://www.amazon.in/dp/B0QUICK991' }],
+  });
+  const fetcher = vi
+    .spyOn(globalThis, 'fetch')
+    .mockRejectedValue(new Error('must not fetch stores'));
+  try {
+    const result = await publishAgentResearch(report, { verify: false });
+    expect(result.published).toBe(true);
+    expect(result.lookup).toBeNull();
+    expect((await cachedAgentResearch(q))?.candidates).toHaveLength(1);
+    expect(fetcher).not.toHaveBeenCalled();
+  } finally {
+    fetcher.mockRestore();
+  }
+});
+
 it('deduplicates background research, grants one lease and enforces a shared daily attempt cap', async () => {
   const old = process.env.AGENT_RESEARCH_DAILY_LIMIT;
   process.env.AGENT_RESEARCH_DAILY_LIMIT = '1';
@@ -1295,6 +1315,10 @@ it('deduplicates background research, grants one lease and enforces a shared dai
     expect((await requestAgentResearch('QueueTest QB992')).reason).toBe('pending');
     const first = await claimResearchJob();
     expect(first?.query).toBe('QueueTest QB991');
+    expect(await requestAgentResearch('QueueTest QB991')).toMatchObject({
+      reason: 'pending',
+      stage: 'researching',
+    });
     expect(await claimResearchJob()).toBeNull();
     await finishResearchJob(first!.key, 'error');
     expect((await requestAgentResearch('QueueTest QB991')).reason).toBe('error');
@@ -1303,6 +1327,21 @@ it('deduplicates background research, grants one lease and enforces a shared dai
   } finally {
     if (old === undefined) delete process.env.AGENT_RESEARCH_DAILY_LIMIT;
     else process.env.AGENT_RESEARCH_DAILY_LIMIT = old;
+    await db.query(
+      "DELETE FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v2:%' OR query_key LIKE 'agent-usage-v1:%' OR query_key='agent-worker-v1'",
+    );
+  }
+});
+
+it('shows queued searches their position rather than claiming they are already running', async () => {
+  await researchHeartbeat();
+  try {
+    const first = await requestAgentResearch('PositionTest PT991');
+    expect(first).toMatchObject({ reason: 'pending', stage: 'queued', queuePosition: 1 });
+    await claimResearchJob();
+    const next = await requestAgentResearch('PositionTest PT992');
+    expect(next).toMatchObject({ reason: 'pending', stage: 'queued', queuePosition: 2 });
+  } finally {
     await db.query(
       "DELETE FROM atlas.search_cache WHERE query_key LIKE 'agent-job-v2:%' OR query_key LIKE 'agent-usage-v1:%' OR query_key='agent-worker-v1'",
     );

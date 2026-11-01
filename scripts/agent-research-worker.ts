@@ -55,6 +55,7 @@ try {
           resolve('scripts/research-products.ts'),
           job.query,
           '--publish',
+          '--links-only',
         ],
         controller.signal,
       );

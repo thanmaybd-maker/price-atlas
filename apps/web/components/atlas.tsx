@@ -341,7 +341,7 @@ export default function Atlas({
         body: JSON.stringify({
           query: discoveryText,
           store: searchStore,
-          searchMore: params.get('verify') === '1',
+          searchMore: params.get('verify') === '1' || lookupVersion > 0,
         }),
         signal: controller.signal,
       });

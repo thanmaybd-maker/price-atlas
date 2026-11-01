@@ -91,6 +91,23 @@ export async function requestAgentResearch(query: string, beforeEnqueue?: () => 
     );
     return 'pending';
   });
+  if (reason === 'pending') {
+    const progress = (
+      await postgres().query(
+        `SELECT data, (SELECT count(*) FROM atlas.search_cache q
+        WHERE q.query_key LIKE 'agent-job-v2:%' AND q.state='pending'
+        AND q.expires_at>$2 AND q.expires_at<=j.expires_at) AS position
+       FROM atlas.search_cache j WHERE j.query_key=$1`,
+        [key, Date.now()],
+      )
+    ).rows[0];
+    return {
+      ...base,
+      reason,
+      stage: Number(progress?.data?.leaseUntil) > Date.now() ? 'researching' : 'queued',
+      queuePosition: Math.max(1, Number(progress?.position) || 1),
+    };
+  }
   return { ...base, reason };
 }
 
