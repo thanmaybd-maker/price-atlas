@@ -799,7 +799,9 @@ function TargetsWorld({
                         : !r.enabled
                           ? 'paused'
                           : met
-                            ? 'met, alert queued'
+                            ? scoped.some((o) => o.stock && o.observedAt > Date.now() - 3600000)
+                              ? 'met · alert sending'
+                              : 'met · alerts on next hourly check'
                             : now == null
                               ? 'waiting for a fresh check'
                               : `₹${fmt(now - r.target)} to go`}
