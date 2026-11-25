@@ -100,7 +100,8 @@ describe('Amazon search cards', () => {
 
 it('reads priced Flipkart result cards in grid and list layouts', () => {
   const html = `
-    <div data-id="SMWGF5GETH3AH6WG"><a title="GOBOULT Drift BT Calling Smartwatch" href="/goboult-drift-smartwatch/p/itm50c9247c6b13c?pid=SMWGF5GETH3AH6WG&amp;srno=s_1_1"><img src="https://rukminim2.flixcart.com/image/a.jpg"/></a>
+    <div data-id="SMWGF5GETH3AH6WG"><a title="GOBOULT Drift BT Calling Smartwatch with Extra Long Battery" href="/goboult-drift-smartwatch/p/itm50c9247c6b13c?pid=SMWGF5GETH3AH6WG&amp;srno=s_1_1"><img src="https://rukminim2.flixcart.com/image/a.jpg"/></a>
+      <a href="/goboult-drift-smartwatch/p/itm50c9247c6b13c?pid=SMWGF5GETH3AH6WG">GOBOULT Drift BT Calling Smartwatch with Ext...</a><div>Jet Black Strap, Free Size</div>
       <div>4.1</div><div>₹1,299</div><div>₹7,999</div><span>83% off</span></div>
     <div data-id="DLLH8PFFGTH6EFUG"><a href="/sony-ilce6100k/p/itm123?pid=DLLH8PFFGTH6EFUG"><img alt="SONY ILCE6100K/BQ IN5 Mirrorless Camera Body with SELP16502 Power Zoom" src="https://rukminim2.flixcart.com/image/b.png"/></a>
       <div>SONY ILCE6100K/BQ IN5 Mirrorless Camera</div><div>₹62,990</div><div>₹75,990</div><div>Upto</div><div>₹43,600</div><div>Off on Exchange</div></div>
@@ -115,5 +116,10 @@ it('reads priced Flipkart result cards in grid and list layouts', () => {
   expect(cards[0].url).toBe(
     'https://www.flipkart.com/goboult-drift-smartwatch/p/itm50c9247c6b13c?pid=SMWGF5GETH3AH6WG',
   );
-  expect(cards[1].title).toContain('SONY ILCE6100K');
+  expect(cards[0].title).toBe(
+    'GOBOULT Drift BT Calling Smartwatch with Extra Long Battery (Jet Black Strap, Free Size)',
+  );
+  expect(cards[1].title).toBe(
+    'SONY ILCE6100K/BQ IN5 Mirrorless Camera Body with SELP16502 Power Zoom',
+  );
 });

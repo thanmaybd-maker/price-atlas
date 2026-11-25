@@ -237,6 +237,25 @@ export function flipkartSearchCards(html: string, observedAt = Date.now()): Scra
       .text();
     const itemPrice = parseINR(priceText);
     if (!href || title.length < 4 || !itemPrice) return;
+    // Grid cards print the colour/size right under the (shortened) title. Without it the
+    // colour variants of one watch would all carry the same name.
+    const leaves = card
+      .find('*')
+      .filter((_, x) => $(x).children().length === 0)
+      .map((_, x) => $(x).text().replace(/\s+/g, ' ').trim())
+      .get()
+      .filter(Boolean);
+    const at = leaves.findIndex(
+      (t) => t === title || (t.endsWith('...') && title.startsWith(t.slice(0, -3).trim())),
+    );
+    const variant = at >= 0 ? leaves[at + 1] || '' : '';
+    const named =
+      variant &&
+      variant.length <= 60 &&
+      !/₹|^\(?[\d.,]+\)?$|ratings?|reviews?|\boff$|add to compare/i.test(variant) &&
+      !title.toLowerCase().includes(variant.toLowerCase())
+        ? `${title} (${variant})`
+        : title;
     let identity: ReturnType<typeof canonicalRetailUrl>;
     try {
       const url = new URL(href, 'https://www.flipkart.com');
@@ -250,7 +269,7 @@ export function flipkartSearchCards(html: string, observedAt = Date.now()): Scra
     const image = card.find('img').first().attr('src') || null;
     out.push({
       ...identity,
-      title: title.slice(0, 500),
+      title: named.slice(0, 500),
       imageUrl: image && /^https:\/\//.test(image) ? image : null,
       itemPrice,
       shipping: null,
@@ -258,7 +277,7 @@ export function flipkartSearchCards(html: string, observedAt = Date.now()): Scra
       stock: !/currently unavailable|out of stock|sold out|coming soon/i.test(card.text()),
       condition: 'new',
       seller: '',
-      attributes: variantAttributes(title, {
+      attributes: variantAttributes(named, {
         'Fetch method': 'Flipkart search results (TinyFish)',
       }),
       observedAt,
