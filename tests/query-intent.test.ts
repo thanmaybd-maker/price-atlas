@@ -97,6 +97,27 @@ describe('applyIntent', () => {
     expect(run('laptop')).toEqual(expect.arrayContaining(['pro', 'neo', 'nothing']));
     expect(run('laptop')).not.toContain('mouse');
   });
+  it('b12 tablet keeps B12 tablets and drops B12 skin care and iPads', () => {
+    const items = [
+      product('tabs', 'Carbamide Forte Vitamin B12 Tablets 1500mcg - 90 Tablets', 'other'),
+      product(
+        'cream',
+        'Minimalist B12 + Repair Complex 5.5% Face Moisturizer (50g)',
+        'personal-care',
+      ),
+      product('ipad', 'Apple iPad 11 128GB Wi-Fi', 'tablets'),
+      product('bag', 'Wildcraft Laptop Bag 15.6 inch', 'accessories'),
+    ];
+    const pick = (q: string) =>
+      applyIntent(items, [], parseQueryIntent(q), matchesQuery, { now: NOW }).map((r) => r.p.id);
+    expect(parseQueryIntent('b12 tablet')).toMatchObject({
+      text: 'b12',
+      categoryWords: ['tablet'],
+    });
+    expect(pick('b12 tablet')).toEqual(['tabs']);
+    expect(pick('b12 tablets')).toEqual(['tabs']);
+    expect(pick('laptop bag')).toEqual(['bag']);
+  });
   it('never treats an unchecked import price as an in-stock budget match', () => {
     const acer = {
       ...product('acer-aspire', 'Acer Aspire 5 Laptop', 'laptops'),

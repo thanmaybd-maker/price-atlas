@@ -5,6 +5,7 @@
 import type { Category, Offer, Product } from './index';
 import { STORE_NAMES, rank } from './index';
 import { retailers } from './retailers';
+import { matchesQuery } from './search';
 
 export type QueryIntent = {
   /** Words left to match against product names, after budget/category/store removed. */
@@ -14,6 +15,8 @@ export type QueryIntent = {
   maxPaise?: number;
   minPaise?: number;
   store?: (typeof STORE_NAMES)[number];
+  /** Category words taken out of `text` ("tablet" in "b12 tablet"), singular. */
+  categoryWords?: string[];
 };
 
 const CATEGORY_WORDS: [RegExp, Category][] = [
@@ -135,11 +138,14 @@ export function parseQueryIntent(raw: string): QueryIntent {
       intent.category = category;
       break;
     }
-  intent.text = q
-    .split(' ')
+  const words = q.split(' ').filter(Boolean);
+  if (intent.category) {
+    const removed = words.filter((w) => PURE_CATEGORY.has(w)).map((w) => w.replace(/s$/, ''));
+    if (removed.length) intent.categoryWords = [...new Set(removed)];
+  }
+  intent.text = words
     .filter(
-      (w) =>
-        w && !PURE_CATEGORY.has(w) && !/^(for|the|a|an|best|cheap|buy|price|rs|inr|₹)$/.test(w),
+      (w) => !PURE_CATEGORY.has(w) && !/^(for|the|a|an|best|cheap|buy|price|rs|inr|₹)$/.test(w),
     )
     .join(' ')
     .trim();
@@ -244,6 +250,9 @@ export function applyIntent(
         // "laptop" also finds a MacBook filed under laptops; keep named matches outside it
         // only when the shopper typed a specific product, never for a bare category.
         if (!intent.text || !textMatches(p, intent.text)) return false;
+        // The typed category word must still describe it: "b12 tablet" is not a B12 face cream.
+        if (intent.categoryWords?.length && !matchesQuery(p, intent.categoryWords.join(' ')))
+          return false;
       }
       if (intent.text && !textMatches(p, intent.text)) return false;
       if (store && store !== 'all') {
