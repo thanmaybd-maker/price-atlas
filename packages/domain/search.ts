@@ -33,6 +33,30 @@ export const normalizeQuery = (value: string) =>
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .replace(/\s+/g, ' ');
+// Words that never identify a product.
+const IGNORED_WORDS = new Set([
+  'buy',
+  'price',
+  'best',
+  'online',
+  'india',
+  'electric',
+  'with',
+  'and',
+  'for',
+  'the',
+  'of',
+]);
+function editDistance(a: string, b: string) {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++)
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = row;
+  }
+  return prev[b.length];
+}
 export function matchesQuery(
   product: Pick<Product, 'name' | 'brand' | 'subtitle'> & Partial<Pick<Product, 'attributes'>>,
   query: string,
@@ -70,12 +94,21 @@ export function matchesQuery(
     /\b(?:GDDR[3-9]|\d+\s*GB)\b/i.test(text) &&
     !/\b(?:laptop|notebook|desktop|computer|pc)\b/i.test(text);
   const haystack = normalizeQuery(`${text} ${graphicsBoard ? 'graphics card gpu' : ''}`);
-  const tokens = new Set(haystack.split(' '));
+  const words = haystack.split(' ');
+  const tokens = new Set(words);
+  // "firebolt" still finds "Fire-Boltt", and "rubix" finds "Rubik's".
+  const compact = haystack.replace(/ /g, '');
+  const near = (word: string) =>
+    word.length >= 5 &&
+    (compact.includes(word) ||
+      words.some(
+        (t) =>
+          t[0] === word[0] &&
+          t.length >= word.length - 1 &&
+          editDistance(word, t.slice(0, word.length)) <= 1,
+      ));
   return normalizeQuery(query)
     .split(' ')
-    .filter(
-      (word) =>
-        Boolean(word) && !['buy', 'price', 'best', 'online', 'india', 'electric'].includes(word),
-    )
-    .every((word) => (/\d/.test(word) ? tokens.has(word) : haystack.includes(word)));
+    .filter((word) => Boolean(word) && !IGNORED_WORDS.has(word))
+    .every((word) => (/\d/.test(word) ? tokens.has(word) : haystack.includes(word) || near(word)));
 }

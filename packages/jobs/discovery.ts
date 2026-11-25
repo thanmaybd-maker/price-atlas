@@ -23,6 +23,7 @@ import { livePolicy } from '../providers/live';
 import { reserveSource, fetchProductWithBudget } from './index';
 import {
   amazonSearchCards,
+  flipkartSearchCards,
   tinyFishConfigured,
   tinyFishSearch,
   tinyFishSearchHtml,
@@ -258,6 +259,22 @@ export async function discoverProducts(
                       } catch {}
                       for (const card of amazonSearchCards(html)) searchCards.set(card.url, card);
                     }
+                  } else if (store === 'Flipkart') {
+                    // Flipkart cards carry their own product id and selling price too.
+                    const html = await tinyFishSearchHtml(searchUrl, wait, ['div[data-id]']).catch(
+                      () => null,
+                    );
+                    const cards = html ? flipkartSearchCards(html) : [];
+                    for (const card of cards) searchCards.set(card.url, card);
+                    listed = cards.slice(0, 30).map((card) => ({
+                      url: card.url,
+                      store,
+                      title: card.title,
+                    }));
+                    if (!listed.length)
+                      listed = (await tinyFishSearch(searchUrl, store, wait).catch(
+                        () => [],
+                      )) as SearchCandidate[];
                   } else
                     listed = (await tinyFishSearch(searchUrl, store, wait).catch(
                       () => [],

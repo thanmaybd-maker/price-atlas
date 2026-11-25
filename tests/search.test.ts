@@ -1,4 +1,4 @@
-import { it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parseSearchHtml, duckDuckGoProducts, bingProducts } from '../packages/providers/search';
 import { scrapeSearchHtml } from '../packages/providers/scraper';
 import { matchesQuery } from '../packages/domain/search';
@@ -125,4 +125,28 @@ it('does not present a multi-product bundle as a single serum search result', ()
   };
   expect(matchesQuery(bundle, 'Minimalist Niacinamide 10% 30ml')).toBe(false);
   expect(matchesQuery(bundle, 'Minimalist Niacinamide bundle 30ml')).toBe(true);
+});
+
+describe('search spelling tolerance', () => {
+  const item = (name: string) => ({ name, brand: '', subtitle: '' });
+  it('finds hyphenated brands and near spellings', () => {
+    expect(matchesQuery(item('Fire-Boltt Ninja Call Pro Plus Smart Watch'), 'firebolt watch')).toBe(
+      true,
+    );
+    expect(matchesQuery(item("Rubik's Cube 3x3 Speed Cube"), 'rubix cube')).toBe(true);
+    expect(
+      matchesQuery(
+        item(
+          'Fire-Boltt Ninja Calling Pro Plus 46.5mm (1.83) Display Bluetooth Calling Smartwatch',
+        ),
+        'FireBoltt Ninja Call Pro Plus Smart Watch with Bluetooth Calling',
+      ),
+    ).toBe(true);
+  });
+  it('does not loosen into unrelated products', () => {
+    expect(matchesQuery(item('Hot Wheels Matchbox Car'), 'watch')).toBe(false);
+    expect(matchesQuery(item('Samsung Galaxy Watch 7'), 'apple watch')).toBe(false);
+    expect(matchesQuery(item('boAt Storm Call Smartwatch'), 'firebolt watch')).toBe(false);
+    expect(matchesQuery(item('Apple iPhone 16 128GB'), 'iphone 16 256gb')).toBe(false);
+  });
 });

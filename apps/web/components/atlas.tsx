@@ -416,6 +416,68 @@ export default function Atlas({
     lookupVersion,
     router,
   ]);
+  // A search that found listings at only one store also looks up its top result at the
+  // other stores, so the results can be compared across retailers.
+  const [related, setRelated] = useState<{ query: string; ids: string[]; busy: boolean }>({
+    query: '',
+    ids: [],
+    busy: false,
+  });
+  useEffect(() => {
+    if (demo || page !== 'search' || /^https?:\/\//i.test(searchText)) return;
+    if (lookup.busy || lookup.query !== searchText || !lookup.ids.length) return;
+    if (related.query === searchText) return;
+    const stores = new Set(
+      offers.filter((o) => lookup.ids.includes(o.productId)).map((o) => o.store),
+    );
+    const top = products.find((p) => p.id === lookup.ids[0]);
+    if (stores.size > 1 || !top) return;
+    const query = retailerComparisonQuery(top);
+    if (query.trim().length < 2) return;
+    const forSearch = searchText;
+    let active = true;
+    const controller = new AbortController();
+    setRelated({ query: forSearch, ids: [], busy: true });
+    void (async () => {
+      const response = await fetch('/api/v1/discovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, store: 'all' }),
+        signal: controller.signal,
+      });
+      let result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Store lookup unavailable.');
+      for (let attempt = 0; result.state === 'pending' && attempt < 30 && active; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const status = await fetch(`/api/v1/discovery?q=${encodeURIComponent(query)}&store=all`, {
+          signal: controller.signal,
+        });
+        result = await status.json();
+        if (!status.ok) throw new Error(result.error || 'Store lookup unavailable.');
+      }
+      if (!active) return;
+      const found = (result.products || []) as Product[];
+      const incoming = (result.offers || []) as Offer[];
+      if (found.length) {
+        setProducts((prior) => [
+          ...prior,
+          ...found.filter((f) => !prior.some((p) => p.id === f.id)),
+        ]);
+        setOffers((prior) => [
+          ...incoming,
+          ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
+        ]);
+      }
+      setRelated({ query: forSearch, ids: found.map((p) => p.id), busy: false });
+    })().catch(() => {
+      if (active) setRelated({ query: forSearch, ids: [], busy: false });
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+    // starts once per finished search; its own catalog updates must not restart it
+  }, [demo, page, searchText, lookup.busy, lookup.query]);
   // Product page: look up the same product at the other stores in the background, so their
   // prices can sit next to this one. They stay separate listings until the variant matches.
   const [compareLookup, setCompareLookup] = useState({ id: '', busy: false });
@@ -824,6 +886,7 @@ export default function Atlas({
   const textMatch = (p: Product, text: string) =>
     matchesQuery(p, text) ||
     (lookup.query === searchText && lookup.ids.includes(p.id)) ||
+    (related.query === searchText && related.ids.includes(p.id)) ||
     Boolean(assistedIntent?.text && matchesQuery(p, assistedIntent.text));
   const effectiveStore = searchStore !== 'all' ? searchStore : intent.store || 'all';
   const filtered = applyIntent(
@@ -955,6 +1018,31 @@ export default function Atlas({
               <TrendingDown size={22} />
             </span>
           </div>
+          {!demo &&
+            (() => {
+              const also = otherRetailerListings(p, products, offers)
+                .slice(0, 3)
+                .map((other) => ({
+                  other,
+                  price: knownPrice(other.id, offers, undefined, Date.now(), true),
+                }))
+                .filter(({ price }) => price && price.store);
+              if (!also.length) return null;
+              return (
+                <p className="card-also">
+                  Also at{' '}
+                  {also.map(({ other, price }, i) => (
+                    <span key={other.id}>
+                      {i > 0 && ' · '}
+                      <Link prefetch={false} href={`/p/${other.slug}`}>
+                        {price!.store} {money(price!.paise)}
+                      </Link>
+                    </span>
+                  ))}{' '}
+                  <em>similar listing{also.length === 1 ? '' : 's'}</em>
+                </p>
+              );
+            })()}
           <div className="card-bottom">
             <span>
               <i className="store-dot" />{' '}
@@ -1284,6 +1372,11 @@ export default function Atlas({
                     ? lookup.message
                     : ''}
                 </p>
+                {related.query === searchText && related.busy && (
+                  <p className="similar-note" role="status">
+                    Checking the other stores for the top result…
+                  </p>
+                )}
                 {lookup.query === searchText && lookup.candidates.length > 0 && (
                   <details>
                     <summary>Discovery links · live prices unverified</summary>

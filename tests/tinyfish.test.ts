@@ -73,7 +73,7 @@ it('reads product links and titles from a retailer search page in order', () => 
   expect(bh[0].title).toBe('sony wh1000xm5 s wh 1000xm5 noise canceling wireless over ear');
 });
 
-import { amazonSearchCards } from '../packages/providers/tinyfish';
+import { amazonSearchCards, flipkartSearchCards } from '../packages/providers/tinyfish';
 describe('Amazon search cards', () => {
   it('reads each priced card on its own and skips unpriced ones', () => {
     const html = `
@@ -96,4 +96,24 @@ describe('Amazon search cards', () => {
       imageUrl: 'https://m.media-amazon.com/images/I/a.jpg',
     });
   });
+});
+
+it('reads priced Flipkart result cards in grid and list layouts', () => {
+  const html = `
+    <div data-id="SMWGF5GETH3AH6WG"><a title="GOBOULT Drift BT Calling Smartwatch" href="/goboult-drift-smartwatch/p/itm50c9247c6b13c?pid=SMWGF5GETH3AH6WG&amp;srno=s_1_1"><img src="https://rukminim2.flixcart.com/image/a.jpg"/></a>
+      <div>4.1</div><div>₹1,299</div><div>₹7,999</div><span>83% off</span></div>
+    <div data-id="DLLH8PFFGTH6EFUG"><a href="/sony-ilce6100k/p/itm123?pid=DLLH8PFFGTH6EFUG"><img alt="SONY ILCE6100K/BQ IN5 Mirrorless Camera Body with SELP16502 Power Zoom" src="https://rukminim2.flixcart.com/image/b.png"/></a>
+      <div>SONY ILCE6100K/BQ IN5 Mirrorless Camera</div><div>₹62,990</div><div>₹75,990</div><div>Upto</div><div>₹43,600</div><div>Off on Exchange</div></div>
+    <div data-id="BOOMLY0000000001"><a title="BOOMLY Ultra Watch T10" href="/boomly/p/itm2?pid=BOOMLY0000000001"></a><div>₹581</div><div>Currently unavailable</div></div>
+    <div data-id="NOPRICE000000001"><a title="No price card" href="/x/p/itm3?pid=NOPRICE000000001"></a></div>`;
+  const cards = flipkartSearchCards(html, 1);
+  expect(cards.map((c) => [c.externalId, c.itemPrice, c.stock])).toEqual([
+    ['SMWGF5GETH3AH6WG', 129900, true],
+    ['DLLH8PFFGTH6EFUG', 6299000, true],
+    ['BOOMLY0000000001', 58100, false],
+  ]);
+  expect(cards[0].url).toBe(
+    'https://www.flipkart.com/goboult-drift-smartwatch/p/itm50c9247c6b13c?pid=SMWGF5GETH3AH6WG',
+  );
+  expect(cards[1].title).toContain('SONY ILCE6100K');
 });

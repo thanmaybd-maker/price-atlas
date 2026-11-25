@@ -211,6 +211,64 @@ export function amazonSearchCards(html: string, observedAt = Date.now()): Scrape
 }
 
 /** A retailer's rendered search results page as HTML through TinyFish, or null. */
+// Flipkart result cards carry their own product id (data-id), full title and selling price,
+// so like Amazon cards they can be saved without opening every product page.
+export function flipkartSearchCards(html: string, observedAt = Date.now()): ScrapedProduct[] {
+  const $ = load(html);
+  const out: ScrapedProduct[] = [];
+  const seen = new Set<string>();
+  $('div[data-id]').each((_, e) => {
+    const card = $(e);
+    const pid = card.attr('data-id') || '';
+    if (!/^[A-Z0-9]{16}$/.test(pid) || seen.has(pid)) return;
+    const href = card.find('a[href*="/p/"]').first().attr('href') || '';
+    const title = (
+      card.find('a[title]').first().attr('title') ||
+      card.find('img[alt]').first().attr('alt') ||
+      ''
+    )
+      .replace(/\s+/g, ' ')
+      .trim();
+    // the first rupee amount is the selling price; the struck-out MRP comes after it
+    const priceText = card
+      .find('*')
+      .filter((_, x) => $(x).children().length === 0 && /^₹\s?[\d,]+$/.test($(x).text().trim()))
+      .first()
+      .text();
+    const itemPrice = parseINR(priceText);
+    if (!href || title.length < 4 || !itemPrice) return;
+    let identity: ReturnType<typeof canonicalRetailUrl>;
+    try {
+      const url = new URL(href, 'https://www.flipkart.com');
+      url.search = `?pid=${pid}`;
+      identity = canonicalRetailUrl(url.toString());
+    } catch {
+      return;
+    }
+    if (identity.store !== 'Flipkart') return;
+    seen.add(pid);
+    const image = card.find('img').first().attr('src') || null;
+    out.push({
+      ...identity,
+      title: title.slice(0, 500),
+      imageUrl: image && /^https:\/\//.test(image) ? image : null,
+      itemPrice,
+      shipping: null,
+      charges: 0,
+      stock: !/currently unavailable|out of stock|sold out|coming soon/i.test(card.text()),
+      condition: 'new',
+      seller: '',
+      attributes: variantAttributes(title, {
+        'Fetch method': 'Flipkart search results (TinyFish)',
+      }),
+      observedAt,
+      parserVersion: 'flipkart-search-card-v1',
+      status: 'VERIFIED',
+    });
+  });
+  return out;
+}
+
 export async function tinyFishSearchHtml(
   searchUrl: string,
   timeoutMs = 20000,

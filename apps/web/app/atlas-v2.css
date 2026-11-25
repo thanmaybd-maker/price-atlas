@@ -486,6 +486,22 @@ h2 {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.card-also {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--v2-muted);
+}
+.card-also a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.card-also em {
+  font-style: normal;
+  opacity: 0.8;
+}
 .similar-note {
   margin: 6px 4px 0;
   font-size: 12.5px;
