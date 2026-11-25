@@ -1,79 +1,63 @@
-# PRICE ATLAS
+# Price Atlas
 
-Price Atlas supports Amazon.in, Flipkart, Meesho, Croma, Nykaa, Reliance Digital, Myntra, AJIO, iHerb and B&H through a shared retailer registry. It stores observed prices in PostgreSQL and supports verified Supabase accounts, saved products, target rules, and in-app, Telegram, and Discord alert delivery (email requires a verified custom domain). The public web app is [price-atlas-ashen.vercel.app](https://price-atlas-ashen.vercel.app). See the [teacher checklist](docs/TEACHER-TEST-CHECKLIST.md) for repeatable verification and external-service limitations.
+Price comparison site for Indian online stores. You search a product (or paste a product link) and it checks Amazon.in, Flipkart, Meesho, Croma, Nykaa, Reliance Digital, Myntra, AJIO, iHerb and B&H, matches the exact same variant across stores and shows where it is cheapest, with GST and delivery included.
 
-Start with [live scraper setup](docs/SCRAPING.md), [Telegram activation](docs/TELEGRAM.md), and [verification results](docs/LIVE-VERIFICATION.md). Public signup is supported. Retailer tracking enables 30-day observed history, alerts and exact matching by default; an explicit policy override can disable them. No historical prices are invented.
+Live site: https://price-atlas-ashen.vercel.app
 
-## Run locally
+## Features
 
-Requires Node.js 24+ and pnpm 11.19.0. Copy `.env.example` to private `.env`, configure services, and run:
+- search across 10 stores, matching only the exact variant (same model, storage, colour, pack size)
+- daily price history that we record ourselves, plus older history from Keepa and the Internet Archive
+- price targets: set a price and get an alert on Telegram, Discord or in the app when it drops
+- login with email or Google (Supabase Auth), MFA for the admin/operator pages
+- foreign stores (iHerb, B&H) show an INR estimate, but they are never mixed into Indian price ranking
+
+## Tech used
+
+- Next.js 16 + React 19 + TypeScript for the website and API (`apps/web`)
+- PostgreSQL on Supabase for the live data, SQLite for the offline demo mode
+- a background worker (`apps/worker`) that rechecks prices on a schedule and sends alerts
+- cheerio to read store pages; TinyFish, Firecrawl and ScrapingBee as fallbacks when a store blocks a normal request
+- Gemini API to help find which stores sell a product (its answers are always re-checked against the store page)
+- Telegram Bot API, Discord webhooks and Resend for notifications
+- Vitest and Playwright for tests, GitHub Actions for CI, Vercel for the site and Render for the worker
+
+## Folders
+
+| Folder                   | What is in it                                               |
+| ------------------------ | ----------------------------------------------------------- |
+| `apps/web`               | pages, components and the `/api/v1` routes                  |
+| `apps/worker`            | scheduled price collection and alert sending                |
+| `packages/domain`        | core rules: prices in paise, variant matching, GST, history |
+| `packages/database`      | SQL migrations, Postgres and SQLite code                    |
+| `packages/providers`     | store parsers and scraping providers                        |
+| `packages/jobs`          | collection jobs, credit budgets, rate limits                |
+| `packages/notifications` | Telegram, Discord and email                                 |
+| `packages/archive`       | Internet Archive (Wayback) history import                   |
+| `tests`                  | unit tests (Vitest) and browser tests (Playwright, `e2e/`)  |
+| `scripts`                | one-off commands: migrate, backups, imports, checks         |
+
+## Running it
+
+Needs Node 24+ and pnpm 11.
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm migrate
+cp .env.example .env
+pnpm install
 pnpm dev
 ```
 
-In a second terminal:
+Open http://127.0.0.1:3000. With `APP_MODE=demo` (the default in `.env.example`) it runs on local SQLite and needs no keys. For live mode fill the Supabase/scraper keys in `.env`, run `pnpm migrate` once, and start the worker in a second terminal with `pnpm worker`.
+
+On Windows you can also just double-click `run-price-atlas.bat`.
+
+## Tests
 
 ```sh
-pnpm worker
-```
-
-Open <http://127.0.0.1:3000>. Web and worker read the repository's private `.env`. `APP_MODE=live` uses PostgreSQL and verified accounts. `APP_MODE=demo` preserves the separate SQLite synthetic catalog and local profiles; demo data never seeds the live database.
-
-Stop the development server before building into the shared `.next` directory:
-
-```sh
-pnpm build
-pnpm start
-```
-
-## Use the app
-
-Search any product name/model or paste a direct supported retailer product URL. Public live lookup checks retailer search pages, verifies product details and adds successful results to the catalog; it is not limited to seeded products or electronics. Search can find mice, books, kitchen appliances and other product types. Unsupported or blocked pages produce explicit partial/unavailable results. Sign in with verified email or Google to save a product or target. Missing shipping is shown as unknown; bank/exchange discounts do not reduce ranking prices. Separate store listings require decisive variant evidence before matching.
-
-Settings controls email opt-in, Telegram connection, Discord price alerts, notification preferences, MFA, export, sign-out and account deletion. Telegram links expire after ten minutes and require pressing Start in the bot. Discord alerts connect via incoming channel webhooks with a test button. Disconnect in Settings or send `/stop` in Telegram. Email's sandbox sender is restricted to supported recipients; Telegram and Discord avoid the email-domain requirement, but cannot guarantee delivery.
-
-Operators with an approved account and MFA can review matches, anomalies and uncertain Telegram sends, pause sources, and retry collection jobs. No fabricated source agreement is supplied by the app.
-
-## Checks
-
-```sh
-pnpm test
+pnpm test        # unit tests
 pnpm typecheck
-pnpm format:check
+pnpm test:e2e    # browser tests
 pnpm build
-pnpm check:services
-pnpm test:live-api
-pnpm telegram:setup
 ```
 
-Automated tests cover domain rules, demo persistence, isolated PostgreSQL/RLS, parsers, collection recovery, email tokens, Telegram linking/delivery, daily/monthly credit budgeting, custom-product discovery, shared query caching, exact store matching, pack/edition/condition separation, international INR isolation, India daily history, partial metadata and isolated test alerts. Telegram setup checks the hosted secret before registering the webhook. `pnpm check:readiness` inspects the catalog, hosted API, authentication settings, collection ledger, ScrapingBee balance and Telegram configuration without sending messages.
-
-`pnpm catalog:import` imports curated retailer URLs with source pacing. `pnpm alerts:test <your verified account email> <product ID> [telegram|email|both]` evaluates a simulated drop and uses a separate test delivery outbox. Messages are labelled TEST; real rules, prices and history stay untouched. Run this operator command locally.
-
-The shared daily request limit defaults to 1,000 (`SCRAPER_REQUESTS_PER_DAY`), including free direct fetches. Paid credit reservations remain capped at 100/day and 300/UTC calendar month, shared across web imports and workers. Direct product fetching runs first; search can also use free DuckDuckGo discovery. Only an explicitly requested product URL can fall back to the configured paid provider after free fetching fails. Ordinary name searches and scheduled collection are free only. Explicit single-product URLs may use up to ten paid credits (`LOOKUP_MAX_CREDITS`); backup account attempts share this same cap. Standard ScrapingBee requests without JavaScript cost 1 credit; premium without JavaScript costs 10. No automatic premium escalation is enabled. Set `SCRAPER_DIRECT_FIRST=false` only to explicitly skip the free product-fetch attempt. Successful searches are cached for six hours; unsuccessful searches for two minutes. Regular unwatched listings refresh daily; large-batch imports retain a weekly cadence; enabled targets refresh hourly, subject to budget and retailer availability. Catalog display expires after 24 hours; alerts require observations less than one hour old. Set a target's item-price basis when shipping is unknown. Failed paid parsing still consumes the reserved allowance conservatively.
-
-Use `pnpm catalog:import --discover --limit 40 --credits 100` for bounded expansion from retailer product links. The importer validates same-store destinations, skips recently checked listings, and saves its resumable discovery frontier under ignored `data/`. `--file path/to/urls.json` adds a JSON array of product URLs; `--dry-run` shows planned requests without scraping. Discovery links alone never create products or prices.
-
-The live worker defaults to polling the durable PostgreSQL ledger once per minute (`WORKER_QUEUE=database`), avoiding idle BullMQ traffic on metered Upstash. API rate limiting still uses Redis. Set `WORKER_QUEUE=redis` explicitly for BullMQ. Apply migrations before starting the new release. Worker HTTP health returns 503 until a successful tick and when its last successful tick is over three minutes old.
-
-GitHub Actions checks the existing Render worker hourly and waits for a successful collection tick, resuming it after idle sleep. This default needs no application secrets in GitHub. If a fully independent scheduled collector is preferred, configure the secrets listed in `.github/workflows/collection.yml` and set `ATLAS_SCHEDULE_ENABLED=true`; that replaces the Render wake check. GitHub schedules can be delayed and free hosting does not guarantee continuous uptime. The worker defaults to standard, unrendered scraping even on deployments with a legacy premium setting; enable `WORKER_SCRAPER_PREMIUM_PROXY` or `WORKER_SCRAPER_RENDER_JS` explicitly to change that.
-
-## Code map
-
-See the [15-perspective audit](docs/PROJECT-AUDIT.md) for completed optional features, known limitations and prioritized follow-ups. Product history supports item/delivered views, shareable periods and CSV evidence with real timestamps. The verified catalog is still below its 2,500-product target; live counts are available at `/api/v1/catalog/status`.
-
-| Location                   | Responsibility                                                       |
-| -------------------------- | -------------------------------------------------------------------- |
-| `apps/web`                 | Next.js pages, verified auth, JSON APIs and signed webhooks          |
-| `apps/worker`              | Scheduled live collection, queue recovery and alert dispatch         |
-| `packages/domain`          | Integer-paise prices, eligibility, exact matching and alert episodes |
-| `packages/database`        | PostgreSQL migrations/RLS and separate SQLite demo backend           |
-| `packages/providers`       | Retailer parsing, proxy transports, validation and capabilities      |
-| `packages/jobs`            | BullMQ dispatch, persistent leases, quotas and collection retries    |
-| `packages/notifications`   | Resend, Telegram, and Discord delivery, account linking and opt-out  |
-| `tests`, `scripts`, `docs` | Verification, operations and setup                                   |
-
-The worker requires continuous hosting for reliable polling. A free Render web service can sleep, even with a health listener. Source permissions, account/provider settings and actual recipient delivery are reported separately from tests and API acceptance. Never commit `.env` or expose server credentials through `NEXT_PUBLIC_*` settings.
+Name searches are free. A pasted product link can use paid scraping credits, capped at 10 per lookup and a daily/monthly limit. `.env` is never committed.

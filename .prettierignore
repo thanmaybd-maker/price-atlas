@@ -3,6 +3,5 @@ node_modules
 apps/web/.next
 pnpm-lock.yaml
 data
-docs/Smart-Shopping-Blueprint.md
 apps/web/next-env.d.ts
 apps/web/public/vendor
