@@ -416,6 +416,58 @@ export default function Atlas({
     lookupVersion,
     router,
   ]);
+  // Product page: look up the same product at the other stores in the background, so their
+  // prices can sit next to this one. They stay separate listings until the variant matches.
+  const [compareLookup, setCompareLookup] = useState({ id: '', busy: false });
+  useEffect(() => {
+    if (demo || page !== 'p' || !current) return;
+    if (otherRetailerListings(current, products, offers).length >= 2) return;
+    const query = retailerComparisonQuery(current);
+    if (query.trim().length < 2) return;
+    const id = current.id;
+    let active = true;
+    const controller = new AbortController();
+    setCompareLookup({ id, busy: true });
+    void (async () => {
+      const response = await fetch('/api/v1/discovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, store: 'all' }),
+        signal: controller.signal,
+      });
+      let result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Store lookup unavailable.');
+      for (let attempt = 0; result.state === 'pending' && attempt < 30 && active; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const status = await fetch(`/api/v1/discovery?q=${encodeURIComponent(query)}&store=all`, {
+          signal: controller.signal,
+        });
+        result = await status.json();
+        if (!status.ok) throw new Error(result.error || 'Store lookup unavailable.');
+      }
+      if (!active) return;
+      const found = (result.products || []) as Product[];
+      const incoming = (result.offers || []) as Offer[];
+      if (found.length) {
+        setProducts((prior) => [
+          ...prior,
+          ...found.filter((f) => !prior.some((p) => p.id === f.id)),
+        ]);
+        setOffers((prior) => [
+          ...incoming,
+          ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
+        ]);
+      }
+      setCompareLookup({ id, busy: false });
+    })().catch(() => {
+      if (active) setCompareLookup({ id, busy: false });
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+    // once per product page: catalog updates from this lookup must not restart it
+  }, [demo, page, current?.id]);
   useEffect(() => {
     if (!demo && page === 'search' && searchText.trim().length >= 2) setBloom(true);
     else setBloom(false);
@@ -2365,6 +2417,57 @@ export default function Atlas({
               )}
             </div>
           ))}
+          {!demo && otherListings.length > 0 && (
+            <p className="similar-note">
+              Similar listings at other stores. The variant is not confirmed yet, so these prices
+              are shown for comparison and not ranked.
+            </p>
+          )}
+          {!demo &&
+            otherListings.map((other) => {
+              const known = knownPrice(other.id, offers, undefined, Date.now(), true);
+              const store =
+                known?.store ||
+                offers.find((o) => o.productId === other.id)?.store ||
+                other.attributes.Retailer ||
+                'Other store';
+              return (
+                <div className="offer-row similar" key={`similar-${other.id}`}>
+                  <div>
+                    <strong className={`offer-store ${String(store).toLowerCase()}`}>
+                      {store}
+                    </strong>
+                    <span className="similar-name">{other.name}</span>
+                  </div>
+                  <div className="offer-price">
+                    <span className="mobile-label">Price</span>
+                    <strong>
+                      {known
+                        ? known.fresh
+                          ? money(known.paise)
+                          : `Last ${money(known.paise)}`
+                        : 'Not checked yet'}
+                    </strong>
+                    <span>Similar listing · variant not confirmed</span>
+                  </div>
+                  <div>
+                    <span className="stock-label">
+                      <i />
+                      {!known ? 'Unknown' : known.inStock ? 'In stock' : 'Out of stock'}
+                    </span>
+                    <span>{known ? relative(known.observedAt) : ''}</span>
+                  </div>
+                  <Link className="store-button" prefetch={false} href={`/p/${other.slug}`}>
+                    Open listing <ArrowUpRight size={16} />
+                  </Link>
+                </div>
+              );
+            })}
+          {!demo && compareLookup.busy && compareLookup.id === p.id && (
+            <p className="similar-note" role="status">
+              Checking other stores for this product…
+            </p>
+          )}
         </div>
         {!primaryOffers.length && (
           <p className="muted">
