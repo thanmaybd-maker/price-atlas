@@ -48,8 +48,8 @@ export function retailerComparisonQuery(
       attrModel && attrModel.length >= 3 && attrModel.length <= 20 && /\d/.test(attrModel)
         ? attrModel
         : product.name.match(
-          /\b(?:[a-z]{1,4}\d{3,5}[a-z0-9-]{0,8}|\d{4}[a-z]{1,2}|n\d{4}|m[1-5](?:\s+(?:pro|max|air))?)\b/i,
-        )?.[0];
+            /\b(?:[a-z]{1,4}\d{3,5}[a-z0-9-]{0,8}|\d{4}[a-z]{1,2}|n\d{4}|m[1-5](?:\s+(?:pro|max|air))?)\b/i,
+          )?.[0];
     if (sku && !normalizeQuery(query).includes(normalizeQuery(sku))) query = `${query} ${sku}`;
   }
   return query.slice(0, 150);

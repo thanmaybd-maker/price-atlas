@@ -2256,7 +2256,10 @@ export default function Atlas({
                             {products.find((p) => p.id === n.productId)?.name} at {money(n.price)}
                           </p>
                           <span className="muted small">
-                            {n.store} · {new Date(n.created_at).toLocaleString('en-IN')}
+                            {n.store} ·{' '}
+                            {new Date(n.created_at).toLocaleString('en-IN', {
+                              timeZone: 'Asia/Kolkata',
+                            })}
                             <br />
                             {n.state} · {demo ? 'demo in-app alert' : 'price alert'}
                           </span>
@@ -2673,7 +2676,7 @@ export default function Atlas({
             )}
             {p.attributes['Price note'] && <p className="muted">{p.attributes['Price note']}</p>}
             {p.attributes['Source price'] && (
-              <p className="muted">
+              <p className="muted" suppressHydrationWarning>
                 {p.attributes.Availability} · Checked{' '}
                 {p.attributes['Checked at']
                   ? relative(Date.parse(p.attributes['Checked at']))
@@ -2880,7 +2883,7 @@ export default function Atlas({
                       <i />
                       {!known ? 'Unknown' : known.inStock ? 'In stock' : 'Out of stock'}
                     </span>
-                    <span>{known ? relative(known.observedAt) : ''}</span>
+                    <span suppressHydrationWarning>{known ? relative(known.observedAt) : ''}</span>
                   </div>
                   <Link className="store-button" prefetch={false} href={`/p/${other.slug}`}>
                     Open listing <ArrowUpRight size={16} />
@@ -2957,7 +2960,7 @@ export default function Atlas({
               </p>
             )}
             {international.map((o) => (
-              <p key={o.id}>
+              <p key={o.id} suppressHydrationWarning>
                 {o.store} ·{' '}
                 {o.currency === 'INR' ? money(o.itemPrice) : nativeMoney(o.itemPrice, o.currency)}{' '}
                 (native {o.currency}) · {relative(o.observedAt)}{' '}
@@ -3549,7 +3552,11 @@ export default function Atlas({
                     admin.runs.map((r) => (
                       <tr key={r.id}>
                         <td>{r.id}</td>
-                        <td>{new Date(r.started_at).toLocaleString('en-IN')}</td>
+                        <td>
+                          {new Date(r.started_at).toLocaleString('en-IN', {
+                            timeZone: 'Asia/Kolkata',
+                          })}
+                        </td>
                         <td>
                           <span className="status-pill">{r.status}</span>
                         </td>
