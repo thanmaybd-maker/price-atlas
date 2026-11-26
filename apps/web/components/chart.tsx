@@ -19,7 +19,6 @@ export function PriceChart({
 }) {
   const [table, setTable] = useState(false);
   const [hover, setHover] = useState<Offer | null>(null);
-  const [viewMode, setViewMode] = useState<'strict' | 'smooth'>('smooth');
   const valid = observations.filter((o) => o.historyAllowed && o.stock && total(o, basis) !== null);
   if (!valid.length)
     return (
@@ -53,35 +52,6 @@ export function PriceChart({
   const colors = ['#8e99b8', '#117855', '#b05b88', '#a56a22', '#6554a4', '#2277a5', '#9a4141'];
   return (
     <div className={compact ? 'chart compact' : 'chart'}>
-      {!compact && (
-        <div className="chart-toolbar">
-          <div className="chart-mode-toggle" role="radiogroup" aria-label="History view mode">
-            <button
-              type="button"
-              className={`chart-toggle-btn ${viewMode === 'strict' ? 'active' : ''}`}
-              onClick={() => setViewMode('strict')}
-              aria-checked={viewMode === 'strict'}
-              role="radio"
-            >
-              Strict (Actual Data)
-            </button>
-            <button
-              type="button"
-              className={`chart-toggle-btn ${viewMode === 'smooth' ? 'active' : ''}`}
-              onClick={() => setViewMode('smooth')}
-              aria-checked={viewMode === 'smooth'}
-              role="radio"
-            >
-              Smooth (Carry-Forward)
-            </button>
-          </div>
-          {viewMode === 'smooth' && (
-            <span className="chart-disclaimer-note">
-              Smooth view carries last known price for visual continuity.
-            </span>
-          )}
-        </div>
-      )}
       <svg
         viewBox="0 0 720 230"
         role="img"
@@ -119,26 +89,14 @@ export function PriceChart({
           return (
             <g key={store}>
               {(() => {
-                // Step line: a checked price holds until the next check.
-                // In smooth mode, lines carry forward continuously across missing days.
-                // In strict mode, gaps past offer validity are dashed.
+                // Step line: each checked price holds until the next check.
                 const solid: string[] = [];
-                const dashed: string[] = [];
                 points.forEach((o, j) => {
                   const px = x(o.observedAt);
                   const py = y(total(o, basis)!);
                   const next = points[j + 1];
                   const nx = next ? x(next.observedAt) : days ? x(end) : px;
-                  if (nx > px) {
-                    const seg = `M${px},${py} H${nx}`;
-                    if (viewMode === 'smooth') {
-                      solid.push(seg);
-                    } else if (next && next.observedAt <= o.validUntil + 43200000) {
-                      solid.push(seg);
-                    } else {
-                      dashed.push(seg);
-                    }
-                  }
+                  if (nx > px) solid.push(`M${px},${py} H${nx}`);
                   if (next) solid.push(`M${nx},${py} V${y(total(next, basis)!)}`);
                 });
                 const stroke = colors[i % colors.length];
@@ -149,14 +107,7 @@ export function PriceChart({
                   strokeLinecap: 'round' as const,
                   strokeLinejoin: 'round' as const,
                 };
-                return (
-                  <>
-                    {solid.length > 0 && <path d={solid.join(' ')} {...common} />}
-                    {dashed.length > 0 && (
-                      <path d={dashed.join(' ')} {...common} strokeDasharray="3 6" opacity=".75" />
-                    )}
-                  </>
-                );
+                return solid.length > 0 ? <path d={solid.join(' ')} {...common} /> : null;
               })()}
               {!compact &&
                 points.map((o) => (
@@ -208,9 +159,7 @@ export function PriceChart({
             <span className="chart-hover">
               {hover
                 ? `${hover.store} · ${money(total(hover, basis))}`
-                : viewMode === 'smooth'
-                  ? `${valid.length} ${demo ? 'synthetic checks' : 'recorded checks'} · continuous carry-forward`
-                  : `${valid.length} ${demo ? 'synthetic checks' : 'recorded checks'} · dashed = no check that day, last checked price held`}
+                : `${valid.length} ${demo ? 'synthetic checks' : 'recorded checks'}`}
             </span>
             <button className="text-button" onClick={() => setTable(!table)}>
               {table ? 'Hide' : 'View'} data table

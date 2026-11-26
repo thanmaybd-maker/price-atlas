@@ -54,6 +54,10 @@ export function GeminiFinds({ query }: { query: string }) {
     for: '',
     result: null,
   });
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => {
+    setShowAll(false);
+  }, [query]);
   useEffect(() => {
     if (query.trim().length < 2 || /^https?:\/\//i.test(query)) return;
     const controller = new AbortController();
@@ -163,7 +167,7 @@ export function GeminiFinds({ query }: { query: string }) {
             . Prices are checked separately.
           </p>
           <ul className="gemini-list">
-            {result.candidates.map((c, i) => (
+            {(showAll ? result.candidates : result.candidates.slice(0, 6)).map((c, i) => (
               <li key={c.url} style={{ animationDelay: `${i * 70}ms` }}>
                 <div>
                   <strong>{c.title}</strong>
@@ -184,6 +188,17 @@ export function GeminiFinds({ query }: { query: string }) {
               </li>
             ))}
           </ul>
+          {result.candidates.length > 6 && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setShowAll((open) => !open)}
+            >
+              {showAll
+                ? 'Show fewer links'
+                : `Show ${result.candidates.length - 6} more store links`}
+            </button>
+          )}
           <p className="fine-print">
             {result.provider === 'antigravity'
               ? 'Store links found by Antigravity. '
@@ -216,7 +231,7 @@ export function GeminiFinds({ query }: { query: string }) {
         </>
       )}
       {result && Boolean(result.otherVariants?.length) && (
-        <details className="gemini-sources" open>
+        <details className="gemini-sources" open={result.otherVariants!.length <= 3}>
           <summary>Other variants and pack sizes ({result.otherVariants!.length})</summary>
           <p className="fine-print">
             Different variants stay separate. Live prices are unverified until checked.

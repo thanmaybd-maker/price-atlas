@@ -85,13 +85,12 @@ export async function lookupStatus(value: string, store: Store | 'all' = 'all') 
     row.state === 'complete'
       ? (await Promise.all((data.productIds || []).map((id) => findProduct(id)))).filter(Boolean)
       : [];
+  const ids = data.productIds || [];
   const current =
-    row.state === 'complete'
-      ? (await offers()).filter(
-          (o) =>
-            (data.productIds || []).includes(o.productId) &&
-            (!requestedStore || o.store === requestedStore),
-        )
+    row.state === 'complete' && ids.length
+      ? (await Promise.all(ids.map((id) => offers(id))))
+          .flat()
+          .filter((o) => !requestedStore || o.store === requestedStore)
       : [];
   return { state: row.state, ...data, products, offers: current, cached: true };
 }
@@ -143,7 +142,9 @@ export async function discoverProducts(
     credits += cost;
     return true;
   };
-  const deadline = Date.now() + 45000;
+  // Direct URL verification keeps 45 s for proxied store pages; name searches finish
+  // quickly so results arrive together instead of trickling in 20+ seconds later.
+  const deadline = Date.now() + (url ? 45000 : 18000);
   // Priced search-result cards (Amazon), imported without a second page read.
   const searchCards = new Map<string, ScrapedProduct>();
   const importUrl = async (destination: string) => {
@@ -246,7 +247,7 @@ export async function discoverProducts(
                 // many listings per store instead of one or two.
                 if (candidates.length < 6 && tinyFishConfigured()) {
                   const searchUrl = retailerSearchUrl(store, searchPhrase);
-                  const wait = Math.max(6000, Math.min(28000, deadline - Date.now() - 15000));
+                  const wait = Math.max(5000, Math.min(10000, deadline - Date.now() - 4000));
                   let listed: SearchCandidate[] = [];
                   if (store === 'Amazon') {
                     // Amazon cards carry their own ASIN and printed price.
@@ -311,7 +312,7 @@ export async function discoverProducts(
                     throw e;
                 }
               }
-              if (!candidates.length && Date.now() < deadline - 16000) {
+              if (!candidates.length && Date.now() < deadline - 5000) {
                 method = 'web-search-rss';
                 await reserveSource(store, { transport: 'direct' });
                 candidates = await bingProducts(searchPhrase, store);
@@ -340,12 +341,14 @@ export async function discoverProducts(
               // Priced result cards become products straight away; other listings are verified
               // on their product pages in parallel, so one search spans many products and stores.
               const exactCards = relevant.filter((c) => searchCards.has(c.url));
-              // The retailer's own neighbouring results (other models, other brands it ranked
-              // for this query) fill out the list so a model search also shows alternatives.
-              const similar = candidates.filter(
-                (c) => searchCards.has(c.url) && !relevant.includes(c),
-              );
-              const carded = [...exactCards, ...similar].slice(0, 24);
+              // Neighbouring results fill out model searches, but never pad pure category or
+              // budget searches with unrelated items.
+              const padSimilar =
+                Boolean(intent.text) && intent.maxPaise == null && intent.minPaise == null;
+              const similar = padSimilar
+                ? candidates.filter((c) => searchCards.has(c.url) && !relevant.includes(c))
+                : [];
+              const carded = [...exactCards, ...similar].slice(0, 16);
               const loose = new Set(similar.map((c) => c.url));
               const toVerify = relevant
                 .filter((c) => !searchCards.has(c.url))
@@ -353,7 +356,7 @@ export async function discoverProducts(
               const keep = async (id: string) => {
                 const p = await findProduct(id);
                 return p &&
-                  applyIntent([p], await offers(), intent, matchesQuery, {
+                  applyIntent([p], await offers(id), intent, matchesQuery, {
                     store: effectiveScope,
                   }).length
                   ? id
@@ -367,14 +370,14 @@ export async function discoverProducts(
                   if (!loose.has(c.url)) return keep(id);
                   const p = await findProduct(id);
                   return p &&
-                    applyIntent([p], await offers(), { ...intent, text: '' }, () => true, {
+                    applyIntent([p], await offers(id), { ...intent, text: '' }, () => true, {
                       store: effectiveScope,
                     }).length
                     ? id
                     : null;
                 }),
                 ...toVerify.map(async (selected) => {
-                  if (Date.now() > deadline - 8000) return null;
+                  if (Date.now() > deadline - 4000) return null;
                   return keep(await importUrl(selected.url));
                 }),
               ]);

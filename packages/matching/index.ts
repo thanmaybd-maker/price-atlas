@@ -130,7 +130,7 @@ export function categoryFor(title: string, attributes: Record<string, string>): 
   )
     return 'services';
   if (
-    /\b(?:mouse|keyboard|webcam|printer|mfp|router|power bank|mouse ?pad|cable|charger|adapter|case|cover|screen protector|tempered glass|earpads|sleeve|phone holder)\b/i.test(
+    /\b(?:mouse|keyboard|webcam|printer|mfp|router|power bank|mouse ?pad|cable|charger|adapt[eo]r|power cord|ac power|laptop battery|cooling pad|laptop stand|laptop bag|backpack|case|cover|screen protector|tempered glass|earpads|sleeve|phone holder)\b/i.test(
       primary,
     )
   )

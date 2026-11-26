@@ -216,6 +216,24 @@ it('understands budget words as search intent rather than a product model', () =
     ],
   });
   expect(r.candidates).toHaveLength(1);
+  const laptops = parseAgentResearch('laptop under 3k', {
+    products: [
+      {
+        title: 'DELL Original Adaptor Latitude 7430 65W',
+        url: 'https://www.amazon.in/dp/B0ADAPTOR1',
+      },
+      {
+        title: 'HP Laptop Backpack 15.6 inch',
+        url: 'https://www.amazon.in/dp/B0BACKPACK',
+      },
+      {
+        title: 'Lenovo IdeaPad 1 Laptop 8GB 256GB SSD',
+        url: 'https://www.amazon.in/dp/B0LAPTOP01',
+      },
+    ],
+  });
+  expect(laptops.candidates.map((c) => c.title)).toEqual(['Lenovo IdeaPad 1 Laptop 8GB 256GB SSD']);
+  expect(laptops.otherVariants).toEqual([]);
 });
 
 it('closes redirected stdin so print-mode tools waiting for EOF can complete', async () => {

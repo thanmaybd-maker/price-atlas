@@ -108,6 +108,10 @@ it('puts each shelf item where a shopper would look for it', () => {
     ['Tayhaa White & Gold Piano Player Showpiece(One Size)', 'home-kitchen'],
     ['uni-ball Air UBA188M 0.5mm Roller Ball Pen | Blue Ink, Pack of 3', 'stationery'],
     ['Rina Kent Legacy of Gods Series 6 Books Collection Set', 'books'],
+    [
+      'DELL Original Adaptor Latitude 7430,DA65NM190; LA65NM190,5V/9V/15V/20V-3A/3.25A 65 W Adapter (Power Cord Included)',
+      'accessories',
+    ],
   ];
   for (const [title, category, attributes] of cases)
     expect([title, categoryFor(title, attributes || {})]).toEqual([title, category]);

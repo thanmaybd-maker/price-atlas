@@ -292,6 +292,16 @@ export default function Atlas({
   const [heroStore, setHeroStore] = useState('all');
   const [bloom, setBloom] = useState(false);
   const [lookupVersion, setLookupVersion] = useState(0);
+  const [pendingMore, setPendingMore] = useState<{
+    query: string;
+    products: Product[];
+    offers: Offer[];
+  }>({ query: '', products: [], offers: [] });
+  const visibleCountRef = useRef(0);
+  const bloomRef = useRef(false);
+  const productsRef = useRef(products);
+  productsRef.current = products;
+  bloomRef.current = bloom;
   const pending = useRef<(() => void) | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const current = products.find((p) => p.slug === route[1] || p.id === route[1]);
@@ -345,7 +355,9 @@ export default function Atlas({
   useEffect(() => {
     if (demo || page !== 'search' || searchText.trim().length < 2) return;
     let active = true;
+    const startedAt = Date.now();
     const controller = new AbortController();
+    setPendingMore({ query: '', products: [], offers: [] });
     setLookup({ query: searchText, busy: true, ids: [], message: '', candidates: [] });
     void (async () => {
       const response = await fetch('/api/v1/discovery', {
@@ -380,11 +392,38 @@ export default function Atlas({
         );
       const found = (result.products || []) as Product[];
       const incoming = (result.offers || []) as Offer[];
-      setProducts((prior) => [...found, ...prior.filter((p) => !found.some((f) => f.id === p.id))]);
-      setOffers((prior) => [
-        ...incoming,
-        ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
-      ]);
+      const existingIds = new Set(productsRef.current.map((p) => p.id));
+      const brandNew = found.filter((f) => !existingIds.has(f.id));
+      const arrivedLate =
+        Date.now() - startedAt > 3000 &&
+        !bloomRef.current &&
+        visibleCountRef.current > 0 &&
+        !/^https?:\/\//i.test(searchText);
+      if (arrivedLate && brandNew.length > 0) {
+        // Keep the grid stable when slow live checks finish after the shopper is already
+        // reading results: refresh existing offers silently and let the shopper pull in new ones.
+        const brandNewIds = new Set(brandNew.map((p) => p.id));
+        const existingOffers = incoming.filter((o) => !brandNewIds.has(o.productId));
+        if (existingOffers.length)
+          setOffers((prior) => [
+            ...existingOffers,
+            ...prior.filter((o) => !existingOffers.some((f) => f.id === o.id)),
+          ]);
+        setPendingMore({
+          query: searchText,
+          products: brandNew,
+          offers: incoming.filter((o) => brandNewIds.has(o.productId)),
+        });
+      } else {
+        setProducts((prior) => [
+          ...found,
+          ...prior.filter((p) => !found.some((f) => f.id === p.id)),
+        ]);
+        setOffers((prior) => [
+          ...incoming,
+          ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
+        ]);
+      }
       setLookup({
         query: searchText,
         busy: false,
@@ -469,14 +508,40 @@ export default function Atlas({
       const found = (result.products || []) as Product[];
       const incoming = (result.offers || []) as Offer[];
       if (found.length) {
-        setProducts((prior) => [
-          ...prior,
-          ...found.filter((f) => !prior.some((p) => p.id === f.id)),
-        ]);
-        setOffers((prior) => [
-          ...incoming,
-          ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
-        ]);
+        const existingIds = new Set(productsRef.current.map((p) => p.id));
+        const brandNew = found.filter((f) => !existingIds.has(f.id));
+        const brandNewIds = new Set(brandNew.map((p) => p.id));
+        const existingOffers = incoming.filter((o) => !brandNewIds.has(o.productId));
+        if (existingOffers.length)
+          setOffers((prior) => [
+            ...existingOffers,
+            ...prior.filter((o) => !existingOffers.some((f) => f.id === o.id)),
+          ]);
+        if (brandNew.length && visibleCountRef.current > 0 && !bloomRef.current) {
+          setPendingMore((prior) => {
+            const base =
+              prior.query === forSearch ? prior : { query: forSearch, products: [], offers: [] };
+            const seenP = new Set(base.products.map((p) => p.id));
+            const seenO = new Set(base.offers.map((o) => o.id));
+            return {
+              query: forSearch,
+              products: [...base.products, ...brandNew.filter((p) => !seenP.has(p.id))],
+              offers: [
+                ...base.offers,
+                ...incoming.filter((o) => brandNewIds.has(o.productId) && !seenO.has(o.id)),
+              ],
+            };
+          });
+        } else {
+          setProducts((prior) => [
+            ...prior,
+            ...found.filter((f) => !prior.some((p) => p.id === f.id)),
+          ]);
+          setOffers((prior) => [
+            ...incoming,
+            ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
+          ]);
+        }
       }
       setRelated({ query: forSearch, ids: found.map((p) => p.id), busy: false });
     })().catch(() => {
@@ -541,8 +606,14 @@ export default function Atlas({
     // once per product page: catalog updates from this lookup must not restart it
   }, [demo, page, current?.id]);
   useEffect(() => {
-    if (!demo && page === 'search' && searchText.trim().length >= 2) setBloom(true);
-    else setBloom(false);
+    const wantsBloom =
+      !demo &&
+      page === 'search' &&
+      searchText.trim().length >= 2 &&
+      (visibleCountRef.current === 0 ||
+        /^https?:\/\//i.test(searchText) ||
+        params.get('verify') === '1');
+    setBloom(wantsBloom);
   }, [demo, page, searchText, searchStore]);
   async function refresh() {
     const result = await api('session');
@@ -926,6 +997,33 @@ export default function Atlas({
     textMatch,
     { store: effectiveStore, sort },
   ).map((row) => row.p);
+  visibleCountRef.current = filtered.length;
+  const pendingMatches =
+    pendingMore.query === searchText && pendingMore.products.length
+      ? applyIntent(
+          pendingMore.products.filter(
+            (p) => (!category || p.category === category) && (!brand || sameBrand(p.brand, brand)),
+          ),
+          [...pendingMore.offers, ...offers],
+          { ...intent, category: intent.category || assistedIntent?.category },
+          textMatch,
+          { store: effectiveStore, sort },
+        ).map((row) => row.p)
+      : [];
+  function applyPendingMore() {
+    if (!pendingMore.products.length) return;
+    const addProducts = pendingMore.products;
+    const addOffers = pendingMore.offers;
+    setProducts((prior) => [
+      ...prior,
+      ...addProducts.filter((f) => !prior.some((p) => p.id === f.id)),
+    ]);
+    setOffers((prior) => [
+      ...addOffers,
+      ...prior.filter((o) => !addOffers.some((f) => f.id === o.id)),
+    ]);
+    setPendingMore({ query: '', products: [], offers: [] });
+  }
   const near = filtered.length
     ? []
     : nearMisses(
@@ -1709,8 +1807,16 @@ export default function Atlas({
                 onDone={() => setBloom(false)}
               />
             )}
-            {searchText && !/^https?:\/\//i.test(searchText) && effectiveStore === 'all' && (
-              <GeminiFinds key={searchText} query={searchText} />
+            {pendingMatches.length > 0 && (
+              <div className="pending-results-banner" role="status">
+                <span>
+                  {pendingMatches.length} more live store{' '}
+                  {pendingMatches.length === 1 ? 'result is' : 'results are'} ready.
+                </span>
+                <button type="button" className="outline-button" onClick={applyPendingMore}>
+                  Show {pendingMatches.length} more
+                </button>
+              </div>
             )}
             {filtered.length ? (
               <div className="product-grid">
@@ -1952,6 +2058,9 @@ export default function Atlas({
                   Next page
                 </button>
               </nav>
+            )}
+            {searchText && !/^https?:\/\//i.test(searchText) && effectiveStore === 'all' && (
+              <GeminiFinds key={searchText} query={searchText} />
             )}
           </section>
         ) : page === 'p' && current ? (

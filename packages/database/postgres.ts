@@ -84,12 +84,19 @@ export async function syncAccount(user: {
     ).rows[0] as Account;
   });
 }
+function normalizeProduct(raw: Product): Product {
+  const clean = tidyProduct(raw);
+  const inferred = categoryFor(clean.name, clean.attributes || {});
+  return inferred !== 'other' && inferred !== clean.category
+    ? { ...clean, category: inferred }
+    : clean;
+}
 export async function catalog(): Promise<Product[]> {
   return (
     await postgres().query(
       "SELECT data FROM atlas.products p WHERE EXISTS(SELECT 1 FROM atlas.listings l WHERE l.product_id=p.id AND l.match_state<>'rejected') ORDER BY created_at DESC,id",
     )
-  ).rows.map((r) => tidyProduct(r.data as Product));
+  ).rows.map((r) => normalizeProduct(r.data as Product));
 }
 export async function offers(productId?: string): Promise<Offer[]> {
   // Current offers, plus the latest recorded observation (14 days) for any accepted listing
@@ -120,7 +127,7 @@ export async function findProduct(id: string) {
   const data = (
     await postgres().query('SELECT data FROM atlas.products WHERE id=$1 OR slug=$1', [id])
   ).rows[0]?.data as Product | undefined;
-  return data && tidyProduct(data);
+  return data && normalizeProduct(data);
 }
 export async function reusableListing(url: string) {
   const identity = canonicalRetailUrl(url);

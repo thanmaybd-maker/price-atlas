@@ -5,6 +5,7 @@ import { discoveryConflict } from '../domain/discovery-guard';
 import { variantSignature } from '../domain/variant-guard';
 import type { SearchCandidate } from './search';
 import { parseQueryIntent } from '../domain/query-intent';
+import { categoryFor } from '../matching/index';
 import { RESEARCH_LISTING_LIMIT } from '../domain/research-limits';
 import { researchListingTitle } from './agent-payload';
 
@@ -80,8 +81,12 @@ export function parseAgentResearch(query: string, raw: unknown, now = Date.now()
     let title = row.title.replace(/\s+/g, ' ').trim().slice(0, 300);
     if (title.length < 4) continue;
     const accessory =
-      /\b(?:case|cover|sleeve|protector|replacement|earpads|adapter|charger|cable|stand)\b/i;
+      /\b(?:case|cover|sleeve|protector|replacement|earpads|adapt[eo]r|charger|cable|stand|power cord|cooling pad|backpack|bag)\b/i;
     if (accessory.test(title) && !accessory.test(query)) continue;
+    if (intent.category) {
+      const leadCat = categoryFor(title, {});
+      if (leadCat !== 'other' && leadCat !== intent.category) continue;
+    }
     try {
       const identity = canonicalRetailUrl(row.url);
       title = researchListingTitle(title, identity.url);
