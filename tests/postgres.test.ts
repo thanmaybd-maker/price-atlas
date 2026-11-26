@@ -445,6 +445,42 @@ it('disconnect and /stop remove only the linked account and invalidate pending l
   });
   await disconnectTelegram(alice);
   expect(await telegramStatus(bob)).toMatchObject({ connected: true });
+  // Telegram must suppress if the offer is no longer alert-eligible instead of falling back.
+  const bobRule = await store.saveRule(bob, {
+    productId,
+    target: 2900000,
+    operator: 'lte',
+    basis: 'delivered',
+    store: 'all',
+    enabled: true,
+  });
+  await db.query(
+    `UPDATE atlas.observations SET data = jsonb_set(data, '{alertsAllowed}', 'false'::jsonb)
+     WHERE product_id=$1`,
+    [productId],
+  );
+  let suppressedCalls = 0;
+  await deliverTelegram(async () => {
+    suppressedCalls++;
+    return 'should-not-send';
+  });
+  expect(suppressedCalls).toBe(0);
+  expect(
+    (
+      await db.query<{ state: string }>(
+        `SELECT d.state FROM atlas.telegram_deliveries d
+         JOIN atlas.notifications n ON n.id=d.notification_id
+         WHERE n.rule_id=$1`,
+        [bobRule.id],
+      )
+    ).rows[0].state,
+  ).toBe('suppressed');
+  await db.query(
+    `UPDATE atlas.observations SET data = jsonb_set(data, '{alertsAllowed}', 'true'::jsonb)
+     WHERE product_id=$1`,
+    [productId],
+  );
+  await store.deleteRule(bob, bobRule.id);
   await handleTelegramUpdate({
     update_id: 6,
     message: {

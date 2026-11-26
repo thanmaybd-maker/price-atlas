@@ -179,7 +179,7 @@ export function personal(userId: string) {
       .map((r) => JSON.parse(r.data as string) as Rule),
     notifications: db()
       .prepare(
-        'SELECT id,data,state,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC',
+        'SELECT id,rule_id,data,state,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC',
       )
       .all(userId)
       .map((r) => ({ ...r, ...JSON.parse(r.data as string) })),

@@ -137,7 +137,7 @@ function OffersWorld({ products, offers }: { products: Product[]; offers: Offer[
   for (const o of [...active.list].sort((a, b) => b.observedAt - a.observedAt))
     if (!byStore.has(o.store)) byStore.set(o.store, o);
   const list = [...byStore.values()];
-  const basis: Basis = sort === 'item' ? 'item' : 'delivered';
+  const basis: Basis = sort === 'delivered' ? 'delivered' : 'item';
   const intl = (o: Offer) => retailers[o.store]?.international || o.currency !== 'INR';
   const rankable = (o: Offer) => !intl(o) && o.accepted && eligible(o) && total(o, basis) !== null;
   const val = (o: Offer) => total(o, basis) as number;
@@ -197,7 +197,7 @@ function OffersWorld({ products, offers }: { products: Product[]; offers: Offer[
       fig = o.stock ? 'waiting' : 'out of stock';
       stat = !o.stock
         ? 'not available now'
-        : o.shipping === null
+        : basis === 'delivered' && o.shipping === null
           ? 'delivery unknown'
           : 'too old to rank';
       statCls = 'stp plain';
@@ -570,6 +570,7 @@ function TargetsWorld({
   const amount = dt ?? String(suggested(p) || '');
   // Only stores that can actually send an alert (same rule as the alert engine).
   const stores = ['all', ...alertStores(pOffers)];
+  const activeStore = stores.includes(ds) ? ds : 'all';
   useEffect(() => {
     if (initialTarget) {
       setSelectedId(initialTarget.productId);
@@ -610,7 +611,7 @@ function TargetsWorld({
                 const saved = await onPin(
                   p,
                   Number(amount),
-                  ds,
+                  activeStore,
                   db,
                   initialTarget?.productId === p.id ? initialTarget.id : undefined,
                 );
@@ -702,8 +703,8 @@ function TargetsWorld({
                 <button
                   key={s}
                   type="button"
-                  className={ds === s ? 'on' : ''}
-                  aria-pressed={ds === s}
+                  className={activeStore === s ? 'on' : ''}
+                  aria-pressed={activeStore === s}
                   onClick={() => setDs(s)}
                 >
                   {s === 'all' ? 'All' : storeLabel(s)}

@@ -51,6 +51,7 @@ describe('persistent application workflows', () => {
     const personal = store.personal(alice.user.id);
     expect(personal.notifications).toHaveLength(1);
     expect(personal.notifications[0].state).toBe('delivered');
+    expect(personal.notifications[0].rule_id).toBe(rule.id);
     expect(() => store.saveRule(bob.user.id, { ...rule, target: 1 })).toThrow('Rule not found');
     store.deleteRule(bob.user.id, rule.id);
     expect(store.personal(alice.user.id).rules).toHaveLength(1);

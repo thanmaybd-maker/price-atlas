@@ -20,6 +20,8 @@ const identity = new Set([
   'Condition',
   'Variant memory',
   'Net Quantity',
+  'Item Volume',
+  'Item Weight',
   'Number of Items',
   'Bundle',
   'Verification status',

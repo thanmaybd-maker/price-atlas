@@ -250,15 +250,10 @@ export async function deliverTelegram(sender: TelegramSender = sendTelegram) {
     ).rows[0];
     const rule = (await postgres().query('SELECT data FROM atlas.rules WHERE id=$1', [row.rule_id]))
       .rows[0]?.data as Rule | undefined;
-    const allOffers = await offers(rule?.productId || '');
-    const matchingOffers = allOffers.filter(
-      (o) => rule && (rule.store === 'all' || o.store === rule.store),
-    );
     const activePrice = rule
-      ? rank(alertableOffers(matchingOffers, rule.store), Date.now(), rule.basis).lowest
+      ? rank(alertableOffers(await offers(rule.productId), rule.store), Date.now(), rule.basis)
+          .lowest
       : null;
-    const latestKnownPrice = rule ? rank(matchingOffers, Date.now(), rule.basis).lowest : null;
-    const priceToCheck = activePrice ?? latestKnownPrice ?? row.data?.price ?? null;
     const allowed =
       user?.verified &&
       user.notifications === 1 &&
@@ -267,8 +262,8 @@ export async function deliverTelegram(sender: TelegramSender = sendTelegram) {
       Number(connection.connected_at) === Number(row.connected_at) &&
       rule?.enabled &&
       rule.version === row.data.ruleVersion &&
-      priceToCheck !== null &&
-      (rule.operator === 'lte' ? priceToCheck <= rule.target : priceToCheck < rule.target);
+      activePrice !== null &&
+      (rule.operator === 'lte' ? activePrice <= rule.target : activePrice < rule.target);
     if (!allowed) {
       await postgres().query(
         "UPDATE atlas.telegram_deliveries SET state='suppressed' WHERE notification_id=$1",

@@ -1,8 +1,9 @@
 import { expect, it } from 'vitest';
+import { catalogCard } from '../packages/domain/catalog-card';
 import { alertSent, alertStores, ruleNow, shownOffers } from '../packages/domain/offer-rules';
 import { publicSpecs } from '../packages/domain/specs';
 import { unitPrice } from '../packages/domain/unit-price';
-import type { Offer, Rule } from '../packages/domain/index';
+import type { Offer, Product, Rule } from '../packages/domain/index';
 
 const now = Date.parse('2026-11-26T12:00:00+05:30');
 const offer = (o: Partial<Offer>): Offer =>
@@ -114,6 +115,38 @@ it('reads pack size from Net Quantity when the title has none', () => {
   expect(
     unitPrice('Herbal Face Wash', { 'Net Quantity': '150 ml' }, 30000, 'personal-care'),
   ).toEqual({
+    paise: 20000,
+    per: '100 ml',
+  });
+});
+
+it('does not let a non-quantity Size block Net Quantity, Item Volume, Item Weight or Indian units', () => {
+  expect(
+    unitPrice(
+      'Hydrating Gel',
+      { Size: 'Regular', 'Item Volume': '200 ml' },
+      40000,
+      'personal-care',
+    ),
+  ).toEqual({ paise: 20000, per: '100 ml' });
+  expect(unitPrice('Daily Cream 100gm', {}, 25000, 'personal-care')).toEqual({
+    paise: 25000,
+    per: '100 g',
+  });
+  expect(unitPrice('Shampoo 2 x 200ml', {}, 80000, 'personal-care')).toEqual({
+    paise: 20000,
+    per: '100 ml',
+  });
+  const card = catalogCard({
+    id: 'gel',
+    name: 'Hydrating Gel',
+    category: 'personal-care',
+    description: '',
+    attributes: { 'Item Volume': '200 ml', 'Item Weight': '220 g', Notes: 'extra' },
+  } as unknown as Product);
+  expect(card.attributes['Item Volume']).toBe('200 ml');
+  expect(card.attributes['Item Weight']).toBe('220 g');
+  expect(unitPrice(card.name, card.attributes, 40000, card.category)).toEqual({
     paise: 20000,
     per: '100 ml',
   });

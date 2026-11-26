@@ -123,6 +123,8 @@ type Session = {
   rules: Rule[];
   notifications: {
     id: string;
+    rule_id?: string;
+    ruleVersion?: number;
     productId: string;
     price: number;
     store: string;
@@ -1111,21 +1113,22 @@ export default function Atlas({
                   )
                 )}
               </strong>
-              {(() => {
-                const per = unitPrice(
-                  p.name,
-                  p.attributes,
-                  known?.paise ??
-                    lastObserved?.itemPrice ??
-                    (p.basePrice && p.basePrice > 0 ? p.basePrice : null),
-                  p.category,
-                );
-                return per ? (
-                  <span className="unit-price">
-                    {money(per.paise)} / {per.per}
-                  </span>
-                ) : null;
-              })()}
+              {!(p.attributes['Source price'] && !po.length) &&
+                (() => {
+                  const per = unitPrice(
+                    p.name,
+                    p.attributes,
+                    known?.paise ??
+                      lastObserved?.itemPrice ??
+                      (p.basePrice && p.basePrice > 0 ? p.basePrice : null),
+                    p.category,
+                  );
+                  return per ? (
+                    <span className="unit-price">
+                      {money(per.paise)} / {per.per}
+                    </span>
+                  ) : null;
+                })()}
               {p.attributes['Source price'] &&
                 !po.length &&
                 p.attributes['Source currency'] &&
@@ -2407,7 +2410,6 @@ export default function Atlas({
       .map((k) => [k, p.attributes[k]] as const)
       .filter(([, v]) => Boolean(v));
     const perUnit = unitPrice(p.name, p.attributes, headline?.paise, p.category);
-    const lastObserved = shownOffers(po).sort((a, b) => b.observedAt - a.observedAt)[0];
     const r = rank(po);
     const itemRank = rank(po, Date.now(), 'item');
     const rule = session.rules.find((r) => r.productId === p.id);
@@ -2634,14 +2636,16 @@ export default function Atlas({
                   ? `Both synthetic listings are assigned to the exact ${p.name} variant below. Unknown identity fields would require review before comparison.`
                   : 'Each imported listing retains its identity. Cross-store offers join only after their decisive attributes pass matching review.'}
               </p>
-              <dl>
-                {identity.map(([k, v]) => (
-                  <div key={k}>
-                    <dt>{k}</dt>
-                    <dd>{v}</dd>
-                  </div>
-                ))}
-              </dl>
+              {identity.length > 0 && (
+                <dl>
+                  {identity.map(([k, v]) => (
+                    <div key={k}>
+                      <dt>{k}</dt>
+                      <dd>{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </details>
             {specs.length > 0 && (
               <details className="spec-sheet" open={specs.length <= 12}>

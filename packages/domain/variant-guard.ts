@@ -14,12 +14,12 @@ function quantity(s: string) {
   const m = s
     .toLowerCase()
     .match(
-      /\b(\d+(?:\.\d+)?)\s*(ml|millilitres?|milliliters?|litres?|liters?|l|kg|kilograms?|grams?|g)\b/,
+      /\b(\d+(?:\.\d+)?)\s*(mls?|millilitres?|milliliters?|litres?|liters?|ltrs?|l|kgs?|kilograms?|grams?|gms?|g)\b/,
     );
   if (!m) return undefined;
   const unit = m[2];
   const volume = /^(?:ml|milli|l)/.test(unit);
-  const factor = /^(?:l$|litr|liter|kg|kilo)/.test(unit) ? 1000 : 1;
+  const factor = /^(?:l$|ltr|litr|liter|kg|kilo)/.test(unit) ? 1000 : 1;
   return `${Math.round(Number(m[1]) * factor * 1000) / 1000}${volume ? 'ml' : 'g'}`;
 }
 export function variantSignature(title: string, a: Record<string, string> = {}): VariantSignature {
@@ -28,7 +28,10 @@ export function variantSignature(title: string, a: Record<string, string> = {}):
   const pack =
     /^(\d+)$/.exec(packText)?.[1] ||
     /\b(?:pack|set)\s*(?:of\s*)?(\d+)\b/i.exec(`${packText} ${title}`)?.[1] ||
-    /\b(\d+)\s*pack\b/i.exec(title)?.[1];
+    /\b(\d+)\s*pack\b/i.exec(title)?.[1] ||
+    /\b(\d+)\s*[x×]\s*\d+(?:\.\d+)?\s*(?:mls?|millilitres?|milliliters?|litres?|liters?|ltrs?|l|kgs?|kilograms?|grams?|gms?|g)\b/i.exec(
+      `${packText} ${title}`,
+    )?.[1];
   const binding = `${a.Binding || ''} ${title}`;
   const edition = a.Edition || /\b(\d+)(?:st|nd|rd|th)?\s+edition\b/i.exec(title)?.[1];
   const model =
@@ -51,10 +54,16 @@ export function variantSignature(title: string, a: Record<string, string> = {}):
             : 'UNKNOWN',
     packCount: pack && Number(pack) > 0 ? Number(pack) : null,
     storageOrMemory: memory ? normal(memory) : undefined,
-    volumeOrWeight:
-      quantity(
-        a.Size || a.Capacity || a['Net Quantity'] || a['Item Volume'] || a['Item Weight'] || '',
-      ) || quantity(title),
+    volumeOrWeight: [
+      a.Size,
+      a.Capacity,
+      a['Net Quantity'],
+      a['Item Volume'],
+      a['Item Weight'],
+      title,
+    ]
+      .map((v) => (v ? quantity(v) : undefined))
+      .find(Boolean),
     bookBinding: /paperback|softcover/i.test(binding)
       ? 'PAPERBACK'
       : /hardcover|hardback/i.test(binding)

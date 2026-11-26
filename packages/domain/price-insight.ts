@@ -29,6 +29,7 @@ export function raisedBeforeDrop(
   if (current == null || recorded.length < 7) return null;
   const sorted = [...recorded].sort((a, b) => a - b);
   const usual = sorted[Math.floor(sorted.length / 2)];
+  if (!(usual > 0)) return null;
   const recent = daily.slice(-15, -1).filter((p): p is number => p !== null);
   if (!recent.length) return null;
   const peak = Math.max(...recent);
