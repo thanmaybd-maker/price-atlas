@@ -151,3 +151,17 @@ it('does not let a non-quantity Size block Net Quantity, Item Volume, Item Weigh
     per: '100 ml',
   });
 });
+
+it('skips unit price on mixed combos and bundles instead of dividing by the first item size', () => {
+  expect(
+    unitPrice(
+      'Skincare Routine Combo with Serum, 15ml + Foaming Cleanser, 50ml',
+      { Bundle: 'yes' },
+      40800,
+      'personal-care',
+    ),
+  ).toBeNull();
+  expect(
+    unitPrice('Orange Face Scrub, 100g and Orange Face Wash, 100ml', {}, 25500, 'personal-care'),
+  ).toBeNull();
+});

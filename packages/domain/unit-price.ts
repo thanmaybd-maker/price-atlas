@@ -5,6 +5,8 @@ import type { Category } from './index';
 import { variantSignature } from './variant-guard';
 
 const BY_QUANTITY: Category[] = ['beauty', 'personal-care', 'home-kitchen', 'other'];
+const QUANTITY_TOKEN =
+  /\b\d+(?:\.\d+)?\s*(?:mls?|millilitres?|milliliters?|litres?|liters?|ltrs?|l|kgs?|kilograms?|grams?|gms?|g)\b/gi;
 
 export function unitPrice(
   title: string,
@@ -14,6 +16,13 @@ export function unitPrice(
 ): { paise: number; per: string } | null {
   if (paise == null || paise <= 0 || !BY_QUANTITY.includes(category)) return null;
   const signature = variantSignature(title, attributes);
+  // Combos, kits and multi-item bundles mix different products, so dividing by one item's
+  // size would invent a bogus unit price.
+  if (signature.bundle) return null;
+  const distinctTitleSizes = new Set(
+    (title.match(QUANTITY_TOKEN) || []).map((t) => t.toLowerCase().replace(/\s+/g, '')),
+  );
+  if (distinctTitleSizes.size > 1) return null;
   const match = signature.volumeOrWeight?.match(/^(\d+(?:\.\d+)?)(ml|g)$/);
   if (!match) return null;
   const amount =

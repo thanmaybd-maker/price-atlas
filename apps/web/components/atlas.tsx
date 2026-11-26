@@ -2510,15 +2510,18 @@ export default function Atlas({
             </div>
             <div className="detail-price">
               <span className="tiny-label">
-                {itemRank.offers.length > 1
-                  ? `Lowest item price of ${itemRank.offers.length} stores · shipping shown at checkout`
-                  : itemRank.offers.length
-                    ? 'Item price · shipping shown at checkout'
-                    : p.attributes['Source price']
-                      ? 'Source price · shipping/import fees extra'
-                      : headline
-                        ? 'Last checked item price · not confirmed right now'
-                        : 'No fresh eligible offers'}
+                {(() => {
+                  const storeCount = new Set(itemRank.offers.map((o) => o.store)).size;
+                  return storeCount > 1
+                    ? `Lowest item price of ${storeCount} stores · shipping shown at checkout`
+                    : itemRank.offers.length
+                      ? 'Item price · shipping shown at checkout'
+                      : p.attributes['Source price']
+                        ? 'Source price · shipping/import fees extra'
+                        : headline
+                          ? 'Last checked item price · not confirmed right now'
+                          : 'No fresh eligible offers';
+                })()}
               </span>
               <div>
                 <strong>
