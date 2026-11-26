@@ -341,12 +341,23 @@ export async function discoverProducts(
               // Priced result cards become products straight away; other listings are verified
               // on their product pages in parallel, so one search spans many products and stores.
               const exactCards = relevant.filter((c) => searchCards.has(c.url));
-              // Neighbouring results fill out model searches, but never pad pure category or
-              // budget searches with unrelated items.
+              // Neighbouring results fill out model searches only when they share the primary
+              // brand/keyword (never pulling sponsored HP laptops into a Lenovo/ASUS search).
+              const leadWord = words[0];
               const padSimilar =
-                Boolean(intent.text) && intent.maxPaise == null && intent.minPaise == null;
+                Boolean(intent.text) &&
+                intent.maxPaise == null &&
+                intent.minPaise == null &&
+                Boolean(leadWord);
               const similar = padSimilar
-                ? candidates.filter((c) => searchCards.has(c.url) && !relevant.includes(c))
+                ? candidates.filter(
+                    (c) =>
+                      searchCards.has(c.url) &&
+                      !relevant.includes(c) &&
+                      normalizeQuery(c.title).includes(leadWord) &&
+                      (inferredCategory === 'other' ||
+                        categoryFor(c.title, {}) === inferredCategory),
+                  )
                 : [];
               const carded = [...exactCards, ...similar].slice(0, 16);
               const loose = new Set(similar.map((c) => c.url));

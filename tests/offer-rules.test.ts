@@ -1,6 +1,13 @@
 import { expect, it } from 'vitest';
 import { catalogCard } from '../packages/domain/catalog-card';
-import { alertSent, alertStores, ruleNow, shownOffers } from '../packages/domain/offer-rules';
+import {
+  alertSent,
+  alertStores,
+  dedupeOffers,
+  mergeOffers,
+  ruleNow,
+  shownOffers,
+} from '../packages/domain/offer-rules';
 import { publicSpecs } from '../packages/domain/specs';
 import { unitPrice } from '../packages/domain/unit-price';
 import type { Offer, Product, Rule } from '../packages/domain/index';
@@ -164,4 +171,33 @@ it('skips unit price on mixed combos and bundles instead of dividing by the firs
   expect(
     unitPrice('Orange Face Scrub, 100g and Orange Face Wash, 100ml', {}, 25500, 'personal-care'),
   ).toBeNull();
+});
+
+it('deduplicates re-checked observations of the same listing while keeping distinct stores', () => {
+  const older = offer({
+    id: 'obs-1',
+    store: 'Flipkart',
+    itemPrice: 8299000,
+    observedAt: now - 120000,
+    purchaseUrl: 'https://www.flipkart.com/item/p/abc?pid=123',
+  });
+  const fresher = offer({
+    id: 'obs-2',
+    store: 'Flipkart',
+    itemPrice: 8199000,
+    observedAt: now - 10000,
+    purchaseUrl: 'https://www.flipkart.com/item/p/abc?pid=123',
+  });
+  const amazon = offer({
+    id: 'obs-3',
+    store: 'Amazon',
+    itemPrice: 8399000,
+    observedAt: now - 30000,
+    purchaseUrl: 'https://www.amazon.in/dp/B0TEST1234',
+  });
+  const merged = mergeOffers([older, amazon], [fresher]);
+  expect(merged).toHaveLength(2);
+  expect(merged.find((o) => o.store === 'Flipkart')?.id).toBe('obs-2');
+  expect(merged.find((o) => o.store === 'Amazon')?.id).toBe('obs-3');
+  expect(dedupeOffers([older, fresher])).toHaveLength(1);
 });

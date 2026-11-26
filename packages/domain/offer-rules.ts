@@ -4,6 +4,25 @@ import { alertableOffers, rank, shownOffers, total, type Offer, type Rule } from
 
 export { alertableOffers, shownOffers };
 
+const offerListingKey = (o: Offer) =>
+  `${o.productId}::${o.store}::${o.purchaseUrl || `${o.condition}::${o.seller}`}`;
+
+/** One latest observation per listing, so re-checks never duplicate a store row or offer count. */
+export function dedupeOffers(offers: Offer[]): Offer[] {
+  const byListing = new Map<string, Offer>();
+  for (const o of offers) {
+    const key = offerListingKey(o);
+    const prev = byListing.get(key);
+    if (!prev || o.observedAt > prev.observedAt) byListing.set(key, o);
+  }
+  return [...byListing.values()];
+}
+
+/** Merge newly fetched offers into existing state, replacing older observations of the same listing. */
+export function mergeOffers(prior: Offer[], incoming: Offer[]): Offer[] {
+  return dedupeOffers([...incoming, ...prior]);
+}
+
 /** Stores a target can be pinned to and actually alert from. */
 export function alertStores(offers: Offer[]) {
   return [...new Set(alertableOffers(offers, 'all').map((o) => o.store))];

@@ -75,3 +75,31 @@ it('keeps the product type for cases and makes book and weighted-vest retailer s
     ),
   ).toContain('weighted vest');
 });
+
+it('keeps non-Samsung S-series laptops specific and never matches a different brand like HP', () => {
+  const asus = {
+    ...product('asus', 'ASUS Vivobook S14 (2025) Intel Core Ultra 5 Laptop', 'Amazon', 'laptops'),
+    brand: 'ASUS',
+  };
+  expect(retailerComparisonQuery(asus)).toBe('ASUS Vivobook S14');
+  const lenovo = {
+    ...product(
+      'lenovo',
+      'Lenovo 15 (2026) Intel Core i3 13th Gen 1315U - (8 GB/512 GB SSD)',
+      'Amazon',
+      'laptops',
+    ),
+    brand: 'Lenovo',
+  };
+  expect(retailerComparisonQuery(lenovo)).toBe('Lenovo 15 1315U');
+  const hp = {
+    ...product('hp', 'HP 15 (2026) Intel Core i3 13th Gen 1315U Laptop', 'Flipkart', 'laptops'),
+    brand: 'HP',
+  };
+  const genericTitled = {
+    ...product('acer', 'Thin & Light Laptop (Acer Aspire Lite AL15-41)', 'Amazon', 'laptops'),
+    brand: 'Acer',
+  };
+  expect(retailerComparisonQuery(genericTitled)).toBe('Acer Thin & Light Laptop');
+  expect(otherRetailerListings(lenovo, [hp], [])).toEqual([]);
+});

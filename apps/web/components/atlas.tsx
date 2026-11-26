@@ -103,7 +103,13 @@ import {
   soldAt,
 } from '../../../packages/domain/query-intent';
 import { priceInsight } from '../../../packages/domain/price-insight';
-import { alertSent, ruleNow, shownOffers } from '../../../packages/domain/offer-rules';
+import {
+  alertSent,
+  dedupeOffers,
+  mergeOffers,
+  ruleNow,
+  shownOffers,
+} from '../../../packages/domain/offer-rules';
 import { publicSpecs } from '../../../packages/domain/specs';
 import { unitPrice } from '../../../packages/domain/unit-price';
 import { categoryRegistry } from '../../../packages/matching/index';
@@ -258,7 +264,7 @@ export default function Atlas({
   const params = useSearchParams();
   const page = route[0] || 'home';
   const [products, setProducts] = useState(initialProducts);
-  const [offers, setOffers] = useState(initialOffers);
+  const [offers, setOffers] = useState(() => dedupeOffers(initialOffers));
   const [session, setSession] = useState<Session>(empty);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [themeReady, setThemeReady] = useState(false);
@@ -404,11 +410,7 @@ export default function Atlas({
         // reading results: refresh existing offers silently and let the shopper pull in new ones.
         const brandNewIds = new Set(brandNew.map((p) => p.id));
         const existingOffers = incoming.filter((o) => !brandNewIds.has(o.productId));
-        if (existingOffers.length)
-          setOffers((prior) => [
-            ...existingOffers,
-            ...prior.filter((o) => !existingOffers.some((f) => f.id === o.id)),
-          ]);
+        if (existingOffers.length) setOffers((prior) => mergeOffers(prior, existingOffers));
         setPendingMore({
           query: searchText,
           products: brandNew,
@@ -419,10 +421,7 @@ export default function Atlas({
           ...found,
           ...prior.filter((p) => !found.some((f) => f.id === p.id)),
         ]);
-        setOffers((prior) => [
-          ...incoming,
-          ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
-        ]);
+        setOffers((prior) => mergeOffers(prior, incoming));
       }
       setLookup({
         query: searchText,
@@ -512,24 +511,19 @@ export default function Atlas({
         const brandNew = found.filter((f) => !existingIds.has(f.id));
         const brandNewIds = new Set(brandNew.map((p) => p.id));
         const existingOffers = incoming.filter((o) => !brandNewIds.has(o.productId));
-        if (existingOffers.length)
-          setOffers((prior) => [
-            ...existingOffers,
-            ...prior.filter((o) => !existingOffers.some((f) => f.id === o.id)),
-          ]);
+        if (existingOffers.length) setOffers((prior) => mergeOffers(prior, existingOffers));
         if (brandNew.length && visibleCountRef.current > 0 && !bloomRef.current) {
           setPendingMore((prior) => {
             const base =
               prior.query === forSearch ? prior : { query: forSearch, products: [], offers: [] };
             const seenP = new Set(base.products.map((p) => p.id));
-            const seenO = new Set(base.offers.map((o) => o.id));
             return {
               query: forSearch,
               products: [...base.products, ...brandNew.filter((p) => !seenP.has(p.id))],
-              offers: [
-                ...base.offers,
-                ...incoming.filter((o) => brandNewIds.has(o.productId) && !seenO.has(o.id)),
-              ],
+              offers: mergeOffers(
+                base.offers,
+                incoming.filter((o) => brandNewIds.has(o.productId)),
+              ),
             };
           });
         } else {
@@ -537,10 +531,7 @@ export default function Atlas({
             ...prior,
             ...found.filter((f) => !prior.some((p) => p.id === f.id)),
           ]);
-          setOffers((prior) => [
-            ...incoming,
-            ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
-          ]);
+          setOffers((prior) => mergeOffers(prior, incoming));
         }
       }
       setRelated({ query: forSearch, ids: found.map((p) => p.id), busy: false });
@@ -590,10 +581,7 @@ export default function Atlas({
           ...prior,
           ...found.filter((f) => !prior.some((p) => p.id === f.id)),
         ]);
-        setOffers((prior) => [
-          ...incoming,
-          ...prior.filter((o) => !incoming.some((f) => f.id === o.id)),
-        ]);
+        setOffers((prior) => mergeOffers(prior, incoming));
       }
       setCompareLookup({ id, busy: false });
     })().catch(() => {
@@ -688,7 +676,7 @@ export default function Atlas({
   useEffect(() => {
     setHistory(initialHistory);
     setProducts(initialProducts);
-    setOffers(initialOffers);
+    setOffers(dedupeOffers(initialOffers));
   }, [initialProducts, initialOffers, initialHistory]);
   useEffect(() => {
     setQuery(params.get('q') || '');
@@ -1018,10 +1006,7 @@ export default function Atlas({
       ...prior,
       ...addProducts.filter((f) => !prior.some((p) => p.id === f.id)),
     ]);
-    setOffers((prior) => [
-      ...addOffers,
-      ...prior.filter((o) => !addOffers.some((f) => f.id === o.id)),
-    ]);
+    setOffers((prior) => mergeOffers(prior, addOffers));
     setPendingMore({ query: '', products: [], offers: [] });
   }
   const near = filtered.length
@@ -1139,8 +1124,10 @@ export default function Atlas({
   const pageCount = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(pageCount, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
   function Card({ p, index = 0 }: { p: Product; index?: number }) {
-    const po = offers.filter(
-      (o) => o.productId === p.id && (effectiveStore === 'all' || o.store === effectiveStore),
+    const po = dedupeOffers(
+      offers.filter(
+        (o) => o.productId === p.id && (effectiveStore === 'all' || o.store === effectiveStore),
+      ),
     );
     const known = knownPrice(p.id, po);
     const r = rank(po);
@@ -2508,7 +2495,7 @@ export default function Atlas({
     if (!current) return null;
     const p = current;
     const otherListings = otherRetailerListings(p, products, offers);
-    const po = offers.filter((o) => o.productId === p.id);
+    const po = dedupeOffers(offers.filter((o) => o.productId === p.id));
     const international = po.filter((o) => retailers[o.store].international);
     const domestic = po.filter((o) => !retailers[o.store].international);
     const variantOffers = domestic.filter((o) => o.condition !== 'new' || !o.accepted);
