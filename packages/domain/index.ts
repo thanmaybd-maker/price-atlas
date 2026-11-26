@@ -5,6 +5,7 @@ export type Category =
   | 'phones'
   | 'laptops'
   | 'tablets'
+  | 'wearables'
   | 'audio'
   | 'monitors'
   | 'beauty'

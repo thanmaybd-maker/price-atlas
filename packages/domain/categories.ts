@@ -3,6 +3,7 @@ export const categoryLabels: Record<Category, string> = {
   phones: 'Phones',
   laptops: 'Laptops',
   tablets: 'Tablets',
+  wearables: 'Smartwatches & wearables',
   audio: 'Audio',
   monitors: 'Monitors',
   beauty: 'Beauty & cosmetics',

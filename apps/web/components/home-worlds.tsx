@@ -12,7 +12,6 @@ import { TidesWorld } from './tides-world';
 import { fetchJson } from '../lib/fetch-json';
 import { historyCoverage } from '../../../packages/domain/history-coverage';
 import { historyRecording } from '../../../packages/domain/history-recording';
-import { ExternalHistory } from './external-history';
 import { reducedMotion } from './three-loader';
 import { OfferEvidence } from './offer-evidence';
 export type PinDraft = {
@@ -41,6 +40,7 @@ const ICONS: Record<string, string> = {
   phones: 'M19 6h10a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H19a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4zM21 37h6',
   laptops: 'M12 10h24a2 2 0 0 1 2 2v17H10V12a2 2 0 0 1 2-2zM5 33h38l-3 5H8z',
   tablets: 'M13 8h22a4 4 0 0 1 4 4v24a4 4 0 0 1-4 4H13a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4zM23 35h2',
+  wearables: 'M18 4h12l1 8a10 10 0 0 1 0 24l-1 8H18l-1-8a10 10 0 0 1 0-24zM24 18v6l4 3',
   audio:
     'M10 28v-4a14 14 0 0 1 28 0v4M10 27h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM34 27h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z',
   monitors:
@@ -62,6 +62,7 @@ const CAT: Record<string, string> = {
   phones: 'Phones',
   laptops: 'Laptops',
   tablets: 'Tablets',
+  wearables: 'Smartwatches',
   audio: 'Audio',
   monitors: 'Monitors',
   beauty: 'Beauty',
@@ -92,7 +93,8 @@ function ago(at: number) {
   if (h < 48) return `${h} h ago`;
   return `${Math.round(h / 24)} days ago`;
 }
-const lowest = (list: Offer[], basis: Basis = 'delivered') => rank(list, Date.now(), basis).lowest;
+// Item price by default, like every product card: few stores show delivery fees up front.
+const lowest = (list: Offer[], basis: Basis = 'item') => rank(list, Date.now(), basis).lowest;
 
 // ---------------------------------------------------------------------------
 // Every offer, side by side.
@@ -842,10 +844,14 @@ function WeekWorld({
   product,
   obs,
   basis,
+  choices,
+  onPick,
 }: {
   product: Product | null;
   obs: Offer[];
   basis: Basis;
+  choices: Product[];
+  onPick: (id: string) => void;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -892,10 +898,22 @@ function WeekWorld({
         <div className="do-head rv">
           <h2>This week, day by day.</h2>
           <p>
-            Seven compartments, one per day of tracking
-            {product ? ` for the ${product.name}` : ''}. Green means the lowest price fell that day,
+            Seven compartments, one per day of tracking. Green means the lowest price fell that day,
             red means it rose. Pick a day to read its receipt.
           </p>
+          {choices.length > 0 && (
+            <label className="week-pick">
+              Product
+              <select value={product?.id || ''} onChange={(e) => onPick(e.target.value)}>
+                {choices.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name.length > 70 ? `${c.name.slice(0, 70)}…` : c.name}
+                  </option>
+                ))}
+              </select>
+              <span>Starts on the product with the most checked days this week.</span>
+            </label>
+          )}
         </div>
         {mounted && week.length === 7 && (
           <div className="do-grid">
@@ -1165,6 +1183,7 @@ export function HomeWorlds({
   initialTarget?: PinDraft;
 }) {
   const [tideProducts, setTideProducts] = useState<Product[]>([]);
+  const [weekPick, setWeekPick] = useState('');
   const [history, setHistory] = useState<Record<string, Offer[]>>({});
   const [historyBasis, setHistoryBasis] = useState<Basis>('item');
   const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -1228,12 +1247,19 @@ export function HomeWorlds({
     obs: history[p.id] || [],
   }));
   // Distinct days matter more than repeated checks on the same day.
+  const weekRanked = [...tideProducts].sort(
+    (a, b) =>
+      historyRecording(history[b.id] || [], historyBasis, 7).recordedDays -
+      historyRecording(history[a.id] || [], historyBasis, 7).recordedDays,
+  );
   const weekProduct =
+    weekRanked.find((p) => p.id === weekPick) ||
     [...tideProducts].sort(
       (a, b) =>
         historyRecording(history[b.id] || [], historyBasis, 7).recordedDays -
         historyRecording(history[a.id] || [], historyBasis, 7).recordedDays,
-    )[0] || null;
+    )[0] ||
+    null;
   return (
     <div className="hs" ref={box}>
       <OffersWorld products={products} offers={offers} />
@@ -1307,17 +1333,12 @@ export function HomeWorlds({
             : 'Your saved products and their recorded prices. Imported history stays labelled and does not count toward Price Atlas daily streaks.'
         }
       />
-      <ExternalHistory
-        sourceUrl={
-          weekProduct?.attributes['Product URL'] ||
-          offers.find((offer) => offer.productId === weekProduct?.id && offer.purchaseUrl)
-            ?.purchaseUrl
-        }
-      />
       <WeekWorld
         product={weekProduct}
         obs={weekProduct ? history[weekProduct.id] || [] : []}
         basis={historyBasis}
+        choices={weekRanked}
+        onPick={setWeekPick}
       />
       <AlertsWorld
         products={products}

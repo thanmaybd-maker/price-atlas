@@ -39,7 +39,8 @@ export function livePolicy(store: Store): SourcePolicy {
     // Catalog checks run daily. Keep their actual observation time visible;
     // alert eligibility has a separate one-hour maximum in the repository.
     displayTtlSeconds: 86400,
-    historyRetentionDays: 30,
+    // Our own retention choice (no store sets it). A year of daily price rows is tiny.
+    historyRetentionDays: 365,
     requestsPerMinute: 12,
     agreementReference: null,
   };

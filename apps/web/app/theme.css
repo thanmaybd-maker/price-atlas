@@ -120,24 +120,6 @@
 .history-citation time {
   display: block;
 }
-.external-history {
-  padding: 20px;
-  max-width: 1180px;
-  margin: 16px auto;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-}
-.external-history summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-.external-history input {
-  display: block;
-  width: 100%;
-  margin: 10px 0;
-}
 [data-theme='dark'] {
   color-scheme: dark;
   --bg: #151e1b;

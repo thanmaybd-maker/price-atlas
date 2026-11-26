@@ -23,6 +23,7 @@ const CATEGORY_WORDS: [RegExp, Category][] = [
   [/\b(laptops?|notebooks?|ultrabooks?|macbooks?)\b/, 'laptops'],
   [/\b(phones?|mobiles?|smartphones?|cell ?phones?)\b/, 'phones'],
   [/\b(tablets?|ipads?)\b/, 'tablets'],
+  [/\b(smart ?watch(?:es)?|watch(?:es)?|fitness bands?|smart ?bands?)\b/, 'wearables'],
   [/\b(headphones?|earphones?|earbuds?|headsets?|speakers?|tws)\b/, 'audio'],
   [/\b(monitors?)\b/, 'monitors'],
   [/\b(lipsticks?|lip ?gloss|kajal|eyeliners?|mascara|foundations?|makeup|cosmetics?)\b/, 'beauty'],
@@ -48,6 +49,10 @@ const PURE_CATEGORY = new Set([
   'smartphones',
   'tablet',
   'tablets',
+  'smartwatch',
+  'smartwatches',
+  'watch',
+  'watches',
   'headphone',
   'headphones',
   'earbuds',
@@ -227,12 +232,30 @@ export function nearMisses(
     .filter(
       (p) =>
         (!intent.category || p.category === intent.category) &&
-        (!intent.text || textMatches(p, intent.text)),
+        (!intent.text || textMatches(p, intent.text)) &&
+        soldAt(
+          p,
+          offers.filter((o) => o.productId === p.id),
+          store || 'all',
+        ),
     )
     .map((p) => ({ p, price: knownPrice(p.id, offers, store, options.now, true) }))
     .sort((a, b) => (a.price?.paise ?? Infinity) - (b.price?.paise ?? Infinity))
     .slice(0, 12);
 }
+
+/** One rule for "is this product sold at this store?", used by every filter and count. */
+export function soldAt(p: Product, productOffers: Offer[], store: string) {
+  if (!store || store === 'all') return true;
+  // Stores that price in dollars (iHerb, B&H) keep no INR offer; their listing is the product.
+  return (
+    p.attributes?.Retailer === store ||
+    productOffers.some((o) => o.productId === p.id && o.store === store && o.displayAllowed)
+  );
+}
+/** One rule for brand equality: retailers write "SONY", "Sony" and "sony". */
+export const sameBrand = (a: string, b: string) =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Products matching an intent, with the price used for budget and sort. */
 export function applyIntent(
@@ -243,8 +266,16 @@ export function applyIntent(
   options: { store?: string; sort?: string; now?: number } = {},
 ) {
   const store = options.store && options.store !== 'all' ? options.store : intent.store;
+  // One pass to group offers by product keeps this linear: the results page runs it several
+  // times per render (once per filter) to count what each filter option would show.
+  const byProduct = new Map<string, Offer[]>();
+  for (const o of offers) {
+    const list = byProduct.get(o.productId);
+    if (list) list.push(o);
+    else byProduct.set(o.productId, [o]);
+  }
   const rows = products
-    .map((p) => ({ p, price: knownPrice(p.id, offers, store, options.now) }))
+    .map((p) => ({ p, price: knownPrice(p.id, byProduct.get(p.id) || [], store, options.now) }))
     .filter(({ p, price }) => {
       if (intent.category && p.category !== intent.category) {
         // "laptop" also finds a MacBook filed under laptops; keep named matches outside it
@@ -256,15 +287,7 @@ export function applyIntent(
       }
       if (intent.text && !textMatches(p, intent.text)) return false;
       if (store && store !== 'all') {
-        const hasStoreOffer = offers.some(
-          (o) =>
-            o.productId === p.id &&
-            o.store === store &&
-            o.displayAllowed &&
-            o.currency === 'INR' &&
-            !retailers[o.store]?.international,
-        );
-        if (!hasStoreOffer && p.attributes?.Retailer !== store) return false;
+        if (!soldAt(p, byProduct.get(p.id) || [], store)) return false;
         if (price && price.store !== store && p.attributes?.Retailer !== store) return false;
       }
       if (intent.maxPaise != null && (!price || price.paise > intent.maxPaise)) return false;

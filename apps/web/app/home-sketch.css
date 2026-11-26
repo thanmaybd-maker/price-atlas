@@ -4890,3 +4890,24 @@
     animation: none;
   }
 }
+.hs .week-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.hs .week-pick select {
+  max-width: min(100%, 520px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.hs .week-pick span {
+  opacity: 0.7;
+  font-size: 13px;
+}

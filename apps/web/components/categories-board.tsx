@@ -48,6 +48,16 @@ const C: Note[] = [
     ex: ['Apple iPad Air M2 128 GB', 'Motorola Pad 70 Pro'],
   },
   {
+    label: 'Smartwatches',
+    id: 'wearables',
+    g: 'tech',
+    c: 'peach',
+    k: 'tab',
+    note: 'A 1.83 inch and a 2.01 inch watch are different products, and so are two strap colours.',
+    m: ['Model', 'Display size', 'Colour'],
+    ex: ['Fire-Boltt Ninja Call Pro Plus', 'Noise Pulse 4 Max'],
+  },
+  {
     label: 'Audio',
     id: 'audio',
     g: 'tech',

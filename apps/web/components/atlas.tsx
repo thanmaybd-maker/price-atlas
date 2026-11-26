@@ -40,6 +40,7 @@ import {
   Sun,
   Moon,
   Target,
+  Watch,
 } from 'lucide-react';
 import {
   money,
@@ -83,7 +84,6 @@ import { visiblePoll } from '../lib/visible-poll';
 import { fetchJson } from '../lib/fetch-json';
 import type { PinDraft } from './home-worlds';
 import { historyCoverage } from '../../../packages/domain/history-coverage';
-import { ExternalHistory } from './external-history';
 import { OfferEvidence } from './offer-evidence';
 import { RetailerOutcomes } from './retailer-outcomes';
 import type { LookupSource } from '../../../packages/domain/retailer-outcomes';
@@ -99,7 +99,10 @@ import {
   knownPrice,
   nearMisses,
   parseQueryIntent,
+  sameBrand,
+  soldAt,
 } from '../../../packages/domain/query-intent';
+import { priceInsight } from '../../../packages/domain/price-insight';
 import { FxNote, FxPrice } from './fx-note';
 import { GeminiBadge, GeminiFinds } from './gemini-finds';
 type User = {
@@ -150,6 +153,7 @@ const categories: { id: Category; name: string; icon: typeof Smartphone }[] = [
   { id: 'laptops', name: 'Laptops', icon: Laptop },
   { id: 'audio', name: 'Audio', icon: Headphones },
   { id: 'tablets', name: 'Tablets', icon: Tablet },
+  { id: 'wearables', name: 'Smartwatches', icon: Watch },
   { id: 'monitors', name: 'Monitors', icon: Monitor },
   { id: 'beauty', name: 'Beauty & cosmetics', icon: Sparkles },
   { id: 'personal-care', name: 'Skin & hair care', icon: Droplets },
@@ -601,15 +605,20 @@ export default function Atlas({
     const id = setTimeout(() => setToast(''), 5000);
     return () => clearTimeout(id);
   }, [toast]);
+  // Server data resets only when the server sends new data (a new page or search). Sorting
+  // and filtering change only the URL, so they must not throw away products and offers that
+  // a live store lookup added on this page.
   useEffect(() => {
-    setQuery(params.get('q') || '');
     setHistory(initialHistory);
-    setRange([7, 30, 90].includes(Number(params.get('days'))) ? Number(params.get('days')) : 30);
-    setHistoryBasis(params.get('basis') === 'delivered' ? 'delivered' : 'item');
     setProducts(initialProducts);
     setOffers(initialOffers);
+  }, [initialProducts, initialOffers, initialHistory]);
+  useEffect(() => {
+    setQuery(params.get('q') || '');
+    setRange([7, 30, 90].includes(Number(params.get('days'))) ? Number(params.get('days')) : 30);
+    setHistoryBasis(params.get('basis') === 'delivered' ? 'delivered' : 'item');
     setMenu(false);
-  }, [params, initialHistory]);
+  }, [params]);
   useEffect(() => {
     if (page === 'admin')
       void api('admin')
@@ -633,7 +642,17 @@ export default function Atlas({
             ...result.offers,
             ...prior.filter((o) => o.productId !== current.id),
           ]);
-        } else setOffers(result.offers);
+        } else
+          // Merge, never replace: the polled snapshot can be up to 30 s older than offers a
+          // live lookup just added, and replacing would make those cards lose their price.
+          setOffers((prior) => {
+            const fresh = new Set(result.offers.map((o: Offer) => o.id));
+            const covered = new Set(result.offers.map((o: Offer) => o.productId));
+            return [
+              ...result.offers,
+              ...prior.filter((o) => !fresh.has(o.id) && !covered.has(o.productId)),
+            ];
+          });
         if (session.user) {
           const next = await api('session');
           if (active) setSession(next);
@@ -882,7 +901,10 @@ export default function Atlas({
   // fresh retailer lookups are added on top.
   const intent = parseQueryIntent(searchText);
   const assistedIntent = assistedQuery ? parseQueryIntent(assistedQuery) : null;
+  // max=0 means the shopper chose "Any budget" over a budget typed in the search.
+  const anyBudget = params.get('max') === '0';
   if (maximum) intent.maxPaise = maximum * 100;
+  else if (anyBudget) intent.maxPaise = undefined;
   const textMatch = (p: Product, text: string) =>
     matchesQuery(p, text) ||
     (lookup.query === searchText && lookup.ids.includes(p.id)) ||
@@ -890,7 +912,9 @@ export default function Atlas({
     Boolean(assistedIntent?.text && matchesQuery(p, assistedIntent.text));
   const effectiveStore = searchStore !== 'all' ? searchStore : intent.store || 'all';
   const filtered = applyIntent(
-    products.filter((p) => (!category || p.category === category) && (!brand || p.brand === brand)),
+    products.filter(
+      (p) => (!category || p.category === category) && (!brand || sameBrand(p.brand, brand)),
+    ),
     offers,
     { ...intent, category: intent.category || assistedIntent?.category },
     textMatch,
@@ -899,7 +923,7 @@ export default function Atlas({
   const near = filtered.length
     ? []
     : nearMisses(
-        products.filter((p) => !brand || p.brand === brand),
+        products.filter((p) => !brand || sameBrand(p.brand, brand)),
         offers,
         {
           ...intent,
@@ -914,7 +938,7 @@ export default function Atlas({
   const soldOut =
     filtered.length && intent.maxPaise != null
       ? nearMisses(
-          products.filter((p) => !shownIds.has(p.id) && (!brand || p.brand === brand)),
+          products.filter((p) => !shownIds.has(p.id) && (!brand || sameBrand(p.brand, brand))),
           offers,
           {
             ...intent,
@@ -926,6 +950,88 @@ export default function Atlas({
           ({ price }) => price && !price.inStock && price.paise <= (intent.maxPaise ?? Infinity),
         )
       : [];
+  // Every filter option is counted against the results the other filters leave, so the
+  // brand list only names brands in these results, store chips say how many each holds,
+  // and budget steps come from the real prices on the page.
+  const listingPage = page === 'search' || page === 'category';
+  const typedMax = anyBudget ? undefined : parseQueryIntent(searchText).maxPaise;
+  const resultsWith = (opts: { brand: string; store: string; ignoreMax?: boolean }) =>
+    listingPage
+      ? applyIntent(
+          products.filter(
+            (p) =>
+              (!category || p.category === category) &&
+              (!opts.brand || sameBrand(p.brand, opts.brand)),
+          ),
+          offers,
+          {
+            ...intent,
+            maxPaise: opts.ignoreMax ? typedMax : intent.maxPaise,
+            category: intent.category || assistedIntent?.category,
+          },
+          textMatch,
+          { store: opts.store },
+        )
+      : [];
+  const brandPool = resultsWith({ brand: '', store: effectiveStore });
+  // Brands are counted case-insensitively ("SONY" and "Sony" are one option).
+  const brandCounts = new Map<string, { name: string; count: number }>();
+  for (const { p } of brandPool) {
+    if (!p.brand || /^unknown brand$/i.test(p.brand)) continue;
+    const key = p.brand.trim().toLowerCase();
+    const entry = brandCounts.get(key) || { name: p.brand.trim(), count: 0 };
+    entry.count++;
+    brandCounts.set(key, entry);
+  }
+  if (brand && !brandCounts.has(brand.toLowerCase()))
+    brandCounts.set(brand.toLowerCase(), { name: brand, count: 0 });
+  const brandOptions = [...brandCounts.values()]
+    .map(({ name, count }) => [name, count] as const)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const offersByProduct = new Map<string, Offer[]>();
+  for (const o of offers) {
+    const list = offersByProduct.get(o.productId);
+    if (list) list.push(o);
+    else offersByProduct.set(o.productId, [o]);
+  }
+  const storePool = resultsWith({ brand, store: 'all' });
+  // Same rule as the store filter itself (soldAt), so a chip's count is what choosing it shows.
+  const storeCount = (store: string) =>
+    storePool.filter(({ p }) => soldAt(p, offersByProduct.get(p.id) || [], store)).length;
+  // Same price rule as the budget filter (knownPrice), so "Under ₹X (N)" shows exactly N.
+  const pricePool = resultsWith({ brand, store: effectiveStore, ignoreMax: true })
+    .map(({ price }) => price?.paise ?? null)
+    .filter((v): v is number => v != null && v > 0)
+    .sort((a, b) => a - b);
+  const niceCeil = (rupees: number) => {
+    const scale = 10 ** Math.floor(Math.log10(Math.max(1, rupees)));
+    const step = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((m) => m * scale >= rupees) || 10;
+    return Math.round(step * scale);
+  };
+  const budgetSteps = [
+    ...new Set(
+      [0.25, 0.5, 0.75, 0.9]
+        .map((q) => pricePool[Math.min(pricePool.length - 1, Math.floor(q * pricePool.length))])
+        .filter((v): v is number => v != null)
+        .map((paise) => niceCeil(paise / 100)),
+    ),
+  ];
+  const selectedMax = maximum || (typedMax != null ? Math.round(typedMax / 100) : 0);
+  if (selectedMax && !budgetSteps.includes(selectedMax)) budgetSteps.push(selectedMax);
+  budgetSteps.sort((a, b) => a - b);
+  const budgetCount = (rupees: number) => pricePool.filter((paise) => paise <= rupees * 100).length;
+  const filtersActive = Boolean(
+    brand || maximum || searchStore !== 'all' || sort !== 'recommended',
+  );
+  function clearFilters() {
+    const p = new URLSearchParams(params.toString());
+    for (const key of ['brand', 'max', 'store', 'sort', 'page']) p.delete(key);
+    window.history.pushState(
+      null,
+      '',
+      `/${page === 'category' ? `category/${category}` : 'search'}${p.size ? `?${p}` : ''}`,
+    );
+  }
   const pageCount = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(pageCount, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
   function Card({ p, index = 0 }: { p: Product; index?: number }) {
@@ -1464,17 +1570,32 @@ export default function Atlas({
             </div>
             {!demo && (
               <div className="retailer-chips-row" role="group" aria-label="Filter by retailer">
-                {(['all', ...STORE_NAMES] as const).map((store) => (
-                  <button
-                    key={store}
-                    type="button"
-                    className={`retailer-chip ${searchStore === store ? 'active' : ''}`}
-                    onClick={() => navigateFilter('store', store)}
-                    aria-pressed={searchStore === store}
-                  >
-                    {store === 'all' ? 'All Retailers' : store}
-                  </button>
-                ))}
+                {(['all', ...STORE_NAMES] as const).map((store) => {
+                  const count = store === 'all' ? storePool.length : storeCount(store);
+                  // On a search the store is checked live when chosen, so an empty chip stays
+                  // usable there; a category page can only show what is already recorded.
+                  const empty = store !== 'all' && count === 0 && searchStore !== store;
+                  return (
+                    <button
+                      key={store}
+                      type="button"
+                      className={`retailer-chip ${searchStore === store ? 'active' : ''} ${empty ? 'empty' : ''}`}
+                      onClick={() => navigateFilter('store', store === 'all' ? '' : store)}
+                      aria-pressed={searchStore === store}
+                      disabled={empty && !searchText}
+                      title={
+                        empty
+                          ? searchText
+                            ? `Nothing saved from ${store} for this yet. Choose it to check ${store} now.`
+                            : `No ${store} listings in this view yet.`
+                          : undefined
+                      }
+                    >
+                      {store === 'all' ? 'All Retailers' : store}
+                      <span className="chip-count">{count}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
             <div className="filter-bar">
@@ -1488,12 +1609,14 @@ export default function Atlas({
                     <select
                       id="retailer"
                       value={searchStore}
-                      onChange={(e) => navigateFilter('store', e.target.value)}
+                      onChange={(e) =>
+                        navigateFilter('store', e.target.value === 'all' ? '' : e.target.value)
+                      }
                     >
-                      <option value="all">All retailers</option>
+                      <option value="all">All retailers ({storePool.length})</option>
                       {STORE_NAMES.map((store) => (
                         <option key={store} value={store}>
-                          {store}
+                          {store} ({storeCount(store)})
                         </option>
                       ))}
                     </select>
@@ -1507,15 +1630,11 @@ export default function Atlas({
                   value={brand}
                   onChange={(e) => navigateFilter('brand', e.target.value)}
                 >
-                  <option value="">All brands</option>
-                  {[
-                    ...new Set(
-                      products
-                        .filter((p) => !category || p.category === category)
-                        .map((p) => p.brand),
-                    ),
-                  ].map((b) => (
-                    <option key={b}>{b}</option>
+                  <option value="">All brands ({brandPool.length})</option>
+                  {brandOptions.map(([name, count]) => (
+                    <option key={name} value={name}>
+                      {name} ({count})
+                    </option>
                   ))}
                 </select>
                 <label className="sr-only" htmlFor="budget">
@@ -1523,17 +1642,29 @@ export default function Atlas({
                 </label>
                 <select
                   id="budget"
-                  value={maximum || ''}
-                  onChange={(e) => navigateFilter('max', e.target.value)}
+                  value={selectedMax || ''}
+                  onChange={(e) =>
+                    navigateFilter(
+                      'max',
+                      e.target.value || (parseQueryIntent(searchText).maxPaise != null ? '0' : ''),
+                    )
+                  }
                 >
                   <option value="">Any budget</option>
-                  <option value="10000">Under ₹10,000</option>
-                  <option value="30000">Under ₹30,000</option>
-                  <option value="60000">Under ₹60,000</option>
+                  {budgetSteps.map((rupees) => (
+                    <option key={rupees} value={rupees}>
+                      Under {money(rupees * 100)} ({budgetCount(rupees)})
+                    </option>
+                  ))}
                 </select>
-                <span>
+                <span aria-live="polite">
                   {filtered.length} {filtered.length === 1 ? 'product' : 'products'}
                 </span>
+                {filtersActive && (
+                  <button type="button" className="clear-filters" onClick={clearFilters}>
+                    Clear filters
+                  </button>
+                )}
               </div>
               <label className="sort-label">
                 Sort by{' '}
@@ -1589,7 +1720,24 @@ export default function Atlas({
                   </section>
                 )}
               </div>
-            ) : bloom ? null : near.length ? (
+            ) : bloom ? null : filtersActive && (brandPool.length || storePool.length) ? (
+              <div className="empty-state compact" role="status">
+                <h3>No results with these filters</h3>
+                <p>
+                  {[
+                    brand && `brand ${brand}`,
+                    searchStore !== 'all' && `store ${searchStore}`,
+                    maximum && `under ${money(maximum * 100)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(', ') || 'The current filters'}{' '}
+                  leave nothing from {brandPool.length || storePool.length} matching products.
+                </p>
+                <button type="button" className="clear-filters" onClick={clearFilters}>
+                  Clear filters
+                </button>
+              </div>
+            ) : near.length ? (
               <section aria-label="Closest products" className="near-misses">
                 <p className="assist-note" role="status">
                   Nothing in stock fits{' '}
@@ -1619,8 +1767,8 @@ export default function Atlas({
                   <span className="track-unknown-badge">Track Unknown Product</span>
                   <h3>“{searchText}” is not in our catalog yet</h3>
                   <p>
-                    We couldn’t find an exact catalog match for this search. You can pin a price
-                    target so Price Atlas watches for it, or browse live store inventory directly:
+                    No exact match yet. Check more stores now, or paste the product’s link from the
+                    store into the search box: once it is read, you can pin a target on it.
                   </p>
                 </div>
                 <div className="track-unknown-actions">
@@ -1628,21 +1776,14 @@ export default function Atlas({
                     type="button"
                     className="primary track-pin-button"
                     onClick={() => {
-                      const fallback = products[0] || {
-                        id: `unknown-${encodeURIComponent(searchText.toLowerCase())}`,
-                        name: searchText,
-                        brand: searchText.split(' ')[0] || 'Unknown',
-                        category: (intent.category || 'other') as any,
-                        slug: `unknown-${encodeURIComponent(searchText.toLowerCase())}`,
-                        subtitle: 'Unknown product target',
-                        description: '',
-                        attributes: {},
-                        basePrice: intent.maxPaise || 5000000,
-                      };
-                      openTarget(fallback);
+                      // A target needs a real listing to watch. Check more stores now; once a
+                      // listing is found (or its link pasted), it can be pinned.
+                      setBloom(true);
+                      if (params.get('verify') === '1') setLookupVersion((v) => v + 1);
+                      else navigateFilter('verify', '1');
                     }}
                   >
-                    <Target size={16} /> Pin Target Price
+                    <Search size={16} /> Check more stores now
                   </button>
                   <a
                     className="outline-button store-ext-link amazon"
@@ -1820,7 +1961,9 @@ export default function Atlas({
                   .filter((w) => collection === 'All collections' || w.collection === collection)
                   .map((w) => {
                     const p = products.find((p) => p.id === w.product_id)!;
-                    const r = rank(offers.filter((o) => o.productId === p.id));
+                    // Same price rule as product cards: most stores never show delivery fees, so a
+                    // delivered-only price would read "Unavailable" for almost everything.
+                    const known = knownPrice(p.id, offers);
                     const rule = session.rules.find((r) => r.productId === p.id);
                     return (
                       <article className="watch-card" key={w.id}>
@@ -1833,7 +1976,16 @@ export default function Atlas({
                             {p.name}
                           </Link>
                           <p className="variant">{p.subtitle}</p>
-                          <strong className="card-price">{money(r.lowest)}</strong>
+                          <strong className="card-price">{money(known?.paise)}</strong>
+                          {known && !known.fresh && (
+                            <p className="muted small">
+                              Last checked{' '}
+                              {new Date(known.observedAt).toLocaleDateString('en-IN', {
+                                day: 'numeric',
+                                month: 'short',
+                              })}
+                            </p>
+                          )}
                           <p className="muted small">
                             {rule
                               ? `Target ${money(rule.target)} · ${rule.enabled ? 'Active' : 'Paused'}`
@@ -2248,6 +2400,26 @@ export default function Atlas({
       .filter((o) => o.historyAllowed && o.stock)
       .map((o) => total(o, historyBasis))
       .filter((value): value is number => value !== null);
+    const insight = priceInsight(
+      comparableHistory,
+      historyBasis,
+      historyBasis === 'item' ? itemRank.lowest : r.lowest,
+      range,
+    );
+    // Same category, priced within 25% of this product, closest price first.
+    const anchor = itemRank.lowest ?? knownPrice(p.id, offers)?.paise ?? null;
+    const similar =
+      anchor == null
+        ? []
+        : products
+            .filter((other) => other.id !== p.id && other.category === p.category)
+            .map((other) => ({ other, price: knownPrice(other.id, offers)?.paise ?? null }))
+            .filter(
+              (row): row is { other: Product; price: number } =>
+                row.price != null && Math.abs(row.price - anchor) <= anchor * 0.25,
+            )
+            .sort((a, b) => Math.abs(a.price - anchor) - Math.abs(b.price - anchor))
+            .slice(0, 4);
     return (
       <section className="page-width detail-page">
         <div className="breadcrumbs">
@@ -2668,17 +2840,29 @@ export default function Atlas({
           />
         </div>
         <WeekLedger observations={comparableHistory} basis={historyBasis} />
+        {similar.length > 0 && (
+          <section className="similar-priced" aria-label="Similar products at this price">
+            <h3>Also around {money(anchor)}</h3>
+            <ul>
+              {similar.map(({ other, price }) => (
+                <li key={other.id}>
+                  <Link prefetch={false} href={`/p/${other.slug}`}>
+                    {other.name}
+                  </Link>
+                  <span>
+                    {money(price)} · {other.brand}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <p className="fine-print">
           {historyCoverage(comparableHistory, historyBasis, range).recordedDays} of {range} days
           have recorded {historyBasis} prices for this product. New tracking cannot supply prices
           from before its first real check.
         </p>
         <div className="history-panel">
-          <ExternalHistory
-            sourceUrl={
-              p.attributes['Product URL'] || po.find((offer) => offer.purchaseUrl)?.purchaseUrl
-            }
-          />
           <div className="section-heading">
             <div>
               <p className="eyebrow">CONTEXT FOR YOUR NEXT MOVE</p>
@@ -2740,6 +2924,24 @@ export default function Atlas({
             >
               Copy history view link
             </button>
+          </div>
+          <div className={`price-insight ${insight.verdict}`} role="status">
+            <strong>
+              {insight.verdict === 'good'
+                ? 'Good price right now'
+                : insight.verdict === 'fair'
+                  ? 'Fair price'
+                  : insight.verdict === 'high'
+                    ? 'Higher than usual'
+                    : 'Not enough history to judge yet'}
+            </strong>
+            <span>{insight.reason}</span>
+            {insight.days > 0 && (
+              <span className="price-insight-stats">
+                Low {money(insight.low)} · Average {money(insight.average)} · High{' '}
+                {money(insight.high)} · {insight.days} recorded days
+              </span>
+            )}
           </div>
           <div className="history-summary">
             <div>
@@ -2830,9 +3032,9 @@ export default function Atlas({
               </thead>
               <tbody>
                 <tr className="price-compare-row">
-                  <th>Lowest delivered price</th>
+                  <th>Lowest item price</th>
                   {selected.map((p) => {
-                    const lowest = rank(offers.filter((o) => o.productId === p.id)).lowest;
+                    const lowest = knownPrice(p.id, offers)?.paise ?? null;
                     return (
                       <td key={p.id}>
                         {money(lowest)}

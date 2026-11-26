@@ -59,3 +59,56 @@ itLaptop('files laptops from phone brands and suffix nouns as laptops', () => {
   ).toBe('laptops');
   expectLaptop(categoryForLaptop('Motorola Edge 50 Fusion 5G (8GB RAM, 256GB)', {})).toBe('phones');
 });
+it('puts each shelf item where a shopper would look for it', () => {
+  const cases: [string, string, Record<string, string>?][] = [
+    [
+      'Fire-Boltt Ninja Call Pro Plus Bluetooth Calling Smart Watch, 1.83" Display, AI Voice Assistant, 120+ Sports Modes, SpO2 & Heart Rate Monitor',
+      'wearables',
+    ],
+    [
+      'Noise Twist Round dial Smart Watch with Bluetooth Calling, 1.38" TFT Display, Sleep Tracking (Blush Beige)',
+      'wearables',
+    ],
+    ['Fire-Boltt Ninja Calling Pro Plus 46.5mm (1.83) Display Bluetooth... more', 'wearables'],
+    ['Charlotte Tilbury Matte Revolution - Pillow Talk Medium(3.5g)', 'beauty'],
+    [
+      'HP Smart Tank 524 All-in-One Colour Printer |1+1 Year Extended Warranty on Registration| Up to 4000 Black & 6000 Colour Prints',
+      'accessories',
+    ],
+    ['Lenovo 2years Extended Warranty with Onsite Service (for Entry Laptops)', 'services'],
+    [
+      'HP Care Pack 2 Years Additional Warranty with Onsite Support for 14 15 Series Laptops',
+      'services',
+    ],
+    [
+      'BOSCH Universal Aquatak 130 High-Pressure Washer | 1700W Motor | 130 Bar, 3-in-1 Nozzle',
+      'appliances',
+    ],
+    [
+      'OnePlus Nord Buds 3r TWS Earbuds up to 54 Hours Playback, 2-mic Clear Calls, 3D Spatial Audio',
+      'audio',
+    ],
+    ['boAt Nirvana Iris Bluetooth', 'audio'],
+    ['KUMB144 SnapX 20 Buds With Touch Sensor, Waterproof, ANC, Bluetooth V5.3 Bluetooth', 'audio'],
+    ['OnePlus Nord 6 | 8GB+256GB | Pitch Black | Snapdragon 8s Gen 4', 'phones'],
+    ['Xiaomi 17 Ultra (Black 16GB+512GB) |Free Photography Kit', 'phones'],
+    ['Educational Kids Laptop Learning Toy for 2-5 Years Boys Girls', 'other'],
+    ['Lenovo Intel Core Ultra 9 275HX - (32 GB/1 TB SSD/Windows 11 Home... more', 'laptops'],
+    [
+      'Lenovo Legion 7 Intel Core Ultra 9 275HX - (32 GB/1 TB SSD/Windows 11 Home/8 GB Graphics/NVIDIA GeForce RTX 5070) 16IAX10 Gaming Laptop',
+      'laptops',
+    ],
+    ['ASUS Prime GeForce RTX 5070 12GB GDDR7 OC Edition Gaming Graphics Card', 'accessories'],
+    ['TP-Link LS1008 8-Port 10/100Mbps Fast Ethernet Unmanaged Desktop Switch', 'accessories'],
+    ['Samsung 60.96 cm (24 Inch) Quad HD IPS Panel with Height Adjustab... more', 'monitors'],
+    ["Titan Karishma Analog Black Dial Men's Watch -NM1639SM02", 'fashion'],
+    ['Kay Beauty FullFill Tinted Lip Plumping Gloss - Gimme Roses(5g)', 'beauty'],
+    ['Inde Wild Dewy Lip Balms - Transparent(15ml)', 'personal-care'],
+    ['Innisfree Super Volcanic Pore Clay Mask 2X For Clogged Pores', 'personal-care'],
+    ['Tayhaa White & Gold Piano Player Showpiece(One Size)', 'home-kitchen'],
+    ['uni-ball Air UBA188M 0.5mm Roller Ball Pen | Blue Ink, Pack of 3', 'stationery'],
+    ['Rina Kent Legacy of Gods Series 6 Books Collection Set', 'books'],
+  ];
+  for (const [title, category, attributes] of cases)
+    expect([title, categoryFor(title, attributes || {})]).toEqual([title, category]);
+});
