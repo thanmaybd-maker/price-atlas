@@ -168,7 +168,8 @@ async function handler(req: NextRequest) {
         const scope = z
           .enum(['all', ...STORE_NAMES])
           .parse(req.nextUrl.searchParams.get('store') || 'all');
-        return json((await lookupStatus(query, scope)) || { state: 'missing' });
+        const nearest = req.nextUrl.searchParams.get('nearest') === '1';
+        return json((await lookupStatus(query, scope, { nearest })) || { state: 'missing' });
       }
       if (path[0] === 'health')
         return json({
@@ -420,11 +421,13 @@ async function handler(req: NextRequest) {
           query: z.string().trim().min(2).max(2000),
           store: z.enum(['all', ...STORE_NAMES]).default('all'),
           searchMore: z.boolean().default(false),
+          nearest: z.boolean().default(false),
         })
         .parse(await req.json());
       const key = user?.id || req.headers.get('x-forwarded-for') || 'local';
       const result = await discoverProducts(body.query, body.store, {
         searchMore: body.searchMore,
+        nearest: body.nearest,
         beforeNetwork: async () => {
           if (await limited(`discovery-fetch:${key}`, 5))
             throw new ScrapeError(

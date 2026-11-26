@@ -47,15 +47,21 @@ const IGNORED_WORDS = new Set([
   'the',
   'of',
 ]);
-function editDistance(a: string, b: string) {
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i];
-    for (let j = 1; j <= b.length; j++)
-      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    prev = row;
+export function editDistance(a: string, b: string) {
+  const m = a.length,
+    n = b.length;
+  const d: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
   }
-  return prev[b.length];
+  return d[m][n];
 }
 export function matchesQuery(
   product: Pick<Product, 'name' | 'brand' | 'subtitle'> & Partial<Pick<Product, 'attributes'>>,
@@ -104,8 +110,8 @@ export function matchesQuery(
       words.some(
         (t) =>
           t[0] === word[0] &&
-          t.length >= word.length - 1 &&
-          editDistance(word, t.slice(0, word.length)) <= 1,
+          ((t.length >= word.length - 1 && editDistance(word, t.slice(0, word.length)) <= 1) ||
+            (Math.abs(t.length - word.length) <= 1 && editDistance(word, t) <= 1)),
       ));
   return normalizeQuery(query)
     .split(' ')

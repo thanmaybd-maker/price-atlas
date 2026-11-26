@@ -102,6 +102,12 @@ import {
   sameBrand,
   soldAt,
 } from '../../../packages/domain/query-intent';
+import {
+  buildNearestQuery,
+  findNearestProducts,
+  nearestStoresFor,
+  type NearestMatch,
+} from '../../../packages/domain/nearest';
 import { priceInsight } from '../../../packages/domain/price-insight';
 import {
   alertSent,
@@ -298,6 +304,28 @@ export default function Atlas({
   const [heroStore, setHeroStore] = useState('all');
   const [bloom, setBloom] = useState(false);
   const [lookupVersion, setLookupVersion] = useState(0);
+  const [nearestLookup, setNearestLookup] = useState<{
+    for: string;
+    store: string;
+    busy: boolean;
+    done: boolean;
+    query: string;
+    ids: string[];
+    message: string;
+    candidates: SearchCandidate[];
+    sources: LookupSource[];
+  }>({
+    for: '',
+    store: 'all',
+    busy: false,
+    done: false,
+    query: '',
+    ids: [],
+    message: '',
+    candidates: [],
+    sources: [],
+  });
+  const nearestControllerRef = useRef<AbortController | null>(null);
   const [pendingMore, setPendingMore] = useState<{
     query: string;
     products: Product[];
@@ -603,6 +631,121 @@ export default function Atlas({
         params.get('verify') === '1');
     setBloom(wantsBloom);
   }, [demo, page, searchText, searchStore]);
+  useEffect(() => {
+    nearestControllerRef.current?.abort();
+    nearestControllerRef.current = null;
+    setNearestLookup({
+      for: '',
+      store: 'all',
+      busy: false,
+      done: false,
+      query: '',
+      ids: [],
+      message: '',
+      candidates: [],
+      sources: [],
+    });
+    return () => {
+      nearestControllerRef.current?.abort();
+    };
+  }, [searchText, searchStore]);
+  async function fetchNearest(forceRefresh = false) {
+    if (demo || !searchText.trim() || /^https?:\/\//i.test(searchText)) return;
+    nearestControllerRef.current?.abort();
+    const controller = new AbortController();
+    nearestControllerRef.current = controller;
+    const forQuery = searchText;
+    const forStore = searchStore;
+    const plan = buildNearestQuery(forQuery);
+    setNearestLookup({
+      for: forQuery,
+      store: forStore,
+      busy: true,
+      done: false,
+      query: plan.query,
+      ids: [],
+      message: '',
+      candidates: [],
+      sources: [],
+    });
+    try {
+      const response = await fetch('/api/v1/discovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: forQuery,
+          store: forStore,
+          nearest: true,
+          searchMore: forceRefresh,
+        }),
+        signal: controller.signal,
+      });
+      let result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || 'Nearest product lookup is temporarily unavailable.');
+      for (
+        let attempt = 0;
+        result.state === 'pending' && attempt < 30 && !controller.signal.aborted;
+        attempt++
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const status = await fetch(
+          `/api/v1/discovery?q=${encodeURIComponent(forQuery)}&store=${encodeURIComponent(forStore)}&nearest=1`,
+          { signal: controller.signal },
+        );
+        result = await status.json();
+        if (!status.ok)
+          throw new Error(result.error || 'Unable to read nearest lookup status. Please retry.');
+      }
+      if (controller.signal.aborted) return;
+      if (result.state === 'pending' || result.state === 'missing')
+        throw new Error(
+          'The nearest store lookup took longer than expected. Please retry shortly.',
+        );
+      const found = (result.products || []) as Product[];
+      const incoming = (result.offers || []) as Offer[];
+      if (found.length) {
+        setProducts((prior) => [
+          ...found,
+          ...prior.filter((p) => !found.some((f) => f.id === p.id)),
+        ]);
+        setOffers((prior) => mergeOffers(prior, incoming));
+      }
+      const resolvedQuery =
+        typeof result.nearestQuery === 'string' && result.nearestQuery
+          ? result.nearestQuery
+          : plan.query;
+      setNearestLookup({
+        for: forQuery,
+        store: forStore,
+        busy: false,
+        done: true,
+        query: resolvedQuery,
+        ids: found.map((p) => p.id),
+        message:
+          result.message ||
+          (found.length
+            ? `Found ${found.length} closest option${found.length === 1 ? '' : 's'} for “${resolvedQuery}”.`
+            : `No closest verified listings were returned for “${resolvedQuery}” right now.`),
+        candidates: (result.candidates || []) as SearchCandidate[],
+        sources: (result.sources || []) as LookupSource[],
+      });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setNearestLookup({
+        for: forQuery,
+        store: forStore,
+        busy: false,
+        done: true,
+        query: plan.query,
+        ids: [],
+        message:
+          error instanceof Error ? error.message : 'Unable to fetch nearest options right now.',
+        candidates: [],
+        sources: [],
+      });
+    }
+  }
   async function refresh() {
     const result = await api('session');
     setSession(result);
@@ -1021,6 +1164,46 @@ export default function Atlas({
         textMatch,
         { store: effectiveStore },
       );
+  const nearestState =
+    nearestLookup.for === searchText && nearestLookup.store === searchStore ? nearestLookup : null;
+  const nearestResult =
+    !filtered.length && !near.length && searchText && !/^https?:\/\//i.test(searchText)
+      ? findNearestProducts(products, offers, assistedQuery || searchText, {
+          store: effectiveStore,
+          category: category || undefined,
+          brand: brand || undefined,
+          limit: 12,
+        })
+      : null;
+  const nearestPlan =
+    nearestResult?.nearest ||
+    (searchText && !/^https?:\/\//i.test(searchText)
+      ? buildNearestQuery(assistedQuery || searchText)
+      : null);
+  const nearestItems: NearestMatch[] = (() => {
+    if (!nearestResult) return [];
+    const base = [...nearestResult.items];
+    const seen = new Set(base.map((item) => item.p.id));
+    if (nearestState?.ids.length) {
+      for (const id of nearestState.ids) {
+        if (seen.has(id)) continue;
+        const p = products.find((item) => item.id === id);
+        if (!p) continue;
+        seen.add(id);
+        base.push({
+          p,
+          price: knownPrice(p.id, offers, effectiveStore, Date.now(), true),
+          score: 1,
+          sameBrand: true,
+          sameCategory: true,
+          reason: `Fetched for “${nearestState.query || nearestPlan?.query || searchText}”`,
+        });
+      }
+    }
+    return base.slice(0, 16);
+  })();
+  const nearestExternalStores = nearestStoresFor(nearestPlan?.category);
+  const externalSearchPhrase = nearestPlan?.query || assistedQuery || searchText;
   // Budget searches also list matches that fit the budget but are sold out right now,
   // so a shopper sees the product exists (e.g. MacBook Neo) and can set a target on it.
   const shownIds = new Set(filtered.map((p) => p.id));
@@ -1123,7 +1306,7 @@ export default function Atlas({
   }
   const pageCount = Math.max(1, Math.ceil(filtered.length / 24));
   const currentPage = Math.min(pageCount, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
-  function Card({ p, index = 0 }: { p: Product; index?: number }) {
+  function Card({ p, index = 0, badge }: { p: Product; index?: number; badge?: string }) {
     const po = dedupeOffers(
       offers.filter(
         (o) => o.productId === p.id && (effectiveStore === 'all' || o.store === effectiveStore),
@@ -1150,6 +1333,7 @@ export default function Atlas({
           </button>
         </div>
         <div className="card-body">
+          {badge && <span className="near-match-badge">{badge}</span>}
           <p className="eyebrow brand">{p.brand}</p>
           <Link prefetch={false} className="product-name" href={`/p/${p.slug}`}>
             {p.name}
@@ -1764,7 +1948,11 @@ export default function Atlas({
                   ))}
                 </select>
                 <span aria-live="polite">
-                  {filtered.length} {filtered.length === 1 ? 'product' : 'products'}
+                  {filtered.length > 0
+                    ? `${filtered.length} ${filtered.length === 1 ? 'product' : 'products'}`
+                    : nearestItems.length > 0
+                      ? `0 exact · ${nearestItems.length} closest`
+                      : '0 products'}
                 </span>
                 {filtersActive && (
                   <button type="button" className="clear-filters" onClick={clearFilters}>
@@ -1874,6 +2062,95 @@ export default function Atlas({
                   ))}
                 </ul>
               </section>
+            ) : nearestItems.length ? (
+              <section aria-label="Closest matching products" className="nearest-section">
+                <div className="nearest-banner">
+                  <div className="nearest-header">
+                    <span className="nearest-badge">
+                      {nearestState?.done && nearestState.ids.length
+                        ? 'Nearest Fetched'
+                        : 'Closest Matches'}
+                    </span>
+                    <h3>No exact match for “{searchText}”</h3>
+                    <p>
+                      {nearestState?.done && nearestState.ids.length
+                        ? `Showing ${nearestItems.length} closest option${nearestItems.length === 1 ? '' : 's'} (checked stores for “${nearestState.query}”). Specs or variants differ from your exact search.`
+                        : nearestResult?.brandFallback && nearestPlan?.brand
+                          ? `No ${nearestPlan.brand} listings match this in our catalog yet. Showing ${nearestItems.length} closest option${nearestItems.length === 1 ? '' : 's'} in the same category — or fetch nearest from stores.`
+                          : `Showing ${nearestItems.length} closest option${nearestItems.length === 1 ? '' : 's'} in our catalog. Specs or variants differ from your search — check each listing before pinning a target.`}
+                    </p>
+                  </div>
+                  <div className="nearest-actions">
+                    {!demo && (
+                      <button
+                        type="button"
+                        className="primary track-pin-button"
+                        disabled={Boolean(nearestState?.busy)}
+                        onClick={() => void fetchNearest(Boolean(nearestState?.done))}
+                      >
+                        <Search size={16} />
+                        {nearestState?.busy
+                          ? `Fetching nearest (“${nearestState.query}”)…`
+                          : nearestState?.done
+                            ? 'Refresh nearest from stores'
+                            : nearestPlan?.relaxed
+                              ? `Fetch nearest (“${nearestPlan.query}”)`
+                              : 'Fetch nearest from stores'}
+                      </button>
+                    )}
+                    {nearestPlan?.relaxed && nearestPlan.query && (
+                      <Link
+                        prefetch={false}
+                        className="outline-button store-ext-link"
+                        href={`/search?q=${encodeURIComponent(nearestPlan.query)}${searchStore !== 'all' ? `&store=${encodeURIComponent(searchStore)}` : ''}`}
+                      >
+                        Search “{nearestPlan.query}” <ArrowRight size={13} />
+                      </Link>
+                    )}
+                    {nearestExternalStores.map((store) => (
+                      <a
+                        key={store}
+                        className="outline-button store-ext-link"
+                        href={retailerSearchUrl(store, externalSearchPhrase)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {store} <ArrowUpRight size={13} />
+                      </a>
+                    ))}
+                  </div>
+                  {nearestState?.busy ? (
+                    <p className="nearest-status" role="status" aria-live="polite">
+                      Searching stores for closest matches to “{nearestState.query}”…
+                    </p>
+                  ) : nearestState?.done && nearestState.message ? (
+                    <p className="nearest-status" role="status" aria-live="polite">
+                      {nearestState.message}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="product-grid">
+                  {nearestItems.map((item, i) => Card({ p: item.p, index: i, badge: item.reason }))}
+                </div>
+                {nearestState && nearestState.candidates.length > 0 && (
+                  <details className="nearest-links">
+                    <summary>
+                      Nearest store links ({nearestState.candidates.length}) · live prices
+                      unverified
+                    </summary>
+                    <ul>
+                      {nearestState.candidates.map((c) => (
+                        <li key={c.url}>
+                          <Link prefetch={false} href={`/search?q=${encodeURIComponent(c.url)}`}>
+                            Check &amp; track: {c.title}
+                          </Link>{' '}
+                          · {c.store}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </section>
             ) : searchText &&
               !/^https?:\/\//i.test(searchText) &&
               (!lookup.busy || lookup.query !== searchText) ? (
@@ -1882,57 +2159,90 @@ export default function Atlas({
                   <span className="track-unknown-badge">Track Unknown Product</span>
                   <h3>“{searchText}” is not in our catalog yet</h3>
                   <p>
-                    No exact match yet. Check more stores now, or paste the product’s link from the
-                    store into the search box: once it is read, you can pin a target on it.
+                    No exact match or close product is saved yet. Fetch the nearest options from
+                    stores
+                    {nearestPlan?.relaxed ? ` using “${nearestPlan.query}”` : ''}, retry the exact
+                    store check, or paste the product’s store link into the search box to track it.
                   </p>
                 </div>
                 <div className="track-unknown-actions">
-                  <button
-                    type="button"
-                    className="primary track-pin-button"
-                    onClick={() => {
-                      // A target needs a real listing to watch. Check more stores now; once a
-                      // listing is found (or its link pasted), it can be pinned.
-                      setBloom(true);
-                      if (params.get('verify') === '1') setLookupVersion((v) => v + 1);
-                      else navigateFilter('verify', '1');
-                    }}
-                  >
-                    <Search size={16} /> Check more stores now
-                  </button>
-                  <a
-                    className="outline-button store-ext-link amazon"
-                    href={retailerSearchUrl('Amazon', assistedQuery || searchText)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Search on Amazon <ArrowUpRight size={13} />
-                  </a>
-                  <a
-                    className="outline-button store-ext-link flipkart"
-                    href={retailerSearchUrl('Flipkart', assistedQuery || searchText)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Search on Flipkart <ArrowUpRight size={13} />
-                  </a>
-                  <a
-                    className="outline-button store-ext-link nykaa"
-                    href={retailerSearchUrl('Nykaa', assistedQuery || searchText)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Search on Nykaa <ArrowUpRight size={13} />
-                  </a>
-                  <a
-                    className="outline-button store-ext-link croma"
-                    href={retailerSearchUrl('Croma', assistedQuery || searchText)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Search on Croma <ArrowUpRight size={13} />
-                  </a>
+                  {!demo && (
+                    <button
+                      type="button"
+                      className="primary track-pin-button"
+                      disabled={Boolean(nearestState?.busy)}
+                      onClick={() => void fetchNearest(Boolean(nearestState?.done))}
+                    >
+                      <Search size={16} />
+                      {nearestState?.busy
+                        ? `Fetching nearest (“${nearestState.query}”)…`
+                        : nearestPlan?.relaxed
+                          ? `Fetch nearest (“${nearestPlan.query}”)`
+                          : 'Fetch nearest from stores'}
+                    </button>
+                  )}
+                  {!demo && (
+                    <button
+                      type="button"
+                      className="outline-button store-ext-link"
+                      disabled={Boolean(nearestState?.busy)}
+                      onClick={() => {
+                        setBloom(true);
+                        if (params.get('verify') === '1') setLookupVersion((v) => v + 1);
+                        else navigateFilter('verify', '1');
+                      }}
+                    >
+                      Check exact across stores
+                    </button>
+                  )}
+                  {nearestPlan?.relaxed && nearestPlan.query && (
+                    <Link
+                      prefetch={false}
+                      className="outline-button store-ext-link"
+                      href={`/search?q=${encodeURIComponent(nearestPlan.query)}${searchStore !== 'all' ? `&store=${encodeURIComponent(searchStore)}` : ''}`}
+                    >
+                      Search “{nearestPlan.query}” <ArrowRight size={13} />
+                    </Link>
+                  )}
+                  {nearestExternalStores.map((store) => (
+                    <a
+                      key={store}
+                      className="outline-button store-ext-link"
+                      href={retailerSearchUrl(store, externalSearchPhrase)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Search on {store} <ArrowUpRight size={13} />
+                    </a>
+                  ))}
                 </div>
+                {nearestState?.busy ? (
+                  <p className="nearest-status" role="status" aria-live="polite">
+                    Searching stores for closest matches to “{nearestState.query}”…
+                  </p>
+                ) : nearestState?.done && nearestState.message ? (
+                  <p className="nearest-status" role="status" aria-live="polite">
+                    {nearestState.message}
+                  </p>
+                ) : null}
+                {nearestState && nearestState.candidates.length > 0 && (
+                  <details className="nearest-links" open>
+                    <summary>
+                      Nearest store links ({nearestState.candidates.length}) · live prices
+                      unverified
+                    </summary>
+                    <ul>
+                      {nearestState.candidates.map((c) => (
+                        <li key={c.url}>
+                          <Link prefetch={false} href={`/search?q=${encodeURIComponent(c.url)}`}>
+                            Check &amp; track: {c.title}
+                          </Link>{' '}
+                          · {c.store}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
                 <p className="track-unknown-tip">
                   Found it on a store? Paste its direct URL into the search box above to add it to
                   your tracking list immediately.

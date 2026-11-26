@@ -1767,3 +1767,51 @@ it('collection assist rejects a guessed job id and a replay before spending prov
     process.env = saved;
   }
 });
+
+it('nearest discovery relaxes unmatched specs, skips accessories, and keeps exact cache separate', async () => {
+  const saved = { ...process.env };
+  delete process.env.TINYFISH_API_KEY;
+  await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0,paused=0');
+  const query = 'latptop lenovo 10gb ram, 60gb hard disk ssd';
+  const searchQueries: string[] = [];
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const u = new URL(String(input));
+    if (u.hostname === 'www.amazon.in' && u.pathname === '/s') {
+      searchQueries.push(u.searchParams.get('k') || '');
+      return new Response(
+        '<div data-component-type="s-search-result" data-asin="B0NEAREST1">' +
+          '<h2>Lenovo IdeaPad Slim 3 Laptop 8GB RAM 512GB SSD</h2>' +
+          '</div>' +
+          '<div data-component-type="s-search-result" data-asin="B0NEARBAG1">' +
+          '<h2>Lenovo 15.6 inch Laptop Backpack</h2>' +
+          '</div>',
+      );
+    }
+    if (u.hostname === 'www.amazon.in' && u.pathname.includes('B0NEAREST1')) {
+      return new Response(
+        html('₹36,990').replace(
+          'Test Phone 128 GB',
+          'Lenovo IdeaPad Slim 3 Laptop 8GB RAM 512GB SSD',
+        ),
+      );
+    }
+    return new Response('<title>No results</title>');
+  });
+  try {
+    const exact = await discoverProducts(query, 'Amazon');
+    expect(exact?.products).toHaveLength(0);
+
+    await db.query('UPDATE atlas.provider_state SET window_start=0,requests=0,paused=0');
+    const nearest = await discoverProducts(query, 'Amazon', { nearest: true });
+    expect(nearest?.nearest).toBe(true);
+    expect(nearest?.nearestQuery).toBe('lenovo laptop ssd');
+    expect(searchQueries).toContain('lenovo laptop ssd');
+    expect(nearest?.products).toHaveLength(1);
+    expect(nearest?.products[0]?.name).toContain('Lenovo IdeaPad Slim 3');
+    expect(nearest?.offers.some((o) => o.itemPrice === 3699000)).toBe(true);
+    expect(nearest?.products.some((p) => p?.name.includes('Backpack'))).toBe(false);
+  } finally {
+    fetcher.mockRestore();
+    process.env = saved;
+  }
+});

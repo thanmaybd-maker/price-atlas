@@ -4068,6 +4068,110 @@ th {
   line-height: 1.5;
 }
 
+/* Nearest / Closest Matches Fallback Section */
+.nearest-section {
+  margin: 12px 0 36px;
+}
+.nearest-banner {
+  margin: 0 0 22px;
+  padding: 22px 24px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.03);
+}
+[data-theme='dark'] .nearest-banner {
+  background: #171d24;
+  border-color: #2b3846;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+.nearest-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: #edf6ef;
+  color: #14532d;
+  border: 1px solid #b8d8be;
+  margin-bottom: 10px;
+}
+[data-theme='dark'] .nearest-badge {
+  background: #15281c;
+  color: #bbf7d0;
+  border-color: #2b5539;
+}
+.nearest-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+.nearest-header p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+.nearest-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.nearest-status {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.near-match-badge {
+  display: inline-block;
+  align-self: flex-start;
+  margin: 0 0 8px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #edf6ef;
+  color: #14532d;
+  border: 1px solid #b8d8be;
+}
+[data-theme='dark'] .near-match-badge {
+  background: #15281c;
+  color: #bbf7d0;
+  border-color: #2b5539;
+}
+.nearest-links {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 13px;
+}
+[data-theme='dark'] .nearest-links {
+  background: #171d24;
+  border-color: #2b3846;
+}
+.nearest-links summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink);
+}
+.nearest-links ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+.nearest-links a {
+  font-weight: 600;
+}
+
 .pending-results-banner {
   display: flex;
   flex-wrap: wrap;

@@ -11,7 +11,13 @@ import {
 } from '../database/postgres';
 import { matchesQuery, normalizeQuery } from '../domain/search';
 import { discoveryConflict } from '../domain/discovery-guard';
-import { parseQueryIntent, applyIntent } from '../domain/query-intent';
+import { parseQueryIntent, applyIntent, soldAt } from '../domain/query-intent';
+import {
+  buildNearestQuery,
+  findNearestProducts,
+  nearestConflict,
+  scoreNearestCandidate,
+} from '../domain/nearest';
 import { canonicalRetailUrl, scrapeSearchHtml, ScrapeError } from '../providers/scraper';
 import {
   parseSearchHtml,
@@ -41,8 +47,10 @@ export type LookupData = {
   sources: { store: Store; method: string; status: string }[];
   message?: string;
   searchLinks?: { store: Store; url: string }[];
+  nearest?: boolean;
+  nearestQuery?: string;
 };
-export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
+export function lookupIdentity(value: string, store: Store | 'all' = 'all', nearest = false) {
   const q = value.trim();
   if (q.length < 2 || q.length > 2000 || (!/^https?:\/\//i.test(q) && q.length > 160))
     throw new ScrapeError(
@@ -62,16 +70,26 @@ export function lookupIdentity(value: string, store: Store | 'all' = 'all') {
   }
   if (!url && normalizeQuery(q).length < 2)
     throw new ScrapeError('invalid_query', 'Enter a product name or model.');
+  const keyTarget =
+    nearest && !url
+      ? normalizeQuery(buildNearestQuery(q).query) || normalizeQuery(q)
+      : url || normalizeQuery(q);
   return {
     q,
     url,
     key: createHash('sha256')
-      .update(`retailers-v7:${url ? 'url' : store}:${url || normalizeQuery(q)}`)
+      .update(
+        `retailers-v7:${nearest && !url ? `nearest:${store}` : url ? 'url' : store}:${keyTarget}`,
+      )
       .digest('hex'),
   };
 }
-export async function lookupStatus(value: string, store: Store | 'all' = 'all') {
-  const { key } = lookupIdentity(value, store);
+export async function lookupStatus(
+  value: string,
+  store: Store | 'all' = 'all',
+  options: { nearest?: boolean } = {},
+) {
+  const { key } = lookupIdentity(value, store, Boolean(options.nearest));
   const row = (
     await postgres().query(
       'SELECT state,data FROM atlas.search_cache WHERE query_key=$1 AND expires_at>$2',
@@ -97,29 +115,43 @@ export async function lookupStatus(value: string, store: Store | 'all' = 'all') 
 export async function discoverProducts(
   value: string,
   scope: Store | 'all' = 'all',
-  options: { searchMore?: boolean; beforeNetwork?: () => Promise<void> } = {},
+  options: { searchMore?: boolean; nearest?: boolean; beforeNetwork?: () => Promise<void> } = {},
 ) {
-  const { q, url, key } = lookupIdentity(value, scope);
+  const nearestMode = Boolean(options.nearest);
+  const { q, url, key } = lookupIdentity(value, scope, nearestMode);
+  const nearestPlan = nearestMode && !url ? buildNearestQuery(q) : null;
   const intent = parseQueryIntent(q);
   const effectiveScope = scope === 'all' ? intent.store || scope : scope;
-  const searchPhrase = intent.text || intent.category?.replace(/-/g, ' ') || q;
+  const searchPhrase = nearestPlan
+    ? nearestPlan.query
+    : intent.text || intent.category?.replace(/-/g, ' ') || q;
   const claimed = await tx(async (c) => {
     await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`search:${key}`]);
     const prior = (
-      await c.query('SELECT state FROM atlas.search_cache WHERE query_key=$1 AND expires_at>$2', [
-        key,
-        Date.now(),
-      ])
+      await c.query(
+        'SELECT state,data FROM atlas.search_cache WHERE query_key=$1 AND expires_at>$2',
+        [key, Date.now()],
+      )
     ).rows[0];
-    if (prior && (!options.searchMore || prior.state === 'pending')) return false;
+    const priorEmptyNearest =
+      Boolean(nearestPlan) &&
+      prior?.state === 'complete' &&
+      !(Array.isArray(prior.data?.productIds) && prior.data.productIds.length > 0);
+    if (prior && ((!options.searchMore && !priorEmptyNearest) || prior.state === 'pending'))
+      return false;
     await c.query(
       "INSERT INTO atlas.search_cache VALUES($1,'pending','{}'::jsonb,$2) ON CONFLICT(query_key) DO UPDATE SET state='pending',data='{}'::jsonb,expires_at=excluded.expires_at",
       [key, Date.now() + 90000],
     );
     return true;
   });
-  if (!claimed) return lookupStatus(q, scope);
-  const data: LookupData = { productIds: [], candidates: [], sources: [] };
+  if (!claimed) return lookupStatus(q, scope, { nearest: nearestMode });
+  const data: LookupData = {
+    productIds: [],
+    candidates: [],
+    sources: [],
+    ...(nearestPlan ? { nearest: true, nearestQuery: nearestPlan.query } : {}),
+  };
   let plannedStores: Store[] = [];
   let networkAllowed = false;
   const beforeNetwork = async () => {
@@ -180,16 +212,22 @@ export async function discoverProducts(
       data.sources.push({ store: identity.store, method: 'product-page', status: 'complete' });
     } else {
       const currentOffers = await offers();
-      const existing = applyIntent(await catalog(), currentOffers, intent, matchesQuery, {
-        store: effectiveScope,
-      }).map((row) => row.p);
+      const allProducts = await catalog();
+      const existing = nearestPlan
+        ? findNearestProducts(allProducts, currentOffers, q, {
+            store: effectiveScope,
+            limit: 24,
+          }).items.map((row) => row.p)
+        : applyIntent(allProducts, currentOffers, intent, matchesQuery, {
+            store: effectiveScope,
+          }).map((row) => row.p);
       const scoped = existing.filter(
         (p) =>
           effectiveScope === 'all' ||
           p.attributes.Retailer === effectiveScope ||
           currentOffers.some((o) => o.productId === p.id && o.store === effectiveScope),
       );
-      const inferredCategory = categoryFor(searchPhrase, {});
+      const inferredCategory = nearestPlan?.category || categoryFor(searchPhrase, {});
       plannedStores =
         effectiveScope === 'all'
           ? storesForCategory(
@@ -203,7 +241,9 @@ export async function discoverProducts(
         url: retailerSearchUrl(store, searchPhrase),
       }));
       data.productIds.push(...scoped.slice(0, 40).map((p) => p.id));
-      const researched = await cachedAgentResearch(q).catch(() => null);
+      const researched = await cachedAgentResearch(nearestPlan ? searchPhrase : q).catch(
+        () => null,
+      );
       if (effectiveScope === 'all')
         plannedStores = [
           ...new Set([...plannedStores, ...(researched?.candidates.map((c) => c.store) || [])]),
@@ -224,7 +264,7 @@ export async function discoverProducts(
       );
       for (const store of plannedStores.filter((store) => !uncheckedStores.includes(store)))
         data.sources.push({ store, method: 'recorded-catalog', status: 'complete' });
-      if (scoped.length)
+      if (scoped.length && !nearestPlan)
         data.message =
           'Showing recorded catalog matches and retailer check outcomes. Open a retailer link to verify checkout details.';
       if (uncheckedStores.length) {
@@ -320,21 +360,54 @@ export async function discoverProducts(
               const words = normalizeQuery(searchPhrase)
                 .split(' ')
                 .filter((w) => w.length > 2 && !['the', 'and', 'for', 'buy', 'price'].includes(w));
-              const relevant = candidates
-                .filter((c) => !discoveryConflict(c.title, q))
-                .map((c) => ({
-                  c,
-                  score:
-                    words.filter((w) => normalizeQuery(c.title).includes(w)).length /
-                    Math.max(1, words.length),
-                }))
-                .filter(
-                  ({ c, score }) =>
-                    score >= 0.6 ||
-                    matchesQuery({ name: c.title, brand: '', subtitle: '' }, searchPhrase),
-                )
-                .sort((a, b) => b.score - a.score)
-                .map(({ c }) => c);
+              let relevant: SearchCandidate[];
+              if (nearestPlan) {
+                const scoredCandidates = candidates
+                  .map((c) => ({
+                    c,
+                    match: scoreNearestCandidate(
+                      {
+                        name: c.title,
+                        brand: '',
+                        subtitle: '',
+                        category: categoryFor(c.title, {}),
+                      },
+                      nearestPlan,
+                      q,
+                    ),
+                  }))
+                  .filter(
+                    (
+                      row,
+                    ): row is {
+                      c: SearchCandidate;
+                      match: NonNullable<ReturnType<typeof scoreNearestCandidate>>;
+                    } => row.match !== null,
+                  );
+                const sameBrandPool =
+                  nearestPlan.brand && scoredCandidates.some((r) => r.match.sameBrand)
+                    ? scoredCandidates.filter((r) => r.match.sameBrand)
+                    : scoredCandidates;
+                relevant = sameBrandPool
+                  .sort((a, b) => b.match.score - a.match.score)
+                  .map(({ c }) => c);
+              } else {
+                relevant = candidates
+                  .filter((c) => !discoveryConflict(c.title, q))
+                  .map((c) => ({
+                    c,
+                    score:
+                      words.filter((w) => normalizeQuery(c.title).includes(w)).length /
+                      Math.max(1, words.length),
+                  }))
+                  .filter(
+                    ({ c, score }) =>
+                      score >= 0.6 ||
+                      matchesQuery({ name: c.title, brand: '', subtitle: '' }, searchPhrase),
+                  )
+                  .sort((a, b) => b.score - a.score)
+                  .map(({ c }) => c);
+              }
               data.candidates.push(...relevant.slice(0, 12));
               let imported = false;
               let failure: unknown;
@@ -345,6 +418,7 @@ export async function discoverProducts(
               // brand/keyword (never pulling sponsored HP laptops into a Lenovo/ASUS search).
               const leadWord = words[0];
               const padSimilar =
+                !nearestPlan &&
                 Boolean(intent.text) &&
                 intent.maxPaise == null &&
                 intent.minPaise == null &&
@@ -366,10 +440,16 @@ export async function discoverProducts(
                 .slice(0, effectiveScope === 'all' ? Math.max(0, 5 - carded.length) + 1 : 10);
               const keep = async (id: string) => {
                 const p = await findProduct(id);
-                return p &&
-                  applyIntent([p], await offers(id), intent, matchesQuery, {
-                    store: effectiveScope,
-                  }).length
+                if (!p) return null;
+                if (nearestPlan) {
+                  if (nearestConflict(p.name, nearestPlan, q)) return null;
+                  if (effectiveScope !== 'all' && !soldAt(p, await offers(id), effectiveScope))
+                    return null;
+                  return id;
+                }
+                return applyIntent([p], await offers(id), intent, matchesQuery, {
+                  store: effectiveScope,
+                }).length
                   ? id
                   : null;
               };
@@ -448,7 +528,13 @@ export async function discoverProducts(
       status: data.productIds.length ? 'complete' : 'unavailable',
     });
   }
-  if (!data.productIds.length && !data.message)
+  if (nearestPlan) {
+    data.message = data.productIds.length
+      ? `Found ${data.productIds.length} closest option${data.productIds.length === 1 ? '' : 's'} for “${nearestPlan.query}”. Specs or variants differ from your exact search.`
+      : data.sources.some((s) => s.status === 'rate_limited')
+        ? 'The stores are busy. Please try again in a minute, or open a store link below.'
+        : `No closest verified listings were returned for “${nearestPlan.query}” right now. Try the store links below or paste a direct product URL.`;
+  } else if (!data.productIds.length && !data.message)
     data.message = data.sources.some((s) => s.status === 'rate_limited')
       ? 'The stores are busy. Please try again in a minute, or paste a direct product URL.'
       : data.sources.some((s) => ['daily_budget', 'monthly_budget'].includes(s.status))
@@ -458,5 +544,5 @@ export async function discoverProducts(
     "UPDATE atlas.search_cache SET state='complete',data=$2,expires_at=$3 WHERE query_key=$1",
     [key, data, Date.now() + (data.productIds.length ? 6 * 3600000 : 120000)],
   );
-  return { ...(await lookupStatus(q, scope)), cached: false };
+  return { ...(await lookupStatus(q, scope, { nearest: nearestMode })), cached: false };
 }
