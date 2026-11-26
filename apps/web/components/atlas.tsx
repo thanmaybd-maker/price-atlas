@@ -1077,10 +1077,10 @@ export default function Atlas({
                   ? `${effectiveStore !== 'all' ? `${effectiveStore} · ` : itemRank.offers.length > 1 ? 'Lowest of ' + itemRank.offers.length + ' · ' : ''}${
                       known.fresh
                         ? 'item price'
-                        : `last checked ${new Date(known.observedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                        : `last checked ${new Date(known.observedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}`
                     }`
                   : lastObserved
-                    ? `Last observed · ${new Date(lastObserved.observedAt).toLocaleDateString('en-IN')}`
+                    ? `Last observed · ${new Date(lastObserved.observedAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}`
                     : p.attributes['Source price']
                       ? 'Source price · shipping/import fees extra'
                       : p.basePrice && p.basePrice > 0
@@ -1733,6 +1733,7 @@ export default function Atlas({
                             {new Date(price!.observedAt).toLocaleDateString('en-IN', {
                               day: 'numeric',
                               month: 'short',
+                              timeZone: 'Asia/Kolkata',
                             })}
                           </span>
                         </li>
@@ -1773,7 +1774,7 @@ export default function Atlas({
                       </Link>
                       <span>
                         {price
-                          ? `${money(price.paise)} · ${price.store} · ${price.inStock ? (price.fresh ? 'in stock' : 'last checked') : 'out of stock'} ${new Date(price.observedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                          ? `${money(price.paise)} · ${price.store} · ${price.inStock ? (price.fresh ? 'in stock' : 'last checked') : 'out of stock'} ${new Date(price.observedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}`
                           : 'no recent price'}
                       </span>
                     </li>
@@ -2004,6 +2005,7 @@ export default function Atlas({
                               {new Date(known.observedAt).toLocaleDateString('en-IN', {
                                 day: 'numeric',
                                 month: 'short',
+                                timeZone: 'Asia/Kolkata',
                               })}
                             </p>
                           )}
@@ -2548,6 +2550,7 @@ export default function Atlas({
                     {new Date(headline.observedAt).toLocaleDateString('en-IN', {
                       day: 'numeric',
                       month: 'short',
+                      timeZone: 'Asia/Kolkata',
                     })}
                   </span>
                 )}
@@ -2560,7 +2563,7 @@ export default function Atlas({
               {itemRank.winners[0] && (
                 <LandedLine offer={itemRank.winners[0]} category={p.category} wide />
               )}
-              <p>
+              <p suppressHydrationWarning>
                 <span className="live-dot" />
                 {po[0] ? relative(po[0].observedAt) : 'Awaiting observation'} ·{' '}
                 {demo ? 'Synthetic demo prices' : 'Retailer observation'}
@@ -2713,7 +2716,7 @@ export default function Atlas({
                         ? 'Stock unverified'
                         : 'Out of stock'}
                 </span>
-                <span>{relative(o.observedAt)}</span>
+                <span suppressHydrationWarning>{relative(o.observedAt)}</span>
                 <OfferEvidence offer={o} basis="item" />
               </div>
               {!demo && o.purchaseUrl ? (
@@ -3283,7 +3286,9 @@ export default function Atlas({
                   <strong>Time zone</strong>
                   <p className="muted small">Dates display in your browser’s local time.</p>
                 </div>
-                <span className="small">{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+                <span className="small" suppressHydrationWarning>
+                  {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                </span>
               </div>
             </div>
             <div className="settings-panel">

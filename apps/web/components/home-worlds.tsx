@@ -308,7 +308,7 @@ function OffersWorld({ products, offers }: { products: Product[]; offers: Offer[
                           : 'free, stated'}
                   </dd>
                   <dt>Checked</dt>
-                  <dd>{ago(t.o.observedAt)}</dd>
+                  <dd suppressHydrationWarning>{ago(t.o.observedAt)}</dd>
                 </dl>
               </div>
               <div className="pr">
@@ -321,7 +321,9 @@ function OffersWorld({ products, offers }: { products: Product[]; offers: Offer[
                       ))
                     : t.fig}
                 </span>
-                <span className={t.statCls}>{t.stat}</span>
+                <span className={t.statCls} suppressHydrationWarning>
+                  {t.stat}
+                </span>
               </div>
             </article>
           ))}
@@ -793,7 +795,7 @@ function TargetsWorld({
                       role={sent ? 'status' : undefined}
                     >
                       {sent
-                        ? `✓ alert sent ${new Date(sent.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })} · clearing`
+                        ? `✓ alert sent ${new Date(sent.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} · clearing`
                         : !r.enabled
                           ? 'paused'
                           : met
@@ -1124,7 +1126,7 @@ function AlertsWorld({
               <b>₹{fmt(price)}</b>
               {name} {latest ? 'reached your target' : 'is at this price'} on{' '}
               {storeLabel(store || '')}.
-              <small>
+              <small suppressHydrationWarning>
                 {latest ? 'recorded ' + ago(latest.created_at) : 'example message, recorded price'}
               </small>
             </div>
