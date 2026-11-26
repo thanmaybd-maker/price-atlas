@@ -10,6 +10,7 @@ import { weeklyHistory } from '../../../packages/domain/weekly-history';
 import { HistoryCitation } from './history-citation';
 import { TidesWorld } from './tides-world';
 import { fetchJson } from '../lib/fetch-json';
+import { alertStores, ruleNow } from '../../../packages/domain/offer-rules';
 import { historyCoverage } from '../../../packages/domain/history-coverage';
 import { historyRecording } from '../../../packages/domain/history-recording';
 import { reducedMotion } from './three-loader';
@@ -110,7 +111,8 @@ function OffersWorld({ products, offers }: { products: Product[]; offers: Offer[
     [products, offers],
   );
   const [pick, setPick] = useState(0);
-  const [sort, setSort] = useState<'delivered' | 'item' | 'fresh'>('delivered');
+  // Item price first: most stores never show delivery, so a delivered sort ranks almost nothing.
+  const [sort, setSort] = useState<'delivered' | 'item' | 'fresh'>('item');
   const [domestic, setDomestic] = useState(false);
   const [hideUnranked, setHideUnranked] = useState(false);
   const active = candidates[Math.min(pick, candidates.length - 1)];
@@ -571,10 +573,8 @@ function TargetsWorld({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
   const amount = dt ?? String(suggested(p) || '');
-  const stores = [
-    'all',
-    ...new Set(pOffers.filter((o) => !retailers[o.store].international).map((o) => o.store)),
-  ];
+  // Only stores that can actually send an alert (same rule as the alert engine).
+  const stores = ['all', ...alertStores(pOffers)];
   useEffect(() => {
     if (initialTarget) {
       setSelectedId(initialTarget.productId);
@@ -753,11 +753,10 @@ function TargetsWorld({
               .slice(0, 4)
               .map((r, i) => {
                 const q = products.find((x) => x.id === r.productId);
-                const scoped = offers.filter(
-                  (o) => o.productId === r.productId && (r.store === 'all' || o.store === r.store),
-                );
-                const now = lowest(scoped, r.basis);
-                const met = now != null && now <= r.target;
+                // Same inputs as the alert engine and the Targets page.
+                const status = ruleNow(r, offers);
+                const now = status.price;
+                const met = status.met;
                 const sent = sentFor(r);
                 return (
                   <article
@@ -802,9 +801,9 @@ function TargetsWorld({
                         : !r.enabled
                           ? 'paused'
                           : met
-                            ? scoped.some((o) => o.stock && o.observedAt > Date.now() - 3600000)
-                              ? 'met · alert sending'
-                              : 'met · alerts on next hourly check'
+                            ? // ruleNow only counts alert-eligible offers, so "met" means the
+                              // engine sees it too and an alert is being sent.
+                              'met · alert sending'
                             : now == null
                               ? 'waiting for a fresh check'
                               : `₹${fmt(now - r.target)} to go`}

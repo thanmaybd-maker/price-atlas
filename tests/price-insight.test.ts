@@ -38,6 +38,18 @@ it('calls a price at the recorded low good, below average fair, above average hi
   const high = priceInsight(history, 'item', 1290, 30, now);
   expect(high.verdict).toBe('high');
   expect(high.high).toBe(1300);
-  expect(high.average).toBe(1131);
+  expect(high.average).toBe(1100);
   expect(high.aboveLowPercent).toBe(29);
+});
+
+it('flags a "drop" that only undoes a price rise in the last two weeks', () => {
+  // Usual 1000 for 20 days, raised to 1200 for a few days, now "down" to 1010.
+  const history = [
+    ...Array.from({ length: 20 }, (_, i) => obs(i + 9, 1000)),
+    ...Array.from({ length: 6 }, (_, i) => obs(i + 2, 1200)),
+  ];
+  const r = priceInsight(history, 'item', 1010, 30, now);
+  expect(r.raisedBeforeDrop).toEqual({ peak: 1200, usual: 1000, risePercent: 20 });
+  // A real drop below the usual price is not flagged.
+  expect(priceInsight(history, 'item', 900, 30, now).raisedBeforeDrop).toBeNull();
 });

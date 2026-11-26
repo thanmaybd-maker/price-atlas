@@ -5,6 +5,7 @@
 // 3. If not met (or out of stock / no price), send a "now watching" note on Telegram and
 //    Discord with today's price, so the user knows tracking started; the real alert follows
 //    the moment a later check reaches the target.
+import { ruleNow } from '../domain/offer-rules';
 import { randomUUID } from 'node:crypto';
 import { fetchProductWithBudget } from './index';
 import {
@@ -15,7 +16,7 @@ import {
   offers,
   postgres,
 } from '../database/postgres';
-import { rank, type Rule } from '../domain/index';
+import { type Rule } from '../domain/index';
 import { deliverTelegram } from '../notifications/telegram';
 import { deliverDiscord } from '../notifications/discord';
 import { notifyTrackingStarted } from '../notifications/watch-started';
@@ -64,18 +65,14 @@ export async function livePinCheck(
         [rule.id, started],
       )
     ).rows.length > 0;
-  const current = (await offers(rule.productId)).filter(
-    (o) => rule.store === 'all' || o.store === rule.store,
-  );
-  const ranked = rank(current, Date.now(), rule.basis);
-  const best = ranked.winners[0];
-  const anyPrice = best ? null : current.sort((a, b) => b.observedAt - a.observedAt)[0];
+  // Same rule as the alert engine and every screen (packages/domain/offer-rules.ts).
+  const now = ruleNow(rule, await offers(rule.productId));
   const result: PinCheck = {
     checked,
     alerted,
-    price: ranked.lowest ?? anyPrice?.itemPrice ?? null,
-    inStock: best ? true : anyPrice ? anyPrice.stock : scrapedStock,
-    store: best?.store ?? anyPrice?.store ?? listing?.store ?? null,
+    price: now.price ?? now.last?.price ?? null,
+    inStock: now.price != null ? true : now.last ? now.last.inStock : scrapedStock,
+    store: now.store ?? now.last?.store ?? listing?.store ?? null,
     reason,
   };
   if (!alerted) {

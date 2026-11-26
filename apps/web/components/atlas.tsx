@@ -103,6 +103,9 @@ import {
   soldAt,
 } from '../../../packages/domain/query-intent';
 import { priceInsight } from '../../../packages/domain/price-insight';
+import { alertSent, ruleNow, shownOffers } from '../../../packages/domain/offer-rules';
+import { publicSpecs } from '../../../packages/domain/specs';
+import { unitPrice } from '../../../packages/domain/unit-price';
 import { FxNote, FxPrice } from './fx-note';
 import { GeminiBadge, GeminiFinds } from './gemini-finds';
 type User = {
@@ -1041,9 +1044,8 @@ export default function Atlas({
     const known = knownPrice(p.id, po);
     const r = rank(po);
     const itemRank = rank(po, Date.now(), 'item');
-    const lastObserved = po
-      .filter((o) => o.displayAllowed)
-      .sort((a, b) => b.observedAt - a.observedAt)[0];
+    // Same rule as everywhere else: never fall back to a refurbished or other-variant price.
+    const lastObserved = shownOffers(po).sort((a, b) => b.observedAt - a.observedAt)[0];
     return (
       <article key={p.id} className="product-card" style={{ animationDelay: `${index * 45}ms` }}>
         <div className="card-art">
@@ -1108,6 +1110,14 @@ export default function Atlas({
                   )
                 )}
               </strong>
+              {(() => {
+                const per = unitPrice(p.name, p.attributes, known?.paise, p.category);
+                return per ? (
+                  <span className="unit-price">
+                    {money(per.paise)} / {per.per}
+                  </span>
+                ) : null;
+              })()}
               {p.attributes['Source price'] &&
                 !po.length &&
                 p.attributes['Source currency'] &&
@@ -2052,22 +2062,23 @@ export default function Atlas({
                   {session.rules.map((rule) => {
                     const p = products.find((p) => p.id === rule.productId);
                     if (!p) return null;
-                    const now = knownPrice(
-                      p.id,
-                      offers,
-                      rule.store === 'all' ? undefined : rule.store,
-                      undefined,
-                      true,
-                    );
-                    const status = !now
-                      ? `No price right now: the store page shows it unavailable. You’ll get an alert as soon as it is back at or below ${money(rule.target)}.`
-                      : now.paise <= rule.target && now.inStock && now.fresh
-                        ? `Target met: ${money(now.paise)} at ${now.store}. Your alert has been sent.`
-                        : now.paise <= rule.target && !now.inStock
-                          ? `${money(now.paise)} at ${now.store} is under your target but out of stock. You’ll get an alert when it is back in stock.`
-                          : now.paise <= rule.target
-                            ? `Last checked at ${money(now.paise)}; waiting for a fresh check to confirm before alerting.`
-                            : `Now ${money(now.paise)} at ${now.store}, ${money(now.paise - rule.target)} above your target.`;
+                    // Same inputs as the alert engine (alert-eligible offers, the rule's own
+                    // basis), so this card can never claim an alert the engine did not send.
+                    const now = ruleNow(rule, offers);
+                    const sent = alertSent(rule, session.notifications);
+                    const basisWord = rule.basis === 'delivered' ? 'delivered' : 'item';
+                    const status =
+                      now.price != null && now.met
+                        ? sent
+                          ? `Target met: ${money(now.price)} ${basisWord} at ${now.store}. Your alert has been sent.`
+                          : `Target met: ${money(now.price)} ${basisWord} at ${now.store}. Your alert is on its way.`
+                        : now.price != null
+                          ? `Now ${money(now.price)} ${basisWord} at ${now.store}, ${money(now.price - rule.target)} above your target.`
+                          : now.last
+                            ? now.last.inStock
+                              ? `Last seen at ${money(now.last.price)} at ${now.last.store}; waiting for a fresh check${rule.basis === 'delivered' ? ' with a known delivery fee' : ''} before alerting.`
+                              : `${money(now.last.price)} at ${now.last.store}, out of stock. You’ll get an alert when it is back at or below ${money(rule.target)}.`
+                            : `No price right now. You’ll get an alert as soon as it is at or below ${money(rule.target)}.`;
                     return (
                       <div className="rule-card" key={rule.id}>
                         <div className="rule-icon">
@@ -2379,10 +2390,11 @@ export default function Atlas({
     const international = po.filter((o) => retailers[o.store].international);
     const domestic = po.filter((o) => !retailers[o.store].international);
     const variantOffers = domestic.filter((o) => o.condition !== 'new' || !o.accepted);
-    const primaryOffers = domestic.filter((o) => o.condition === 'new' && o.accepted);
-    const lastObserved = po
-      .filter((o) => o.displayAllowed)
-      .sort((a, b) => b.observedAt - a.observedAt)[0];
+    const primaryOffers = shownOffers(domestic);
+    // The top price uses the same rule as cards: new, same product, shown, never refurbished.
+    const headline = knownPrice(p.id, po);
+    const perUnit = unitPrice(p.name, p.attributes, headline?.paise, p.category);
+    const lastObserved = shownOffers(po).sort((a, b) => b.observedAt - a.observedAt)[0];
     const r = rank(po);
     const itemRank = rank(po, Date.now(), 'item');
     const rule = session.rules.find((r) => r.productId === p.id);
@@ -2403,11 +2415,11 @@ export default function Atlas({
     const insight = priceInsight(
       comparableHistory,
       historyBasis,
-      historyBasis === 'item' ? itemRank.lowest : r.lowest,
+      historyBasis === 'item' ? (headline?.paise ?? null) : r.lowest,
       range,
     );
     // Same category, priced within 25% of this product, closest price first.
-    const anchor = itemRank.lowest ?? knownPrice(p.id, offers)?.paise ?? null;
+    const anchor = headline?.paise ?? null;
     const similar =
       anchor == null
         ? []
@@ -2507,9 +2519,23 @@ export default function Atlas({
                   ) : p.attributes['Source price'] && !po.length ? (
                     p.attributes['Source price']
                   ) : (
-                    money(itemRank.lowest ?? lastObserved?.itemPrice)
+                    money(headline?.paise)
                   )}
                 </strong>
+                {perUnit && (
+                  <span className="unit-price">
+                    {money(perUnit.paise)} / {perUnit.per}
+                  </span>
+                )}
+                {headline && !headline.fresh && (
+                  <span className="unit-price">
+                    last checked{' '}
+                    {new Date(headline.observedAt).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                    })}
+                  </span>
+                )}
                 <span className="status-pill">
                   {itemRank.winners.length > 1
                     ? 'Price tie'
@@ -2596,7 +2622,7 @@ export default function Atlas({
                   : 'Each imported listing retains its identity. Cross-store offers join only after their decisive attributes pass matching review.'}
               </p>
               <dl>
-                {Object.entries(p.attributes)
+                {publicSpecs(p.attributes)
                   .slice(0, 6)
                   .map(([k, v]) => (
                     <div key={k}>
@@ -2606,6 +2632,24 @@ export default function Atlas({
                   ))}
               </dl>
             </details>
+            {publicSpecs(p.attributes).length > 0 && (
+              <details className="spec-sheet" open={publicSpecs(p.attributes).length <= 12}>
+                <summary>
+                  Specifications{' '}
+                  <span className="count-badge">{publicSpecs(p.attributes).length}</span>{' '}
+                  <ChevronDown size={16} />
+                </summary>
+                <p className="muted small">As listed on the store page.</p>
+                <dl>
+                  {publicSpecs(p.attributes).map(([k, v]) => (
+                    <div key={k}>
+                      <dt>{k}</dt>
+                      <dd>{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            )}
           </div>
         </div>
         <div className="section-heading detail-section-heading">
@@ -2623,7 +2667,7 @@ export default function Atlas({
           </div>
           {primaryOffers.map((o) => (
             <div
-              className={`offer-row ${r.winners.some((w) => w.id === o.id) ? 'winner' : ''}`}
+              className={`offer-row ${itemRank.winners.some((w) => w.id === o.id) ? 'winner' : ''}`}
               key={o.id}
             >
               <div>
@@ -2638,9 +2682,9 @@ export default function Atlas({
                     : `Last ${money(o.itemPrice)}`}
                 </strong>
                 <LandedLine offer={o} category={p.category} />
-                {r.winners.some((w) => w.id === o.id) && primaryOffers.length > 1 && (
+                {itemRank.winners.some((w) => w.id === o.id) && primaryOffers.length > 1 && (
                   <span className="best-label">
-                    {r.winners.length > 1 ? 'Equal lowest' : 'Lowest price'}
+                    {itemRank.winners.length > 1 ? 'Equal lowest' : 'Lowest price'}
                   </span>
                 )}
               </div>
@@ -2936,6 +2980,14 @@ export default function Atlas({
                     : 'Not enough history to judge yet'}
             </strong>
             <span>{insight.reason}</span>
+            {insight.raisedBeforeDrop && (
+              <span className="price-insight-warning">
+                This drop only undoes a recent increase: the price rose{' '}
+                {insight.raisedBeforeDrop.risePercent}% (to {money(insight.raisedBeforeDrop.peak)})
+                in the last two weeks, and is now back near its usual{' '}
+                {money(insight.raisedBeforeDrop.usual)}.
+              </span>
+            )}
             {insight.days > 0 && (
               <span className="price-insight-stats">
                 Low {money(insight.low)} · Average {money(insight.average)} · High{' '}

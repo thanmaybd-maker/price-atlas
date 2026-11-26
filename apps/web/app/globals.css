@@ -4183,3 +4183,38 @@ th {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.unit-price {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.price-insight .price-insight-warning {
+  color: #b45309;
+  font-weight: 600;
+}
+.spec-sheet {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.spec-sheet summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.spec-sheet dl {
+  display: grid;
+  grid-template-columns: minmax(120px, 40%) 1fr;
+  gap: 6px 16px;
+  margin: 8px 0 0;
+}
+.spec-sheet dl div {
+  display: contents;
+}
+.spec-sheet dt {
+  color: var(--muted);
+}
+.spec-sheet dd {
+  margin: 0;
+}
