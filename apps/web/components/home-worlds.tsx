@@ -10,7 +10,7 @@ import { weeklyHistory } from '../../../packages/domain/weekly-history';
 import { HistoryCitation } from './history-citation';
 import { TidesWorld } from './tides-world';
 import { fetchJson } from '../lib/fetch-json';
-import { alertStores, ruleNow } from '../../../packages/domain/offer-rules';
+import { alertSent, alertStores, ruleNow } from '../../../packages/domain/offer-rules';
 import { historyCoverage } from '../../../packages/domain/history-coverage';
 import { historyRecording } from '../../../packages/domain/history-recording';
 import { reducedMotion } from './three-loader';
@@ -471,13 +471,8 @@ function TargetsWorld({
 }) {
   const [removing, setRemoving] = useState('');
   // Live: once a pinned target's alert has gone out, the sheet says so, then clears itself.
-  const sentFor = (r: Rule) =>
-    notifications.find(
-      (n) =>
-        n.rule_id === r.id &&
-        n.state === 'delivered' &&
-        (n.ruleVersion == null || n.ruleVersion === r.version),
-    );
+  // Same rule as the Targets page (packages/domain/offer-rules.ts).
+  const sentFor = (r: Rule) => alertSent(r, notifications);
   const cleared = useRef(new Set<string>());
   useEffect(() => {
     const done = rules.filter((r) => sentFor(r) && !cleared.current.has(r.id));

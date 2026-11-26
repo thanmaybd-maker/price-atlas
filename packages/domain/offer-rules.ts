@@ -1,29 +1,8 @@
 // The single place for "which offers count" rules. Every screen and the alert engine call
 // these, so a price shown, a target status and an alert can never disagree.
-import { rank, total, type Offer, type Rule } from './index';
-import { retailers } from './retailers';
+import { alertableOffers, rank, shownOffers, total, type Offer, type Rule } from './index';
 
-/** Offers a shopper may see priced in rupees: same product, new, Indian store, allowed. */
-export function shownOffers(offers: Offer[]) {
-  return offers.filter(
-    (o) =>
-      o.currency === 'INR' &&
-      !retailers[o.store]?.international &&
-      o.condition === 'new' &&
-      o.accepted &&
-      o.displayAllowed,
-  );
-}
-
-/** Offers that may trigger an alert for a store choice ('all' or one store). */
-export function alertableOffers(offers: Offer[], store: string) {
-  return offers.filter(
-    (o) =>
-      o.alertsAllowed &&
-      !retailers[o.store]?.international &&
-      (store === 'all' || o.store === store),
-  );
-}
+export { alertableOffers, shownOffers };
 
 /** Stores a target can be pinned to and actually alert from. */
 export function alertStores(offers: Offer[]) {
@@ -36,7 +15,14 @@ export type RuleNow = {
   store: string | null;
   met: boolean;
   /** When nothing is alert-eligible: the latest shown offer, for context only. */
-  last: { price: number; store: string; observedAt: number; inStock: boolean } | null;
+  last: {
+    price: number;
+    /** The basis this price is on: 'item' when the delivery fee is unknown. */
+    basis: 'item' | 'delivered';
+    store: string;
+    observedAt: number;
+    inStock: boolean;
+  } | null;
 };
 
 /** A target's status computed from the same inputs as evaluate() in the alert engine. */
@@ -53,7 +39,8 @@ export function ruleNow(
   const latest = shownOffers(mine)
     .filter((o) => rule.store === 'all' || o.store === rule.store)
     .sort((a, b) => b.observedAt - a.observedAt)[0];
-  const latestPrice = latest ? (total(latest, rule.basis) ?? latest.itemPrice) : null;
+  const onBasis = latest ? total(latest, rule.basis) : null;
+  const latestPrice = latest ? (onBasis ?? latest.itemPrice) : null;
   return {
     price,
     store: ranked.winners[0]?.store ?? null,
@@ -62,6 +49,7 @@ export function ruleNow(
       latest && latestPrice != null
         ? {
             price: latestPrice,
+            basis: onBasis != null ? rule.basis : 'item',
             store: latest.store,
             observedAt: latest.observedAt,
             inStock: latest.stock,
@@ -70,15 +58,29 @@ export function ruleNow(
   };
 }
 
-/** True only when a delivered notification exists for this product at or under the target. */
-export function alertSent(
-  rule: Pick<Rule, 'productId' | 'target'> & { id?: string },
-  notifications: { productId?: string; rule_id?: string; price?: number; state: string }[],
-) {
-  return notifications.some(
+export type SentNotification = {
+  productId?: string;
+  rule_id?: string;
+  ruleVersion?: number | null;
+  price?: number;
+  state: string;
+  created_at?: number;
+};
+/**
+ * The delivered alert for this target, if any: same rule (and same rule version, when known),
+ * at or under the current target. Lowering a target after an alert does not count as sent.
+ */
+export function alertSent<N extends SentNotification>(
+  rule: Pick<Rule, 'productId' | 'target'> & { id?: string; version?: number },
+  notifications: N[],
+): N | undefined {
+  return notifications.find(
     (n) =>
       n.state === 'delivered' &&
-      ((rule.id != null && n.rule_id === rule.id) ||
-        (n.productId === rule.productId && (n.price == null || n.price <= rule.target))),
+      (n.price == null || n.price <= rule.target) &&
+      (n.rule_id != null
+        ? n.rule_id === rule.id &&
+          (n.ruleVersion == null || rule.version == null || n.ruleVersion === rule.version)
+        : n.productId === rule.productId),
   );
 }

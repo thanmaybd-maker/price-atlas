@@ -52,4 +52,6 @@ it('flags a "drop" that only undoes a price rise in the last two weeks', () => {
   expect(r.raisedBeforeDrop).toEqual({ peak: 1200, usual: 1000, risePercent: 20 });
   // A real drop below the usual price is not flagged.
   expect(priceInsight(history, 'item', 900, 30, now).raisedBeforeDrop).toBeNull();
+  // Still inflated (1150 vs usual 1000) is not "back near usual".
+  expect(priceInsight(history, 'item', 1150, 30, now).raisedBeforeDrop).toBeNull();
 });

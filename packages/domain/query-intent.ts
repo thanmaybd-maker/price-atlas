@@ -3,8 +3,7 @@
 // query ("foxtale on nykaa") and common misspellings. Gemini may refine the words
 // further, but this works with no key and no network.
 import type { Category, Offer, Product } from './index';
-import { STORE_NAMES, rank } from './index';
-import { retailers } from './retailers';
+import { STORE_NAMES, rank, shownOffers } from './index';
 import { matchesQuery } from './search';
 
 export type QueryIntent = {
@@ -177,15 +176,10 @@ export function knownPrice(
   now = Date.now(),
   includeOutOfStock = false,
 ): (KnownPrice & { inStock: boolean }) | null {
-  const mine = offers.filter(
+  const mine = shownOffers(offers).filter(
     (o) =>
       o.productId === productId &&
       (!store || store === 'all' || o.store === store) &&
-      o.currency === 'INR' &&
-      !retailers[o.store]?.international &&
-      o.accepted &&
-      o.condition === 'new' &&
-      o.displayAllowed &&
       o.observedAt <= now,
   );
   const current = rank(mine, now, 'item');

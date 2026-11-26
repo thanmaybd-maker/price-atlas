@@ -32,7 +32,9 @@ export function raisedBeforeDrop(
   const recent = daily.slice(-15, -1).filter((p): p is number => p !== null);
   if (!recent.length) return null;
   const peak = Math.max(...recent);
-  if (peak < usual * 1.1 || current >= peak || current < usual * 0.97) return null;
+  // "Back near usual" means within 3% either side; a price still inflated is not a drop.
+  if (peak < usual * 1.1 || current >= peak || current < usual * 0.97 || current > usual * 1.03)
+    return null;
   return { peak, usual, risePercent: Math.round(((peak - usual) / usual) * 100) };
 }
 

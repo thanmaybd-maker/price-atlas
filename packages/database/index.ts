@@ -12,6 +12,7 @@ import {
   type Offer,
   type Product,
   type Rule,
+  alertableOffers,
 } from '../domain/index';
 
 let connection: DatabaseSync;
@@ -287,13 +288,7 @@ export function dispatch() {
     const rule = ruleRow ? (JSON.parse(ruleRow.data as string) as Rule) : null;
     const data = JSON.parse(n.data as string);
     const r = rule
-      ? rank(
-          offers(rule.productId).filter(
-            (o) => o.alertsAllowed && (rule.store === 'all' || rule.store === o.store),
-          ),
-          Date.now(),
-          rule.basis,
-        )
+      ? rank(alertableOffers(offers(rule.productId), rule.store), Date.now(), rule.basis)
       : null;
     const price = r?.lowest;
     const allowed =

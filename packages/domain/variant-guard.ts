@@ -51,7 +51,10 @@ export function variantSignature(title: string, a: Record<string, string> = {}):
             : 'UNKNOWN',
     packCount: pack && Number(pack) > 0 ? Number(pack) : null,
     storageOrMemory: memory ? normal(memory) : undefined,
-    volumeOrWeight: quantity(a.Size || a.Capacity || '') || quantity(title),
+    volumeOrWeight:
+      quantity(
+        a.Size || a.Capacity || a['Net Quantity'] || a['Item Volume'] || a['Item Weight'] || '',
+      ) || quantity(title),
     bookBinding: /paperback|softcover/i.test(binding)
       ? 'PAPERBACK'
       : /hardcover|hardback/i.test(binding)

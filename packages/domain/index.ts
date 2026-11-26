@@ -136,6 +136,26 @@ export function exactMatch(
 function normalize(s: string) {
   return s.trim().toLowerCase().replace(/\s+/g, '');
 }
+/** Offers a shopper may see priced in rupees: same product, new, Indian store, allowed. */
+export function shownOffers(offers: Offer[]) {
+  return offers.filter(
+    (o) =>
+      o.currency === 'INR' &&
+      !retailers[o.store]?.international &&
+      o.condition === 'new' &&
+      o.accepted &&
+      o.displayAllowed,
+  );
+}
+/** Offers that may trigger an alert for a store choice ('all' or one store). */
+export function alertableOffers(offers: Offer[], store: string) {
+  return offers.filter(
+    (o) =>
+      o.alertsAllowed &&
+      !retailers[o.store]?.international &&
+      (store === 'all' || o.store === store),
+  );
+}
 export function evaluate(
   rule: Rule,
   offers: Offer[],
@@ -144,11 +164,9 @@ export function evaluate(
   const state = { ...rule };
   if (!rule.enabled) return { state, trigger: null };
   const ranked = rank(
-    offers.filter(
-      (o) =>
-        o.productId === rule.productId &&
-        o.alertsAllowed &&
-        (rule.store === 'all' || o.store === rule.store),
+    alertableOffers(
+      offers.filter((o) => o.productId === rule.productId),
+      rule.store,
     ),
     now,
     rule.basis,

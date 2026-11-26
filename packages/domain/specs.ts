@@ -11,8 +11,8 @@ const INTERNAL = new Set(
     'Base product ID',
     'Product URL',
     'Retailer',
+    // The seller describes a listing, not the product, and is shown with each offer instead.
     'Seller',
-    'ISBN',
   ].map((k) => k.toLowerCase()),
 );
 

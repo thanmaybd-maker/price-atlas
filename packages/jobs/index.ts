@@ -22,7 +22,7 @@ import {
 } from '../providers/scraper';
 import { getSourceAdapter } from '../providers/index';
 import { livePolicy } from '../providers/live';
-import { rank, type Rule } from '../domain/index';
+import { rank, type Rule, alertableOffers } from '../domain/index';
 import {
   ResendNotifications,
   emailDeliveryEnabled,
@@ -421,13 +421,8 @@ export async function deliverNotifications(
     const rule = (await postgres().query('SELECT data FROM atlas.rules WHERE id=$1', [n.rule_id]))
       .rows[0]?.data as Rule | undefined;
     const best = rule
-      ? rank(
-          (await offers(rule.productId)).filter(
-            (o) => o.alertsAllowed && (rule.store === 'all' || o.store === rule.store),
-          ),
-          Date.now(),
-          rule.basis,
-        ).lowest
+      ? rank(alertableOffers(await offers(rule.productId), rule.store), Date.now(), rule.basis)
+          .lowest
       : null;
     const allowed =
       user?.verified &&

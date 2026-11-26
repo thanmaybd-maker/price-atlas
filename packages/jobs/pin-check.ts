@@ -70,7 +70,7 @@ export async function livePinCheck(
   const result: PinCheck = {
     checked,
     alerted,
-    price: now.price ?? now.last?.price ?? null,
+    price: now.price ?? (now.last?.basis === rule.basis ? now.last.price : null),
     inStock: now.price != null ? true : now.last ? now.last.inStock : scrapedStock,
     store: now.store ?? now.last?.store ?? listing?.store ?? null,
     reason,

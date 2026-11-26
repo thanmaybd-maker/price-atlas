@@ -54,9 +54,15 @@ it('offers only stores that can alert, and says "sent" only for a delivered aler
   expect(
     alertStores([offer({ store: 'Amazon' }), offer({ store: 'Croma', alertsAllowed: false })]),
   ).toEqual(['Amazon']);
-  expect(alertSent(rule(), [{ productId: 'p', price: 950, state: 'pending' }])).toBe(false);
-  expect(alertSent(rule(), [{ productId: 'p', price: 950, state: 'delivered' }])).toBe(true);
-  expect(alertSent(rule(), [{ productId: 'p', price: 1200, state: 'delivered' }])).toBe(false);
+  expect(Boolean(alertSent(rule(), [{ productId: 'p', price: 950, state: 'pending' }]))).toBe(
+    false,
+  );
+  expect(Boolean(alertSent(rule(), [{ productId: 'p', price: 950, state: 'delivered' }]))).toBe(
+    true,
+  );
+  expect(Boolean(alertSent(rule(), [{ productId: 'p', price: 1200, state: 'delivered' }]))).toBe(
+    false,
+  );
 });
 
 it('lists store specifications without internal bookkeeping', () => {
@@ -84,4 +90,31 @@ it('works out price per 100 ml or per 10 g, only for goods sold by quantity', ()
     per: '10 g',
   });
   expect(unitPrice('Lenovo Laptop 1.8kg', {}, 5000000, 'laptops')).toBeNull();
+});
+
+it('does not count an old alert as sent after the target is lowered or the rule changed', () => {
+  const sent = [{ rule_id: 'r1', ruleVersion: 1, price: 950, state: 'delivered' }];
+  expect(Boolean(alertSent({ ...rule(), id: 'r1', version: 1 }, sent))).toBe(true);
+  expect(Boolean(alertSent({ ...rule({ target: 900 }), id: 'r1', version: 1 }, sent))).toBe(false);
+  expect(Boolean(alertSent({ ...rule(), id: 'r1', version: 2 }, sent))).toBe(false);
+});
+
+it('keeps the basis of a fallback price so an item price is never shown as delivered', () => {
+  const r = ruleNow(rule({ basis: 'delivered' }), [offer({ itemPrice: 950, shipping: null })], now);
+  expect(r.last).toMatchObject({ price: 950, basis: 'item' });
+  const known = ruleNow(
+    rule({ basis: 'delivered' }),
+    [offer({ itemPrice: 950, shipping: 40, alertsAllowed: false })],
+    now,
+  );
+  expect(known.last).toMatchObject({ price: 990, basis: 'delivered' });
+});
+
+it('reads pack size from Net Quantity when the title has none', () => {
+  expect(
+    unitPrice('Herbal Face Wash', { 'Net Quantity': '150 ml' }, 30000, 'personal-care'),
+  ).toEqual({
+    paise: 20000,
+    per: '100 ml',
+  });
 });

@@ -106,6 +106,7 @@ import { priceInsight } from '../../../packages/domain/price-insight';
 import { alertSent, ruleNow, shownOffers } from '../../../packages/domain/offer-rules';
 import { publicSpecs } from '../../../packages/domain/specs';
 import { unitPrice } from '../../../packages/domain/unit-price';
+import { categoryRegistry } from '../../../packages/matching/index';
 import { FxNote, FxPrice } from './fx-note';
 import { GeminiBadge, GeminiFinds } from './gemini-finds';
 type User = {
@@ -1111,7 +1112,14 @@ export default function Atlas({
                 )}
               </strong>
               {(() => {
-                const per = unitPrice(p.name, p.attributes, known?.paise, p.category);
+                const per = unitPrice(
+                  p.name,
+                  p.attributes,
+                  known?.paise ??
+                    lastObserved?.itemPrice ??
+                    (p.basePrice && p.basePrice > 0 ? p.basePrice : null),
+                  p.category,
+                );
                 return per ? (
                   <span className="unit-price">
                     {money(per.paise)} / {per.per}
@@ -2076,7 +2084,7 @@ export default function Atlas({
                           ? `Now ${money(now.price)} ${basisWord} at ${now.store}, ${money(now.price - rule.target)} above your target.`
                           : now.last
                             ? now.last.inStock
-                              ? `Last seen at ${money(now.last.price)} at ${now.last.store}; waiting for a fresh check${rule.basis === 'delivered' ? ' with a known delivery fee' : ''} before alerting.`
+                              ? `Last seen at ${money(now.last.price)} ${now.last.basis} at ${now.last.store}; waiting for a fresh check${rule.basis === 'delivered' && now.last.basis === 'item' ? ' with a known delivery fee' : ''} before alerting.`
                               : `${money(now.last.price)} at ${now.last.store}, out of stock. You’ll get an alert when it is back at or below ${money(rule.target)}.`
                             : `No price right now. You’ll get an alert as soon as it is at or below ${money(rule.target)}.`;
                     return (
@@ -2393,6 +2401,11 @@ export default function Atlas({
     const primaryOffers = shownOffers(domestic);
     // The top price uses the same rule as cards: new, same product, shown, never refurbished.
     const headline = knownPrice(p.id, po);
+    const specs = publicSpecs(p.attributes);
+    // "Why these offers match" lists the attributes matching actually compares.
+    const identity = (categoryRegistry[p.category] || [])
+      .map((k) => [k, p.attributes[k]] as const)
+      .filter(([, v]) => Boolean(v));
     const perUnit = unitPrice(p.name, p.attributes, headline?.paise, p.category);
     const lastObserved = shownOffers(po).sort((a, b) => b.observedAt - a.observedAt)[0];
     const r = rank(po);
@@ -2499,8 +2512,8 @@ export default function Atlas({
                     ? 'Item price · shipping shown at checkout'
                     : p.attributes['Source price']
                       ? 'Source price · shipping/import fees extra'
-                      : lastObserved
-                        ? 'Observed item price · no eligible offer confirmed'
+                      : headline
+                        ? 'Last checked item price · not confirmed right now'
                         : 'No fresh eligible offers'}
               </span>
               <div>
@@ -2622,26 +2635,23 @@ export default function Atlas({
                   : 'Each imported listing retains its identity. Cross-store offers join only after their decisive attributes pass matching review.'}
               </p>
               <dl>
-                {publicSpecs(p.attributes)
-                  .slice(0, 6)
-                  .map(([k, v]) => (
-                    <div key={k}>
-                      <dt>{k}</dt>
-                      <dd>{v}</dd>
-                    </div>
-                  ))}
+                {identity.map(([k, v]) => (
+                  <div key={k}>
+                    <dt>{k}</dt>
+                    <dd>{v}</dd>
+                  </div>
+                ))}
               </dl>
             </details>
-            {publicSpecs(p.attributes).length > 0 && (
-              <details className="spec-sheet" open={publicSpecs(p.attributes).length <= 12}>
+            {specs.length > 0 && (
+              <details className="spec-sheet" open={specs.length <= 12}>
                 <summary>
-                  Specifications{' '}
-                  <span className="count-badge">{publicSpecs(p.attributes).length}</span>{' '}
+                  Specifications <span className="count-badge">{specs.length}</span>{' '}
                   <ChevronDown size={16} />
                 </summary>
                 <p className="muted small">As listed on the store page.</p>
                 <dl>
-                  {publicSpecs(p.attributes).map(([k, v]) => (
+                  {specs.map(([k, v]) => (
                     <div key={k}>
                       <dt>{k}</dt>
                       <dd>{v}</dd>

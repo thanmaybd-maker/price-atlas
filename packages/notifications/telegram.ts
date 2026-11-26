@@ -1,7 +1,7 @@
 import { publicOrigin } from './origin';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { postgres, tx, offers } from '../database/postgres';
-import { money, rank, type Rule } from '../domain/index';
+import { money, rank, type Rule, alertableOffers } from '../domain/index';
 import { z } from 'zod';
 
 /** Bot username without a leading "@" or surrounding spaces, as operators often paste it. */
@@ -255,11 +255,7 @@ export async function deliverTelegram(sender: TelegramSender = sendTelegram) {
       (o) => rule && (rule.store === 'all' || o.store === rule.store),
     );
     const activePrice = rule
-      ? rank(
-          matchingOffers.filter((o) => o.alertsAllowed),
-          Date.now(),
-          rule.basis,
-        ).lowest
+      ? rank(alertableOffers(matchingOffers, rule.store), Date.now(), rule.basis).lowest
       : null;
     const latestKnownPrice = rule ? rank(matchingOffers, Date.now(), rule.basis).lowest : null;
     const priceToCheck = activePrice ?? latestKnownPrice ?? row.data?.price ?? null;

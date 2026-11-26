@@ -10,6 +10,7 @@ import {
   type Offer,
   type Product,
   type Rule,
+  alertableOffers,
 } from '../domain/index';
 import { retailers } from '../domain/retailers';
 import { isIsbn13 } from '../domain/isbn';
@@ -586,13 +587,8 @@ export async function dispatch() {
     const rule = (await postgres().query('SELECT data FROM atlas.rules WHERE id=$1', [n.rule_id]))
       .rows[0]?.data as Rule | undefined;
     const price = rule
-      ? rank(
-          (await offers(rule.productId)).filter(
-            (o) => o.alertsAllowed && (rule.store === 'all' || o.store === rule.store),
-          ),
-          Date.now(),
-          rule.basis,
-        ).lowest
+      ? rank(alertableOffers(await offers(rule.productId), rule.store), Date.now(), rule.basis)
+          .lowest
       : null;
     const allowed =
       user?.notifications === 1 &&
