@@ -1,6 +1,6 @@
 'use client';
-// The home page "worlds" from the Price Atlas design canvas (Main.dc.html), wired to real data.
-// Each section keeps the sketch's markup and classes; styles live in app/home-sketch.css under `.hs`.
+// The home page "worlds", wired to real data.
+// Styles live in app/home-sketch.css under `.hs`.
 import { sizedImage } from '../../../packages/domain/image-size';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';

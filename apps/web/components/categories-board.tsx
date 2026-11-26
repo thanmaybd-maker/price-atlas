@@ -1,5 +1,5 @@
 'use client';
-// "Every category." The sticky-note board from the design canvas (Categories.dc.html).
+// "Every category." The sticky-note board on the categories page.
 // Each note is one shelf: what must match before two listings count as the same product,
 // a small machine animation, real searches to try, and the live product count when known.
 import Link from 'next/link';

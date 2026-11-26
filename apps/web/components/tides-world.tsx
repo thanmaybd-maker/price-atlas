@@ -1,5 +1,5 @@
 'use client';
-// "Thirty days, drawn as tides." from the design canvas: one ridge per product (home) or per store
+// "Thirty days, drawn as tides." One ridge per product (home) or per store
 // (product page), lowest recorded price per day, with gaps where nothing was observed.
 import { useMemo, useState } from 'react';
 import type { Offer } from '@domain/index';

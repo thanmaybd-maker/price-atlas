@@ -41,7 +41,13 @@
     "alerts:test": "tsx scripts/simulate-price-drop.ts",
     "worker:once": "tsx scripts/worker-once.ts",
     "backfill:wayback": "tsx scripts/backfill-wayback.ts",
-    "backfill:keepa": "tsx scripts/backfill-keepa.ts"
+    "backfill:keepa": "tsx scripts/backfill-keepa.ts",
+    "catalog:status": "tsx scripts/catalog-status.ts",
+    "catalog:repair": "tsx scripts/repair-catalog.ts",
+    "catalog:repair-categories": "tsx scripts/repair-categories.ts",
+    "check:pipeline": "tsx scripts/check-live-pipeline.ts",
+    "match:review": "tsx scripts/review-match.ts",
+    "test:history": "node scripts/smoke-history.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

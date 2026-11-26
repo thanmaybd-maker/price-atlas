@@ -1,4 +1,4 @@
-/* "Every category." sticky-note board from the design canvas (Categories.dc.html), scoped under .cs. */
+/* "Every category." sticky-note board, scoped under .cs. */
 .cs {
   --board: oklch(95.7% 0.013 82);
   --ink: oklch(21% 0.011 81);
