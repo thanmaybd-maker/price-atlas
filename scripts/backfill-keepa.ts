@@ -1,4 +1,4 @@
-// Fill every accepted Amazon listing's last 90 days from Keepa's amazon.in history.
+// Fill every accepted Amazon listing's last 30 days from Keepa's amazon.in history.
 // Needs KEEPA_API_KEY and DATABASE_URL. Usage: pnpm backfill:keepa [--force]
 import 'dotenv/config';
 import { postgres } from '../packages/database/postgres';
